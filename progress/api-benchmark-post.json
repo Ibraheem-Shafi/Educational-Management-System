@@ -1,0 +1,28 @@
+﻿{
+  "capturedAt": "2026-07-01T16:28:41.954Z",
+  "endpoints": {
+    "/auth/me": {
+      "p50": 5115,
+      "p95": 6506
+    },
+    "/reports/overview": {
+      "p50": 3699,
+      "p95": 4056
+    },
+    "/analytics/dashboard": {
+      "p50": 3797,
+      "p95": 3843
+    },
+    "/students?limit=5": {
+      "p50": 2948,
+      "p95": 3157
+    },
+    "/dashboard/summary": {
+      "error": "Error: /dashboard/summary => 404"
+    },
+    "/attendance/sheet": {
+      "p50": 3637,
+      "p95": 3781
+    }
+  }
+}

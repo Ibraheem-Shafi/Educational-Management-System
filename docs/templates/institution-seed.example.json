@@ -1,0 +1,90 @@
+{
+  "$schema": "Institution seed configuration for EIMS db:seed script",
+  "institution": {
+    "name": "Your Institution Name",
+    "institutionType": "coaching",
+    "primaryColor": "#2563eb",
+    "logoPath": null,
+    "faviconPath": null,
+    "address": "Street Address",
+    "city": "City",
+    "province": "Punjab",
+    "country": "Pakistan",
+    "phone": "+923001234567",
+    "email": "info@institution.pk",
+    "website": "https://institution.pk",
+    "timezone": "Asia/Karachi",
+    "currency": "PKR",
+    "terminology": {
+      "batch": "Batch",
+      "program": "Program",
+      "assessment": "Test",
+      "session": "Session"
+    },
+    "featureFlags": {
+      "timetable": false,
+      "formBuilder": false,
+      "aiAttendance": false,
+      "parentPortal": true,
+      "studentPortal": true,
+      "rankings": true,
+      "assessmentSeries": true
+    }
+  },
+  "branches": [
+    {
+      "name": "Main Campus",
+      "code": "MAIN",
+      "address": "Street Address",
+      "city": "City",
+      "phone": "+923001234567",
+      "email": "main@institution.pk"
+    }
+  ],
+  "superAdmin": {
+    "email": "admin@institution.pk",
+    "fullName": "System Administrator"
+  },
+  "lookupStatuses": {
+    "student_status": [
+      { "code": "active", "label": "Active", "sortOrder": 1 },
+      { "code": "inactive", "label": "Inactive", "sortOrder": 2 },
+      { "code": "suspended", "label": "Suspended", "sortOrder": 3 },
+      { "code": "graduated", "label": "Graduated", "sortOrder": 4 },
+      { "code": "transferred", "label": "Transferred", "sortOrder": 5 },
+      { "code": "dropped", "label": "Dropped", "sortOrder": 6 }
+    ],
+    "attendance_status": [
+      { "code": "present", "label": "Present", "sortOrder": 1 },
+      { "code": "absent", "label": "Absent", "sortOrder": 2 },
+      { "code": "leave", "label": "Leave", "sortOrder": 3 },
+      { "code": "late", "label": "Late", "sortOrder": 4 }
+    ],
+    "parent_relationship": [
+      { "code": "father", "label": "Father", "sortOrder": 1 },
+      { "code": "mother", "label": "Mother", "sortOrder": 2 },
+      { "code": "guardian", "label": "Guardian", "sortOrder": 3 }
+    ]
+  },
+  "roles": [
+    "super_admin",
+    "branch_admin",
+    "teacher",
+    "accountant",
+    "receptionist",
+    "parent",
+    "student"
+  ],
+  "academicSessions": [
+    {
+      "name": "2026",
+      "startDate": "2026-01-01",
+      "endDate": "2026-12-31",
+      "isCurrent": true
+    }
+  ],
+  "subjects": [],
+  "programs": [],
+  "assessmentTypes": [],
+  "feeTypes": []
+}

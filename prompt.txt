@@ -1,0 +1,366 @@
+# Backend & API Performance Optimization — Planning Mode Prompt
+
+Copy everything below this line into a new agent session. Start in **Planning Mode**. Do **not** write code until the audit and plan are complete and approved.
+
+---
+
+## Context
+
+You are working on the **Educational Institution Management System (EIMS)** monorepo at:
+
+`c:\Users\Dell\Desktop\Projects\NexiumTechnologies\Educational-institution-management-system`
+
+This is a **Turborepo + npm workspaces** project:
+
+| Path | Stack | Role |
+|------|-------|------|
+| `apps/api` | NestJS 11, Prisma, Supabase Auth (JWT verify) | REST API at `http://localhost:3001/api/v1` |
+| `apps/web` | Next.js 15, React Query | Frontend (already optimized — see below) |
+| `packages/database` | Prisma schema, migrations, seed | PostgreSQL via Supabase |
+| `packages/shared` | Zod schemas, constants | Shared validation |
+| `packages/types` | TypeScript contracts | API request/response types |
+
+**Architecture:** Each institution has an isolated Supabase project (PostgreSQL + Auth + Storage + Realtime). The NestJS API owns business logic, RBAC, and all DB writes. The Next.js app calls the API with `Authorization: Bearer <supabase_jwt>`.
+
+**Important:** A separate initiative already optimized the **frontend** (`apps/web`). Read `progress/performance-baseline.md` for what was done. Your scope is **backend and APIs only** — but you must understand how the frontend consumes APIs (parallel calls, caching, prefetch) to prioritize correctly.
+
+---
+
+## Objective
+
+The dashboard and several API endpoints feel slow (users reported ~10s perceived load; frontend fixes improved UX but **API latency may still be a bottleneck**). Perform a **comprehensive backend/API performance audit** and produce an implementation plan.
+
+**Success criteria:**
+- Fast API response times for hot paths (dashboard, lists, auth)
+- Efficient database access (minimal N+1, proper indexes, bounded queries)
+- No redundant work per request (auth, permissions, Supabase round-trips)
+- Scalable patterns for branch-scoped multi-tenant data
+- Measurable improvements with before/after metrics
+- No functional regressions; preserve RBAC, branch isolation, MFA policy
+
+---
+
+## Phase 1 — Planning Mode (do this first)
+
+### Step 1: Read documentation before assuming
+
+Read and internalize:
+
+| Doc | Purpose |
+|-----|---------|
+| `README.md` | Monorepo overview |
+| `docs/02-system-architecture.md` | Request flow, NestJS vs Supabase split |
+| `docs/03-tech-stack.md` | Versions and dependencies |
+| `docs/04-monorepo-structure.md` | Package boundaries |
+| `docs/08-auth-and-rbac.md` | Auth, roles, permissions, MFA |
+| `docs/09-api-design.md` | REST conventions, pagination, errors |
+| `docs/12-security.md` (if present) | MFA, RLS, security policies |
+| `docs/16-coding-standards.md` | Conventions |
+| `docs/demo-seed.md` | Demo data scale, env vars (`SKIP_ADMIN_MFA`) |
+| `progress/README.md` | Implementation status |
+| `progress/performance-baseline.md` | Frontend optimization context |
+
+### Step 2: Map the backend
+
+Explore `apps/api/src/`:
+
+- `main.ts` — bootstrap, global pipes/filters, CORS
+- `app.module.ts` — module registration
+- `common/guards/` — `auth.guard.ts`, `permissions.guard.ts`, `branch.guard.ts`
+- `common/pipes/`, `common/filters/`
+- `prisma/prisma.module.ts` — Prisma client lifecycle
+- `modules/*/` — one folder per domain (students, attendance, fees, analytics, reports, auth, etc.)
+
+Also explore:
+
+- `packages/database/prisma/schema.prisma` — models, relations, indexes
+- `packages/database/prisma/migrations/` — existing indexes
+- `packages/shared/src/` — Zod query schemas, auth helpers
+
+### Step 3: Map API consumption from frontend
+
+The frontend (`apps/web`) calls these on dashboard load (high priority):
+
+| Endpoint | Used by | Notes |
+|----------|---------|-------|
+| `GET /auth/me` | Auth bootstrap | Called on every session; also server-prefetched |
+| `GET /settings/institution` | Branding | Cached `staleTime: Infinity` on client |
+| `GET /branches` | Branch filters | Prefetched after auth |
+| `GET /reports/overview` | Dashboard KPIs | Permission: `reports.view` |
+| `GET /students?limit=5` | Recent students | |
+| `GET /analytics/dashboard` | Dashboard analytics | Permission: `analytics.read` |
+
+Heavy pages fire **6–8 parallel API calls** each:
+
+- `analytics/*` (kpis, performance, trends, weak subjects, rankings, etc.)
+- `attendance/sheet`, `assessments`, `academic` (programs, batches, subjects)
+- `reports/fee-defaulters`, `analytics/attendance-performance-correlation`
+
+Identify which endpoints are slowest and why.
+
+---
+
+## Backend Performance Audit — investigate all areas
+
+### A. Request pipeline & auth overhead
+
+Every authenticated request passes through:
+
+1. `AuthGuard` — `supabase.auth.getUser(token)` + Prisma user load with nested `userRoles → role → rolePermissions → permission`
+2. `PermissionsGuard` (where applied)
+3. `BranchGuard` (where applied)
+4. MFA check: `requiresMfaPolicy(roles)` + JWT `aal` claim (skipped when `SKIP_ADMIN_MFA=1`)
+
+**Investigate:**
+- Is Supabase `getUser()` called on **every** request? Can JWT be verified locally (JWKS cache) instead?
+- Is the full user+permissions graph loaded from DB on **every** request? Caching opportunities?
+- Duplicate `/auth/me` work: frontend + server prefetch + guard
+- Cost of deep Prisma `include` on auth path
+- MFA guard latency for admin roles in non-demo environments
+
+**Key files:** `apps/api/src/common/guards/auth.guard.ts`, `apps/api/src/modules/auth/auth.service.ts`
+
+### B. Database & Prisma
+
+**Investigate:**
+- Missing indexes on `branchId`, `deletedAt`, `date`, foreign keys used in WHERE clauses
+- N+1 queries in services (attendance sheets, student detail, parents with children, assessments/marks)
+- Unbounded `findMany` without pagination (audit, communications logs, defaulters)
+- Full table scans in analytics (e.g. `attendanceRecord.findMany` over date ranges loaded into memory)
+- Sequential queries that could be `Promise.all` or single aggregated query
+- Over-fetching: returning full relation trees when DTO needs fewer fields
+- `count` + `aggregate` patterns in `reports.service.ts` — can they be combined or cached?
+- Connection pooling: `DATABASE_URL` uses PgBouncer (port 6543) — Prisma config for pooler mode
+- Transaction boundaries for bulk writes (attendance mark, marks bulk)
+
+**Key files:** `packages/database/prisma/schema.prisma`, all `*.service.ts` under `apps/api/src/modules/`
+
+### C. Hot endpoint deep-dives
+
+Prioritize audit of these services/controllers:
+
+| Module | Endpoints | Likely issues |
+|--------|-----------|---------------|
+| `reports` | `/reports/overview`, `/reports/fee-defaulters` | Multiple counts/aggregates per request |
+| `analytics` | `/analytics/dashboard`, `/analytics/*` | In-memory aggregation over large record sets |
+| `attendance` | `/attendance/sheet`, bulk mark | Large student lists per batch |
+| `students` | list, detail, nested data | N+1 on detail page (6 parallel client queries) |
+| `auth` | `/auth/me` | Called very frequently |
+| `settings` | `/settings/institution`, lookups | Reference data; cacheable |
+| `parents` | list with nested students | Join depth |
+| `fees` | invoices, defaulters | Pagination, aggregates |
+| `assessments` | marks sheet, bulk save | Batch size, validation overhead |
+
+For each hot endpoint document:
+- Prisma queries executed (count and shape)
+- Rows touched (estimate with demo seed: ~49 students, ~500+ attendance records)
+- Response payload size
+- p50/p95 latency if measurable
+
+### D. API design & payload
+
+**Investigate:**
+- Endpoints returning more data than the frontend uses
+- Missing field selection / DTO projection
+- List endpoints without pagination enforcement (max `limit=100` per docs)
+- Duplicate endpoints fetching overlapping data (`/reports/overview` vs `/analytics/dashboard`)
+- Opportunities for composite/dashboard endpoints to reduce round-trips (without breaking REST conventions)
+- Compression (gzip/brotli) enabled in NestJS?
+- Response serialization cost for large arrays
+
+**Reference:** `docs/09-api-design.md`
+
+### E. Caching & memoization (server-side)
+
+**Investigate:**
+- No HTTP cache headers on reference data (institution settings, lookups, branches, roles)
+- No in-memory or Redis cache for expensive aggregates
+- Whether analytics/report snapshots could be precomputed (materialized views, cron, or TTL cache)
+- `ETag` / `If-None-Match` for settings endpoint
+- Request-level memoization within a single request (dedupe identical Prisma calls)
+
+### F. External dependencies
+
+**Investigate latency from:**
+- Supabase Auth API (`getUser` per request)
+- Supabase Storage (document uploads)
+- Email (Resend/SMTP), SMS (Twilio), OpenAI (AI modules) — not hot path but note async patterns
+- OpenAI calls blocking request thread in `ai-attendance`, `ai-insights`
+
+### G. NestJS runtime
+
+**Investigate:**
+- Global middleware overhead
+- Validation pipe (Zod) cost on large payloads
+- Module provider scope (singleton vs request)
+- Logging verbosity in development affecting throughput
+- `NODE_ENV`, clustering, and production deployment config (`docs/15-deployment.md` if present)
+
+### H. Security vs performance trade-offs
+
+Do not recommend optimizations that break:
+- Branch-level data isolation (`branchId` filtering)
+- Permission checks (`permissions.guard.ts`)
+- MFA for `super_admin` / `branch_admin` in production
+- Soft-delete filters (`deletedAt: null`)
+- Audit logging requirements
+
+Note where security checks add latency and suggest **safe** optimizations (e.g. cache permissions per user ID with short TTL).
+
+---
+
+## Known context from prior work
+
+1. **Frontend already optimized** — React Query caching, server prefetch, skeletons, code splitting. Slow APIs will still feel slow even with a fast frontend.
+2. **MFA 403 issue** — Frontend had `NEXT_PUBLIC_SKIP_ADMIN_MFA=1` but API lacked `SKIP_ADMIN_MFA=1`. Fixed in `auth.guard.ts`. Do not regress.
+3. **Demo scale** — See `docs/demo-seed.md`: ~49 students, 6 batches, 500+ attendance records, 60+ invoices. Production may be 10–100× larger; plan for scale.
+4. **Auth guard loads user from DB every request** — Strong candidate for optimization.
+
+---
+
+## Deliverables (before any implementation)
+
+Produce a complete plan with:
+
+### 1. Executive summary
+- Top 5 backend bottlenecks ranked by impact
+- Estimated contribution to dashboard slowness (auth vs DB vs aggregation)
+
+### 2. Full audit table
+
+For each issue:
+
+| Column | Description |
+|--------|-------------|
+| ID | e.g. B1, D3 |
+| Bottleneck | Short name |
+| Root cause | Why it's slow |
+| Impact | High / Medium / Low |
+| Risk | Low / Medium / High (for fixing) |
+| Files | Specific paths |
+| Endpoint(s) | Affected routes |
+
+### 3. Per-endpoint profile (hot paths)
+
+For `/auth/me`, `/reports/overview`, `/analytics/dashboard`, `/attendance/sheet`, `/students` (list + detail):
+
+- Query breakdown
+- Suggested fix
+- Expected latency improvement
+
+### 4. Database recommendations
+
+- Missing indexes (with Prisma schema suggestions)
+- Query rewrites
+- Pagination gaps
+- Materialized view / snapshot candidates
+
+### 5. Recommended implementation order
+
+Waves (like frontend plan):
+
+- **Wave 1:** Quick wins, low risk (indexes, `select` projections, parallel queries)
+- **Wave 2:** Auth path optimization (permission cache, JWT local verify)
+- **Wave 3:** Analytics/reports aggregation refactor
+- **Wave 4:** Caching layer (in-memory or Redis for reference + dashboard aggregates)
+- **Wave 5:** Schema/architecture (composite endpoints, read replicas if justified)
+
+### 6. Metrics & validation
+
+Define how to measure each optimization:
+
+| Metric | Tool |
+|--------|------|
+| Endpoint p50/p95 | `curl` + timing, NestJS interceptor, or APM |
+| Prisma query count per request | Prisma query log / middleware |
+| DB explain plans | `EXPLAIN ANALYZE` on slow queries |
+| Dashboard API waterfall | Browser Network tab (3 parallel calls on load) |
+| Load test | k6, autocannon, or `ab` on `/reports/overview` |
+
+**Baseline step:** Before coding, record timings for:
+- `GET /auth/me`
+- `GET /reports/overview`
+- `GET /analytics/dashboard`
+- `GET /students?limit=5`
+- `GET /attendance/sheet?...` (with a real batchId from demo seed)
+
+Use demo login: `admin@rekhta.edu.pk` / `Rekhta@2026!` (see `docs/demo-seed.md`). Ensure `SKIP_ADMIN_MFA=1` in `apps/api/.env` for local testing.
+
+### 7. Out of scope (unless explicitly requested)
+
+- Frontend/Next.js changes
+- Supabase RLS policy changes (note as dependency only)
+- Infrastructure provisioning (new Redis cluster) — recommend but don't implement without approval
+- Rewriting the entire API architecture
+
+### 8. Mermaid diagrams
+
+Include:
+- Current request pipeline (guard → prisma → response)
+- Target optimized pipeline
+- Dashboard API waterfall (server-side view)
+
+---
+
+## Phase 2 — Implementation (after plan approval only)
+
+When implementing:
+
+1. One optimization per commit-sized change
+2. Measure before and after for each change
+3. Follow existing NestJS patterns in `apps/api`
+4. Use Zod schemas from `@eims/shared` for validation
+5. Add/update Prisma migrations for index changes
+6. Do not break API contracts in `@eims/types` without updating frontend
+7. Run existing tests; add benchmarks only if meaningful
+
+---
+
+## Key file paths (starting points)
+
+```
+apps/api/src/main.ts
+apps/api/src/app.module.ts
+apps/api/src/common/guards/auth.guard.ts
+apps/api/src/common/guards/permissions.guard.ts
+apps/api/src/common/guards/branch.guard.ts
+apps/api/src/modules/auth/auth.service.ts
+apps/api/src/modules/reports/reports.service.ts
+apps/api/src/modules/analytics/analytics.service.ts
+apps/api/src/modules/attendance/attendance.service.ts
+apps/api/src/modules/students/students.service.ts
+packages/database/prisma/schema.prisma
+packages/shared/src/
+docs/09-api-design.md
+docs/demo-seed.md
+progress/performance-baseline.md
+```
+
+---
+
+## Commands for exploration
+
+```bash
+# From monorepo root
+npm run dev                    # Start API (3001) + web (3000)
+
+# Database
+npm run db:push
+npm run db:seed:all
+npm run db:seed:verify
+
+# API only
+cd apps/api && npm run build
+cd apps/api && npm run start:dev
+
+# Prisma query logging (add to schema or env for audit)
+# DEBUG=prisma:query
+```
+
+---
+
+## Output format
+
+Present the audit as a structured markdown plan (use the CreatePlan tool if in planning mode). Be specific — cite file paths and Prisma query patterns. Prioritize measurable impact over theoretical micro-optimizations.
+
+**Do not begin implementation until the plan is reviewed and approved.**

@@ -1,0 +1,25 @@
+﻿{
+  "capturedAt": "2026-07-01T16:13:23.001Z",
+  "endpoints": {
+    "/auth/me": {
+      "p50": 3691,
+      "p95": 4583
+    },
+    "/reports/overview": {
+      "p50": 2767,
+      "p95": 4745
+    },
+    "/analytics/dashboard": {
+      "p50": 3690,
+      "p95": 4383
+    },
+    "/students?limit=5": {
+      "p50": 2552,
+      "p95": 3353
+    },
+    "/attendance/sheet": {
+      "p50": 2586,
+      "p95": 3414
+    }
+  }
+}

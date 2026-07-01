@@ -1,0 +1,8 @@
+/** Roles that must enroll TOTP and complete AAL2 at login (docs/12-security.md). */
+export const MFA_REQUIRED_ROLES = ['super_admin', 'branch_admin'] as const;
+
+export type MfaRequiredRole = (typeof MFA_REQUIRED_ROLES)[number];
+
+export function requiresMfaPolicy(roles: string[]): boolean {
+  return roles.some((r) => (MFA_REQUIRED_ROLES as readonly string[]).includes(r));
+}

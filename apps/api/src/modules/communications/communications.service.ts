@@ -1,0 +1,117 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.module';
+import { AuditService } from '../audit/audit.service';
+import { SmsService } from '../../common/sms/sms.service';
+import { WhatsAppService } from '../../common/sms/whatsapp.service';
+import { ReportsService } from '../reports/reports.service';
+import type { AuthUser } from '@eims/types';
+import type { FeeReminderInput, NoticeBroadcastInput, SendMessageInput } from '@eims/shared';
+
+@Injectable()
+export class CommunicationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly sms: SmsService,
+    private readonly whatsapp: WhatsAppService,
+    private readonly reports: ReportsService,
+  ) {}
+
+  async sendMessage(input: SendMessageInput, user: AuthUser) {
+    const result =
+      input.channel === 'whatsapp'
+        ? await this.whatsapp.send(input.recipient, input.body)
+        : await this.sms.send(input.recipient, input.body);
+
+    const log = await this.prisma.communicationLog.create({
+      data: {
+        channel: input.channel,
+        recipient: input.recipient,
+        subject: input.subject,
+        body: input.body,
+        status: result.sent ? 'sent' : 'failed',
+        metadata: result,
+        createdById: user.id,
+      },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'communication.sent',
+      entityType: 'CommunicationLog',
+      entityId: log.id,
+      newValue: { channel: input.channel, recipient: input.recipient },
+    });
+
+    return { log, result };
+  }
+
+  async sendFeeReminders(input: FeeReminderInput, user: AuthUser, branchId: string | null) {
+    const { data: defaulters } = await this.reports.getFeeDefaulters(branchId ?? input.branchId ?? null);
+    const results = [];
+
+    for (const inv of defaulters) {
+      const phone = inv.student?.phone;
+      if (!phone) continue;
+      const body = `Fee reminder: ${inv.student.fullName} has an outstanding balance of PKR ${inv.netAmount}. Due: ${inv.dueDate ?? 'ASAP'}.`;
+      const sent = await this.sendMessage(
+        { channel: input.channel, recipient: phone, body },
+        user,
+      );
+      results.push({ student: inv.student.fullName, ...sent.result });
+    }
+
+    return { sent: results.filter((r) => r.sent).length, failed: results.filter((r) => !r.sent).length, results };
+  }
+
+  async broadcastNotice(input: NoticeBroadcastInput, user: AuthUser, branchId: string | null) {
+    const notice = await this.prisma.notice.findFirst({
+      where: { id: input.noticeId, ...(branchId ? { branchId } : {}) },
+    });
+    if (!notice) throw new NotFoundException('Notice not found');
+
+    const recipients: string[] = [];
+
+    if (input.audience === 'parents' || input.audience === 'all') {
+      const parents = await this.prisma.parent.findMany({
+        where: { deletedAt: null, phone: { not: null } },
+        select: { phone: true },
+      });
+      recipients.push(...parents.map((p) => p.phone!).filter(Boolean));
+    }
+
+    if (input.audience === 'students' || input.audience === 'all') {
+      const students = await this.prisma.student.findMany({
+        where: { deletedAt: null, phone: { not: null }, ...(branchId ? { branchId } : {}) },
+        select: { phone: true },
+      });
+      recipients.push(...students.map((s) => s.phone!).filter(Boolean));
+    }
+
+    const unique = [...new Set(recipients)];
+    const body = `${notice.title}\n\n${notice.body}`;
+    const results = [];
+
+    for (const phone of unique) {
+      const sent = await this.sendMessage(
+        { channel: input.channel, recipient: phone, body, subject: notice.title },
+        user,
+      );
+      results.push(sent.result);
+    }
+
+    return {
+      noticeId: notice.id,
+      recipientCount: unique.length,
+      sent: results.filter((r) => r.sent).length,
+    };
+  }
+
+  async listLogs() {
+    const logs = await this.prisma.communicationLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return { data: logs };
+  }
+}
