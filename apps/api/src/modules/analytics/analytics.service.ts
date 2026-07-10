@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { computeChangePercent } from '../../common/utils/metrics.util';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
@@ -338,14 +339,30 @@ export class AnalyticsService {
 
   private async buildDashboardKpis(branchId: string | null) {
     const branchFilter = branchId ? { branchId } : {};
-    const thirtyDaysAgo = new Date();
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sixtyDaysAgo = new Date(now);
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
     const presentStatusId = await this.lookupCache.getStatusId('attendance_status', 'present');
 
-    const [recentAssessments, attendanceByStatus, avgPercentage] = await Promise.all([
+    const [
+      recentAssessments,
+      previousAssessments,
+      attendanceByStatus,
+      previousAttendanceByStatus,
+      avgPercentage,
+      previousAvgPercentage,
+    ] = await Promise.all([
       this.prisma.assessment.count({
         where: { ...branchFilter, conductedAt: { gte: thirtyDaysAgo } },
+      }),
+      this.prisma.assessment.count({
+        where: {
+          ...branchFilter,
+          conductedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
+        },
       }),
       this.prisma.attendanceRecord.groupBy({
         by: ['statusId'],
@@ -356,34 +373,81 @@ export class AnalyticsService {
         },
         _count: { _all: true },
       }),
+      this.prisma.attendanceRecord.groupBy({
+        by: ['statusId'],
+        where: {
+          ...branchFilter,
+          entityType: 'student',
+          date: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
+        },
+        _count: { _all: true },
+      }),
       this.prisma.assessmentRecord.aggregate({
         where: {
           percentage: { not: null },
+          assessment: { conductedAt: { gte: thirtyDaysAgo } },
+          student: branchId ? { branchId } : undefined,
+        },
+        _avg: { percentage: true },
+      }),
+      this.prisma.assessmentRecord.aggregate({
+        where: {
+          percentage: { not: null },
+          assessment: { conductedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
           student: branchId ? { branchId } : undefined,
         },
         _avg: { percentage: true },
       }),
     ]);
 
+    const computeAttendanceRate = (
+      rows: Array<{ statusId: string; _count: { _all: number } }>,
+    ) => {
+      let attendanceRecords = 0;
+      let presentCount = 0;
+      for (const row of rows) {
+        attendanceRecords += row._count._all;
+        if (presentStatusId && row.statusId === presentStatusId) {
+          presentCount += row._count._all;
+        }
+      }
+      return attendanceRecords > 0
+        ? Math.round((presentCount / attendanceRecords) * 1000) / 10
+        : 0;
+    };
+
+    const attendanceRate = computeAttendanceRate(attendanceByStatus);
+    const previousAttendanceRate = computeAttendanceRate(previousAttendanceByStatus);
+
     let attendanceRecords = 0;
-    let presentCount = 0;
     for (const row of attendanceByStatus) {
       attendanceRecords += row._count._all;
-      if (presentStatusId && row.statusId === presentStatusId) {
-        presentCount += row._count._all;
-      }
     }
 
-    const attendanceRate =
-      attendanceRecords > 0 ? Math.round((presentCount / attendanceRecords) * 1000) / 10 : 0;
+    const averageAssessmentPercentage = avgPercentage._avg.percentage
+      ? Math.round(Number(avgPercentage._avg.percentage) * 10) / 10
+      : null;
+    const previousAverageAssessmentPercentage = previousAvgPercentage._avg.percentage
+      ? Math.round(Number(previousAvgPercentage._avg.percentage) * 10) / 10
+      : null;
 
     return {
-      assessmentsLast30Days: recentAssessments,
+      assessmentsLast30Days: {
+        value: recentAssessments,
+        changePercent: computeChangePercent(recentAssessments, previousAssessments),
+      },
       attendanceRecordsLast30Days: attendanceRecords,
-      attendanceRateLast30Days: attendanceRate,
-      averageAssessmentPercentage: avgPercentage._avg.percentage
-        ? Math.round(Number(avgPercentage._avg.percentage) * 10) / 10
-        : null,
+      attendanceRateLast30Days: {
+        value: attendanceRate,
+        changePercent: computeChangePercent(attendanceRate, previousAttendanceRate),
+      },
+      averageAssessmentPercentage: {
+        value: averageAssessmentPercentage,
+        changePercent:
+          averageAssessmentPercentage !== null && previousAverageAssessmentPercentage !== null
+            ? computeChangePercent(averageAssessmentPercentage, previousAverageAssessmentPercentage)
+            : null,
+      },
     };
   }
 }

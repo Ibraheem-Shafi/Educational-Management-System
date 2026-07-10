@@ -1,17 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Mail, Phone, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import type { PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/page-header';
-import { filterSelectClass } from '@/components/layout/filter-bar';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { SearchInput } from '@/components/layout/search-input';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { UserAvatar } from '@/components/layout/user-avatar';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { AddParentDialog } from '@/components/features/parents/add-parent-dialog';
+import { LinkStudentDialog } from '@/components/features/parents/link-student-dialog';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 
 interface ParentRow {
   id: string;
@@ -21,64 +40,73 @@ interface ParentRow {
   students: Array<{ relationshipCode: string; student: { id: string; fullName: string } }>;
 }
 
-interface Student {
-  id: string;
-  fullName: string;
+function ContactIcon({
+  href,
+  label,
+  children,
+  disabled,
+}: {
+  href?: string;
+  label: string;
+  children: ReactNode;
+  disabled?: boolean;
+}) {
+  const className = cn(
+    'flex h-8 w-8 items-center justify-center rounded-full border-[0.8px] border-[var(--stroke-soft-200,#E2E4E9)] p-2',
+    'text-[var(--text-sub-500,#525866)] transition-colors',
+    disabled
+      ? 'cursor-not-allowed opacity-40'
+      : 'hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)]',
+  );
+
+  if (disabled || !href) {
+    return (
+      <span className={className} aria-label={label} title={label}>
+        {children}
+      </span>
+    );
+  }
+
+  return (
+    <a href={href} className={className} aria-label={label} title={label} onClick={(e) => e.stopPropagation()}>
+      {children}
+    </a>
+  );
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
 }
 
 export default function ParentsPage() {
   const { session } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [studentId, setStudentId] = useState('');
-  const [relationship, setRelationship] = useState('father');
-  const [linkParentId, setLinkParentId] = useState('');
-  const [linkStudentId, setLinkStudentId] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const [addOpen, setAddOpen] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<{ id: string; name: string } | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['parents'],
-    queryFn: () => apiClient<PaginatedResponse<ParentRow>>('/parents', { token }),
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const queryParams = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) queryParams.set('search', search);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.parentsStats,
+    queryFn: () => apiClient<ParentsStatsResponse>('/parents/stats', { token }),
     enabled: !!token,
   });
 
-  const { data: students } = useQuery({
-    queryKey: ['students-parents'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && (showForm || !!linkParentId),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiClient('/parents', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Parent created');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      setShowForm(false);
-      setFullName('');
-      setEmail('');
-      setPhone('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const linkMutation = useMutation({
-    mutationFn: ({ parentId, body }: { parentId: string; body: Record<string, unknown> }) =>
-      apiClient(`/parents/${parentId}/link-student`, {
-        method: 'POST',
-        token,
-        body: JSON.stringify(body),
-      }),
-    onSuccess: () => {
-      toast.success('Student linked');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      setLinkParentId('');
-      setLinkStudentId('');
-    },
-    onError: (err: Error) => toast.error(err.message),
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['parents', search, page, limit],
+    queryFn: () =>
+      apiClient<PaginatedResponse<ParentRow>>(`/parents?${queryParams.toString()}`, { token }),
+    enabled: !!token,
   });
 
   const unlinkMutation = useMutation({
@@ -87,156 +115,198 @@ export default function ParentsPage() {
     onSuccess: () => {
       toast.success('Student unlinked');
       queryClient.invalidateQueries({ queryKey: ['parents'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={Users}
         title="Parents"
         description="Guardians linked to students"
         actions={
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? 'Cancel' : 'Add parent'}
-          </Button>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className={pageHeaderActionClassName}
+          >
+            <PageHeaderActionIcon />
+            Add parent
+          </button>
         }
       />
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>New parent / guardian</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-4 sm:grid-cols-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate({
-                  fullName,
-                  ...(email ? { email } : {}),
-                  ...(phone ? { phone } : {}),
-                  ...(studentId ? { studentId, relationshipCode: relationship } : {}),
-                });
-              }}
-            >
-              <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-              <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <Input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <select
-                className={filterSelectClass}
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-              >
-                <option value="">Link to student (optional)</option>
-                {students?.data.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.fullName}
-                  </option>
-                ))}
-              </select>
-              {studentId && (
-                <select
-                  className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                  value={relationship}
-                  onChange={(e) => setRelationship(e.target.value)}
-                >
-                  <option value="father">Father</option>
-                  <option value="mother">Mother</option>
-                  <option value="guardian">Guardian</option>
-                </select>
-              )}
-              <Button type="submit" disabled={createMutation.isPending} className="sm:col-span-2 w-fit">
-                Save parent
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <AddParentDialog open={addOpen} onOpenChange={setAddOpen} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All parents ({data?.meta.total ?? 0})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <ListLoadingSkeleton />}
-          <div className="divide-y divide-border">
-            {data?.data.map((parent) => (
-              <div key={parent.id} className="py-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-medium">{parent.fullName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {parent.email ?? '—'} · {parent.phone ?? '—'}
-                    </p>
-                    {parent.students.length > 0 && (
-                      <ul className="mt-2 space-y-1 text-sm">
-                        {parent.students.map((s) => (
-                          <li key={s.student.id} className="flex flex-wrap items-center gap-2">
-                            <span>
-                              {s.student.fullName} ({s.relationshipCode})
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 text-destructive"
-                              onClick={() =>
-                                unlinkMutation.mutate({
-                                  parentId: parent.id,
-                                  studentId: s.student.id,
-                                })
-                              }
-                              disabled={unlinkMutation.isPending}
-                            >
-                              Unlink
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setLinkParentId(linkParentId === parent.id ? '' : parent.id)}
+      <LinkStudentDialog
+        open={linkTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setLinkTarget(null);
+        }}
+        parentId={linkTarget?.id ?? ''}
+        parentName={linkTarget?.name ?? ''}
+      />
+
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Total parents',
+            value: formatCount(stats?.totalParents.total ?? 0),
+            changePercent: stats?.totalParents.changePercent,
+          },
+          {
+            label: 'Linked students',
+            value: formatCount(stats?.linkedStudents.total ?? 0),
+            changePercent: stats?.linkedStudents.changePercent,
+          },
+          {
+            label: 'Unlinked parents',
+            value: formatCount(stats?.unlinkedParents.total ?? 0),
+            changePercent: stats?.unlinkedParents.changePercent,
+          },
+          {
+            label: 'New (30d)',
+            value: formatCount(stats?.newLast30Days.total ?? 0),
+            changePercent: stats?.newLast30Days.changePercent,
+          },
+        ]}
+      />
+
+      <FilterBar className="items-center">
+        <SearchInput value={search} onValueChange={handleSearchChange} />
+        {search && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('');
+              setPage(1);
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
+
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Parent</th>
+                <th className={dataTableThClass}>Email / Phone</th>
+                <th className={dataTableThClass}>Linked students</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {isLoading && <DataTableSkeletonRows columns={4} rows={limit} />}
+
+              {error && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                    Failed to load parents
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !error && data?.data.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
-                    Link student
-                  </Button>
-                </div>
-                {linkParentId === parent.id && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <select
-                      className="flex h-9 rounded-md border border-border bg-background px-3 text-sm"
-                      value={linkStudentId}
-                      onChange={(e) => setLinkStudentId(e.target.value)}
-                    >
-                      <option value="">Select student</option>
-                      {students?.data.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.fullName}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      disabled={!linkStudentId}
-                      onClick={() =>
-                        linkMutation.mutate({
-                          parentId: parent.id,
-                          body: { studentId: linkStudentId, relationshipCode: 'guardian' },
-                        })
-                      }
-                    >
-                      Link
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                    No parents found
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading &&
+                !error &&
+                data?.data.map((parent) => (
+                  <tr key={parent.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={dataTableTdClass}>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <UserAvatar name={parent.fullName} seed={parent.id} size="sm" />
+                        <span className="truncate font-normal text-[var(--text-main-900,#0A0D14)]">
+                          {parent.fullName}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={dataTableTdClass}>
+                      <div className="flex items-center gap-2">
+                        <ContactIcon
+                          href={parent.email ? `mailto:${parent.email}` : undefined}
+                          label={parent.email ?? 'No email'}
+                          disabled={!parent.email}
+                        >
+                          <Mail className="h-4 w-4" strokeWidth={1.2} />
+                        </ContactIcon>
+                        <ContactIcon
+                          href={parent.phone ? `tel:${parent.phone}` : undefined}
+                          label={parent.phone ?? 'No phone'}
+                          disabled={!parent.phone}
+                        >
+                          <Phone className="h-4 w-4" strokeWidth={1.2} />
+                        </ContactIcon>
+                      </div>
+                    </td>
+                    <td className={dataTableTdClass}>
+                      {parent.students.length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {parent.students.map((s) => (
+                            <span key={s.student.id} className="text-sm">
+                              {s.student.fullName}{' '}
+                              <span className="text-[var(--text-sub-500,#525866)]">
+                                ({s.relationshipCode})
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className={cn(dataTableTdClass, 'text-right')}>
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: 'Link student',
+                            onClick: () =>
+                              setLinkTarget({ id: parent.id, name: parent.fullName }),
+                          },
+                          ...parent.students.map((s) => ({
+                            label: `Unlink ${s.student.fullName}`,
+                            onClick: () =>
+                              unlinkMutation.mutate({
+                                parentId: parent.id,
+                                studentId: s.student.id,
+                              }),
+                          })),
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+
+        {data && (
+          <PaginationBar
+            page={page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

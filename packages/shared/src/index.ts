@@ -17,6 +17,8 @@ export * from './schemas/lookup.schema';
 export * from './schemas/timetable.schema';
 export * from './schemas/form-field.schema';
 export * from './schemas/document.schema';
+export * from './schemas/learning.schema';
+export * from './schemas/portal.schema';
 export * from './schemas/analytics.schema';
 export * from './schemas/ai-attendance.schema';
 export * from './schemas/communications.schema';

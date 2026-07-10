@@ -1,17 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadAttendanceRegister } from '@/lib/upload-attendance-register';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
-import { ListRow } from '@/components/layout/list-row';
-import { filterSelectClass } from '@/components/layout/filter-bar';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { StatusBadge } from '@/components/layout/status-badge';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { cn } from '@/lib/utils';
+
+const thClass =
+  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+const tdClass =
+  'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 interface OcrSession {
   id: string;
@@ -47,7 +57,7 @@ export default function AiAttendancePage() {
   const [statusByStudent, setStatusByStudent] = useState<Record<string, string>>({});
 
   const { data: branches } = useQuery({
-    queryKey: ['branches'],
+    queryKey: queryKeys.branches,
     queryFn: () => apiClient<{ data: { id: string }[] }>('/branches', { token }),
     enabled: !!token,
   });
@@ -65,13 +75,13 @@ export default function AiAttendancePage() {
   });
 
   const { data: statuses } = useQuery({
-    queryKey: ['lookups', 'attendance_status'],
+    queryKey: queryKeys.lookups('attendance_status'),
     queryFn: () =>
       apiClient<{ statuses: LookupStatus[] }>('/settings/lookups/attendance_status'),
   });
 
-  const { data: sessions } = useQuery({
-    queryKey: ['ai-attendance-sessions'],
+  const { data: sessions, isLoading: sessionsLoading } = useQuery({
+    queryKey: queryKeys.aiAttendanceSessions,
     queryFn: () => apiClient<{ data: OcrSession[] }>('/ai-attendance/sessions', { token }),
     enabled: !!token,
   });
@@ -81,6 +91,26 @@ export default function AiAttendancePage() {
     queryFn: () => apiClient<OcrSession>(`/ai-attendance/sessions/${activeSessionId}`, { token }),
     enabled: !!token && !!activeSessionId,
   });
+
+  const stats = useMemo(() => {
+    const list = sessions?.data ?? [];
+    return {
+      total: list.length,
+      pending: list.filter((s) => s.status !== 'confirmed').length,
+      confirmed: list.filter((s) => s.status === 'confirmed').length,
+      analyzed: list.filter((s) => s.suggestions.length > 0).length,
+    };
+  }, [sessions?.data]);
+
+  const batchOptions = [
+    { value: '', label: 'Select batch' },
+    ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+  ];
+
+  const statusOptions = (statuses?.statuses ?? []).map((st) => ({
+    value: st.id,
+    label: st.label,
+  }));
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -100,7 +130,7 @@ export default function AiAttendancePage() {
     onSuccess: (created) => {
       toast.success('Register uploaded');
       setActiveSessionId(created.id);
-      queryClient.invalidateQueries({ queryKey: ['ai-attendance-sessions'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -139,7 +169,7 @@ export default function AiAttendancePage() {
       }),
     onSuccess: () => {
       toast.success('Attendance confirmed');
-      queryClient.invalidateQueries({ queryKey: ['ai-attendance-sessions'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions });
       setActiveSessionId(null);
     },
     onError: (err: Error) => toast.error(err.message),
@@ -148,30 +178,33 @@ export default function AiAttendancePage() {
   const suggestions = activeSession?.suggestions ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={ScanLine}
         title="AI Attendance"
         description="Upload a register photo, review suggestions, then confirm — never auto-submitted"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>1. Upload register</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <select
-            className={filterSelectClass}
+      <MainStatsSection
+        isLoading={sessionsLoading}
+        stats={[
+          { label: 'Total sessions', value: stats.total },
+          { label: 'Pending review', value: stats.pending },
+          { label: 'Confirmed', value: stats.confirmed },
+          { label: 'Analyzed', value: stats.analyzed },
+        ]}
+      />
+
+      <ContentPanel title="1. Upload register">
+        <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
+          <SelectDropdown
+            aria-label="Batch"
+            placeholder="Select batch"
             value={batchId}
-            onChange={(e) => setBatchId(e.target.value)}
-            required
-          >
-            <option value="">Batch</option>
-            {batches?.data.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setBatchId}
+            options={batchOptions}
+            fullWidth
+          />
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           <Input
             type="file"
@@ -183,17 +216,14 @@ export default function AiAttendancePage() {
               else if (!batchId) toast.error('Select a batch first');
             }}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </ContentPanel>
 
       {activeSessionId && (
-        <Card>
-          <CardHeader>
-            <CardTitle>2. Analyze & review</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <ContentPanel title="2. Analyze & review">
+          <div className="space-y-4 px-5 py-5">
             <textarea
-              className="min-h-24 w-full rounded-md border border-border bg-background p-3 text-sm"
+              className="min-h-24 w-full rounded-md border border-[var(--stroke-soft-200,#E2E4E9)] bg-white p-3 text-sm"
               placeholder="Paste OCR text from register (optional if OPENAI_API_KEY is set)"
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
@@ -206,31 +236,39 @@ export default function AiAttendancePage() {
             </Button>
 
             {suggestions.length > 0 && (
-              <div className="divide-y divide-border">
-                {suggestions.map((s) => (
-                  <div key={s.studentId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                    <div>
-                      <p className="font-medium">{s.fullName}</p>
-                      <p className="text-muted-foreground">
-                        Confidence {Math.round(s.confidence * 100)}%
-                        {s.sourceLine ? ` · ${s.sourceLine}` : ''}
-                      </p>
-                    </div>
-                    <select
-                      className="flex h-9 rounded-md border border-border bg-background px-2 text-sm"
-                      value={statusByStudent[s.studentId] ?? s.statusId ?? ''}
-                      onChange={(e) =>
-                        setStatusByStudent((prev) => ({ ...prev, [s.studentId]: e.target.value }))
-                      }
-                    >
-                      {statuses?.statuses.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] border-separate border-spacing-0">
+                  <thead>
+                    <tr>
+                      <th className={thClass}>Student</th>
+                      <th className={thClass}>Confidence</th>
+                      <th className={thClass}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="[&>tr:last-child>td]:border-b-0">
+                    {suggestions.map((s) => (
+                      <tr key={s.studentId} className="hover:bg-[var(--neutral-50)]/50">
+                        <td className={tdClass}>
+                          <p className="font-medium">{s.fullName}</p>
+                          {s.sourceLine && (
+                            <p className="text-xs text-[var(--text-sub-500)]">{s.sourceLine}</p>
+                          )}
+                        </td>
+                        <td className={tdClass}>{Math.round(s.confidence * 100)}%</td>
+                        <td className={tdClass}>
+                          <SelectDropdown
+                            aria-label="Attendance status"
+                            value={statusByStudent[s.studentId] ?? s.statusId ?? ''}
+                            onValueChange={(value) =>
+                              setStatusByStudent((prev) => ({ ...prev, [s.studentId]: value }))
+                            }
+                            options={statusOptions}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
@@ -239,33 +277,56 @@ export default function AiAttendancePage() {
                 Confirm attendance
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </ContentPanel>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent sessions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="divide-y divide-border">
-            {sessions?.data.map((s) => (
-              <ListRow
-                key={s.id}
-                actions={
-                  <Button size="sm" variant="outline" onClick={() => setActiveSessionId(s.id)}>
-                    Open
-                  </Button>
-                }
-              >
-                <p className="text-sm">
-                  {s.date} · {s.status}
-                </p>
-              </ListRow>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <ContentPanel title="Recent sessions">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] border-separate border-spacing-0">
+            <thead>
+              <tr>
+                <th className={thClass}>Date</th>
+                <th className={thClass}>Status</th>
+                <th className={cn(thClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {sessionsLoading &&
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={3} className={tdClass}>
+                      <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                    </td>
+                  </tr>
+                ))}
+              {!sessionsLoading && stats.total === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                    No sessions yet
+                  </td>
+                </tr>
+              )}
+              {sessions?.data.map((s) => (
+                <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+                  <td className={tdClass}>{s.date}</td>
+                  <td className={tdClass}>
+                    <StatusBadge
+                      label={s.status}
+                      code={s.status === 'confirmed' ? 'active' : 'pending'}
+                    />
+                  </td>
+                  <td className={cn(tdClass, 'text-right')}>
+                    <RowActionsMenu
+                      items={[{ label: 'Open', onClick: () => setActiveSessionId(s.id) }]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ContentPanel>
     </div>
   );
 }

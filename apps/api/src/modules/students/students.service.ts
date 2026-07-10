@@ -2,15 +2,100 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser, PaginatedResponse } from '@eims/types';
+import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { computeChangePercent } from '../../common/utils/metrics.util';
+import type { AuthUser, PaginatedResponse, StudentsStatsResponse } from '@eims/types';
 import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from '@eims/shared';
+
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(branchId: string | null): Promise<StudentsStatsResponse> {
+    const cacheKey = `students:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<StudentsStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.buildStats(branchId);
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
+
+  private async buildStats(branchId: string | null): Promise<StudentsStatsResponse> {
+    const branchFilter = branchId ? { branchId } : {};
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+
+    const [activeStatusId, inactiveStatusId] = await Promise.all([
+      this.lookupCache.getStatusId('student_status', 'active'),
+      this.lookupCache.getStatusId('student_status', 'inactive'),
+    ]);
+
+    const baseStudent = { ...branchFilter, deletedAt: null };
+    const previousStudent = { ...baseStudent, createdAt: { lte: thirtyDaysAgo } };
+    const baseBatch = { ...branchFilter, deletedAt: null };
+    const previousBatch = { ...baseBatch, createdAt: { lte: thirtyDaysAgo } };
+
+    const [
+      totalStudents,
+      totalStudentsPrevious,
+      activeStudents,
+      activeStudentsPrevious,
+      inactiveStudents,
+      inactiveStudentsPrevious,
+      totalBatches,
+      totalBatchesPrevious,
+    ] = await Promise.all([
+      this.prisma.student.count({ where: baseStudent }),
+      this.prisma.student.count({ where: previousStudent }),
+      activeStatusId
+        ? this.prisma.student.count({ where: { ...baseStudent, statusId: activeStatusId } })
+        : Promise.resolve(0),
+      activeStatusId
+        ? this.prisma.student.count({
+            where: { ...previousStudent, statusId: activeStatusId },
+          })
+        : Promise.resolve(0),
+      inactiveStatusId
+        ? this.prisma.student.count({ where: { ...baseStudent, statusId: inactiveStatusId } })
+        : Promise.resolve(0),
+      inactiveStatusId
+        ? this.prisma.student.count({
+            where: { ...previousStudent, statusId: inactiveStatusId },
+          })
+        : Promise.resolve(0),
+      this.prisma.batch.count({ where: baseBatch }),
+      this.prisma.batch.count({ where: previousBatch }),
+    ]);
+
+    return {
+      totalStudents: {
+        total: totalStudents,
+        changePercent: computeChangePercent(totalStudents, totalStudentsPrevious),
+      },
+      activeStudents: {
+        total: activeStudents,
+        changePercent: computeChangePercent(activeStudents, activeStudentsPrevious),
+      },
+      inactiveStudents: {
+        total: inactiveStudents,
+        changePercent: computeChangePercent(inactiveStudents, inactiveStudentsPrevious),
+      },
+      totalBatches: {
+        total: totalBatches,
+        changePercent: computeChangePercent(totalBatches, totalBatchesPrevious),
+      },
+    };
+  }
 
   async findAll(
     query: ListStudentsQuery,
@@ -22,7 +107,13 @@ export class StudentsService {
       ...(query.batchId ? { batchId: query.batchId } : {}),
       ...(query.statusId ? { statusId: query.statusId } : {}),
       ...(query.search
-        ? { fullName: { contains: query.search, mode: 'insensitive' as const } }
+        ? {
+            OR: [
+              { fullName: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search, mode: 'insensitive' as const } },
+              { cnicOrBForm: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
         : {}),
     };
 
@@ -48,6 +139,7 @@ export class StudentsService {
           updatedAt: true,
           batch: { select: { id: true, name: true } },
           program: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -56,8 +148,22 @@ export class StudentsService {
       this.prisma.student.count({ where }),
     ]);
 
+    const statusIds = [...new Set(data.map((s) => s.statusId))];
+    const statusRows = statusIds.length
+      ? await this.prisma.lookupStatus.findMany({
+          where: { id: { in: statusIds } },
+          select: { id: true, code: true, label: true },
+        })
+      : [];
+    const statusMap = new Map(statusRows.map((s) => [s.id, s]));
+
     return {
-      data: data.map((s) => this.toResponse(s)),
+      data: data.map((s) =>
+        this.toResponse({
+          ...s,
+          status: statusMap.get(s.statusId) ?? null,
+        }),
+      ),
       meta: {
         total,
         page: query.page,
@@ -75,23 +181,49 @@ export class StudentsService {
       if (!batch) throw new BadRequestException('Invalid batch for this branch');
     }
 
-    const student = await this.prisma.student.create({
-      data: {
-        branchId: input.branchId,
-        fullName: input.fullName,
-        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null,
-        gender: input.gender,
-        cnicOrBForm: input.cnicOrBForm,
-        phone: input.phone,
-        email: input.email,
-        address: input.address,
-        programId: input.programId,
-        batchId: input.batchId,
-        statusId: input.statusId,
-        customFields: input.customFields ?? {},
-        createdById: user.id,
-      },
-      include: { batch: true, program: true },
+    const student = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.student.create({
+        data: {
+          branchId: input.branchId,
+          fullName: input.fullName,
+          dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null,
+          gender: input.gender,
+          cnicOrBForm: input.cnicOrBForm,
+          phone: input.phone,
+          email: input.email,
+          address: input.address,
+          programId: input.programId,
+          batchId: input.batchId,
+          statusId: input.statusId,
+          customFields: input.customFields ?? {},
+          createdById: user.id,
+        },
+        include: { batch: true, program: true },
+      });
+
+      if (input.guardians?.length) {
+        for (const guardian of input.guardians) {
+          const parent = await tx.parent.create({
+            data: {
+              fullName: guardian.fullName,
+              phone: guardian.phone,
+              email: guardian.email,
+              address: guardian.address,
+              cnic: guardian.cnic,
+            },
+          });
+
+          await tx.studentParent.create({
+            data: {
+              studentId: created.id,
+              parentId: parent.id,
+              relationshipCode: guardian.relationshipCode,
+            },
+          });
+        }
+      }
+
+      return created;
     });
 
     await this.audit.log({
@@ -242,6 +374,8 @@ export class StudentsService {
     updatedAt: Date;
     batch?: { id: string; name: string } | null;
     program?: { id: string; name: string } | null;
+    branch?: { id: string; name: string } | null;
+    status?: { id: string; code: string; label: string } | null;
   }) {
     return {
       id: student.id,
@@ -263,6 +397,10 @@ export class StudentsService {
           : {},
       batch: student.batch ? { id: student.batch.id, name: student.batch.name } : undefined,
       program: student.program ? { id: student.program.id, name: student.program.name } : undefined,
+      branch: student.branch ? { id: student.branch.id, name: student.branch.name } : undefined,
+      status: student.status
+        ? { id: student.status.id, code: student.status.code, label: student.status.label }
+        : undefined,
       createdAt: student.createdAt.toISOString(),
       updatedAt: student.updatedAt.toISOString(),
     };

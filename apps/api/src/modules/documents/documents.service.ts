@@ -3,8 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, DocumentsStatsResponse } from '@eims/types';
 import type { CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
+
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class DocumentsService {
@@ -14,12 +18,50 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
+    private readonly ttlCache: TtlCacheService,
   ) {
     const url = this.config.get<string>('SUPABASE_URL');
     const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
     if (url && key) {
       this.supabaseAdmin = createClient(url, key);
     }
+  }
+
+  async getStats(branchId: string | null): Promise<DocumentsStatsResponse> {
+    const cacheKey = `documents:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<DocumentsStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const thirtyAgo = thirtyDaysAgo();
+    const base = { deletedAt: null, ...branchFilter };
+
+    const [total, totalPrev, recent, recentPrev, studentDocs, otherDocs] = await Promise.all([
+      this.prisma.document.count({ where: base }),
+      this.prisma.document.count({ where: { ...base, createdAt: { lte: thirtyAgo } } }),
+      this.prisma.document.count({ where: { ...base, createdAt: { gte: thirtyAgo } } }),
+      this.prisma.document.count({
+        where: {
+          ...base,
+          createdAt: {
+            gte: new Date(thirtyAgo.getTime() - 30 * 86400000),
+            lt: thirtyAgo,
+          },
+        },
+      }),
+      this.prisma.document.count({ where: { ...base, studentId: { not: null } } }),
+      this.prisma.document.count({ where: { ...base, studentId: null } }),
+    ]);
+
+    const result: DocumentsStatsResponse = {
+      totalFiles: countWithTrend(total, totalPrev),
+      recentUploads: countWithTrend(recent, recentPrev),
+      studentDocuments: countWithTrend(studentDocs, 0),
+      otherDocuments: countWithTrend(otherDocs, 0),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
   }
 
   async findAll(query: ListDocumentsQuery, branchId: string | null) {

@@ -17,6 +17,7 @@ import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   attendanceSheetQuerySchema,
+  attendanceGridQuerySchema,
   bulkAttendanceSchema,
   attendanceHistoryQuerySchema,
   staffAttendanceSheetQuerySchema,
@@ -25,6 +26,7 @@ import {
 import type { AuthUser } from '@eims/types';
 import type {
   AttendanceSheetQuery,
+  AttendanceGridQuery,
   BulkAttendanceInput,
   AttendanceHistoryQuery,
   StaffAttendanceSheetQuery,
@@ -38,6 +40,22 @@ import type {
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
+  @Get('stats')
+  @Permissions('attendance.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.attendanceService.getStats(branchId);
+  }
+
+  @Get('trend')
+  @Permissions('attendance.read')
+  getTrend(
+    @Query('month') month: string,
+    @BranchId() branchId: string | null,
+  ) {
+    const effectiveMonth = month ?? new Date().toISOString().slice(0, 7);
+    return this.attendanceService.getTrend(branchId, effectiveMonth);
+  }
+
   @Get('sheet')
   @Permissions('attendance.read')
   getSheet(
@@ -45,6 +63,15 @@ export class AttendanceController {
     @BranchId() branchId: string | null,
   ) {
     return this.attendanceService.getSheet(query, branchId);
+  }
+
+  @Get('grid')
+  @Permissions('attendance.read')
+  getGrid(
+    @Query(createZodPipe(attendanceGridQuerySchema)) query: AttendanceGridQuery,
+    @BranchId() branchId: string | null,
+  ) {
+    return this.attendanceService.getGrid(query, branchId);
   }
 
   @Get('history')

@@ -1,4 +1,4 @@
-export const DEMO_SEED_VERSION = 'rekhta-v1';
+export const DEMO_SEED_VERSION = 'rekhta-v1.1';
 
 export interface DemoConfig {
   version: string;
@@ -26,6 +26,8 @@ export interface DemoAccount {
   role: string;
   branchCode?: string | null;
   phone?: string;
+  gender?: 'male' | 'female' | 'other';
+  cnic?: string;
 }
 
 export interface DemoBatch {

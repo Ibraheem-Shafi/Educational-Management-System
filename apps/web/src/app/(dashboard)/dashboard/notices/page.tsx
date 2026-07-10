@@ -1,17 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { useEffectiveBranchId } from '@/hooks/use-branches';
+import type { NoticesStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/page-header';
-import { filterSelectClass } from '@/components/layout/filter-bar';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { StatusBadge } from '@/components/layout/status-badge';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { CreateNoticeDialog } from '@/components/features/notices/create-notice-dialog';
 import { useNoticesRealtime } from '@/hooks/use-notices-realtime';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 
 const NOTICES_KEYS = ['notices'] as const;
 
@@ -23,45 +43,63 @@ interface Notice {
   isPublished: boolean;
 }
 
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+function formatAudience(audience: string): string {
+  return audience.charAt(0).toUpperCase() + audience.slice(1);
+}
+
 export default function NoticesPage() {
   const { session, user } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [audience, setAudience] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
+  const [search, setSearch] = useState('');
+  const [audience, setAudience] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   useNoticesRealtime(NOTICES_KEYS);
 
-  const { data: branches } = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
+  const { effectiveBranchId, branches } = useEffectiveBranchId(token, user?.branchId, branchId);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+  }, []);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.noticesStats,
+    queryFn: () => apiClient<NoticesStatsResponse>('/notices/stats', { token }),
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['notices', effectiveBranchId],
     queryFn: () =>
       apiClient<{ data: Notice[] }>(`/notices?branchId=${effectiveBranchId}`, { token }),
     enabled: !!token && !!effectiveBranchId,
   });
 
-  const createMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiClient('/notices', { method: 'POST', token, body: JSON.stringify(payload) }),
-    onSuccess: () => {
-      toast.success('Notice created');
-      queryClient.invalidateQueries({ queryKey: ['notices'] });
-      setShowForm(false);
-      setTitle('');
-      setBody('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const filteredNotices = useMemo(() => {
+    const list = data?.data ?? [];
+    return list.filter((notice) => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (
+          !notice.title.toLowerCase().includes(q) &&
+          !notice.body.toLowerCase().includes(q)
+        ) {
+          return false;
+        }
+      }
+      if (audience && notice.audience !== audience) return false;
+      if (statusFilter === 'published' && !notice.isPublished) return false;
+      if (statusFilter === 'draft' && notice.isPublished) return false;
+      return true;
+    });
+  }, [data?.data, search, audience, statusFilter]);
 
   const publishMutation = useMutation({
     mutationFn: (id: string) =>
@@ -73,6 +111,7 @@ export default function NoticesPage() {
     onSuccess: () => {
       toast.success('Notice published');
       queryClient.invalidateQueries({ queryKey: ['notices'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.noticesStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -82,115 +121,193 @@ export default function NoticesPage() {
     onSuccess: () => {
       toast.success('Notice deleted');
       queryClient.invalidateQueries({ queryKey: ['notices'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.noticesStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={Megaphone}
         title="Notices"
         description="Announcements for staff and portals"
         actions={
-          <Button onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'New notice'}</Button>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className={pageHeaderActionClassName}
+          >
+            <PageHeaderActionIcon />
+            New notice
+          </button>
         }
       />
 
-      {!user?.branchId && branches?.data && branches.data.length > 1 && (
-        <select
-          className={filterSelectClass}
-          value={branchId}
-          onChange={(e) => setBranchId(e.target.value)}
-        >
-          {branches.data.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-      )}
+      <CreateNoticeDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        branchId={effectiveBranchId}
+      />
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create notice</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <textarea
-              className="min-h-[120px] w-full rounded-md border border-border bg-background p-3 text-sm"
-              placeholder="Body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <select
-              className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-            >
-              <option value="all">Everyone</option>
-              <option value="parents">Parents</option>
-              <option value="students">Students</option>
-              <option value="staff">Staff</option>
-              <option value="teachers">Teachers</option>
-            </select>
-            <Button
-              onClick={() =>
-                createMutation.mutate({
-                  branchId: effectiveBranchId,
-                  title,
-                  body,
-                  audience,
-                })
-              }
-              disabled={createMutation.isPending || !title || !body}
-            >
-              Save draft
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Published',
+            value: formatCount(stats?.published.total ?? 0),
+            changePercent: stats?.published.changePercent,
+          },
+          {
+            label: 'Drafts',
+            value: formatCount(stats?.draft.total ?? 0),
+            changePercent: stats?.draft.changePercent,
+          },
+          {
+            label: 'Scheduled',
+            value: formatCount(stats?.scheduled.total ?? 0),
+            changePercent: stats?.scheduled.changePercent,
+          },
+          {
+            label: 'Total views',
+            value: formatCount(stats?.totalViews.total ?? 0),
+            changePercent: stats?.totalViews.changePercent,
+          },
+        ]}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All notices</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <ListLoadingSkeleton />}
-          <div className="divide-y divide-border">
-            {data?.data.map((notice) => (
-              <div key={notice.id} className="py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-medium">{notice.title}</p>
-                    <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{notice.body}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {notice.audience} · {notice.isPublished ? 'Published' : 'Draft'}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                  {!notice.isPublished && (
-                    <Button size="sm" onClick={() => publishMutation.mutate(notice.id)}>
-                      Publish
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive"
-                    onClick={() => {
-                      if (confirm('Delete this notice?')) deleteMutation.mutate(notice.id);
-                    }}
+      <FilterBar className="items-center">
+        <SearchInput value={search} onValueChange={handleSearchChange} />
+        <SelectDropdown
+          aria-label="Filter by audience"
+          placeholder="All audiences"
+          value={audience}
+          onValueChange={setAudience}
+          options={[
+            { value: '', label: 'All audiences' },
+            { value: 'all', label: 'Everyone' },
+            { value: 'parents', label: 'Parents' },
+            { value: 'students', label: 'Students' },
+            { value: 'staff', label: 'Staff' },
+            { value: 'teachers', label: 'Teachers' },
+          ]}
+        />
+        <SelectDropdown
+          aria-label="Filter by status"
+          placeholder="All statuses"
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          options={[
+            { value: '', label: 'All statuses' },
+            { value: 'published', label: 'Published' },
+            { value: 'draft', label: 'Draft' },
+          ]}
+        />
+        {!user?.branchId && branches?.data && branches.data.length > 1 && (
+          <SelectDropdown
+            aria-label="Branch"
+            placeholder="Select branch"
+            value={branchId}
+            onValueChange={setBranchId}
+            options={branches.data.map((b) => ({ value: b.id, label: b.name }))}
+          />
+        )}
+        {(search || audience || statusFilter) && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('');
+              setAudience('');
+              setStatusFilter('');
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
+
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Title</th>
+                <th className={dataTableThClass}>Audience</th>
+                <th className={dataTableThClass}>Status</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {isLoading && <DataTableSkeletonRows columns={4} rows={8} />}
+
+              {error && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                    Failed to load notices
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !error && filteredNotices.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
-                    Delete
-                  </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                    No notices found
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading &&
+                !error &&
+                filteredNotices.map((notice) => (
+                  <tr key={notice.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={dataTableTdClass}>
+                      <div className="min-w-0">
+                        <p className="font-normal text-[var(--text-main-900,#0A0D14)]">
+                          {notice.title}
+                        </p>
+                        <p className="mt-0.5 line-clamp-1 text-sm text-[var(--text-sub-500,#525866)]">
+                          {notice.body}
+                        </p>
+                      </div>
+                    </td>
+                    <td className={dataTableTdClass}>{formatAudience(notice.audience)}</td>
+                    <td className={dataTableTdClass}>
+                      <StatusBadge
+                        label={notice.isPublished ? 'Published' : 'Draft'}
+                        code={notice.isPublished ? 'active' : 'draft'}
+                      />
+                    </td>
+                    <td className={cn(dataTableTdClass, 'text-right')}>
+                      <RowActionsMenu
+                        items={[
+                          ...(!notice.isPublished
+                            ? [
+                                {
+                                  label: 'Publish',
+                                  onClick: () => publishMutation.mutate(notice.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Delete',
+                            onClick: () => {
+                              if (confirm('Delete this notice?')) {
+                                deleteMutation.mutate(notice.id);
+                              }
+                            },
+                          },
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

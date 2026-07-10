@@ -28,6 +28,12 @@ import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput } from
 export class ParentsController {
   constructor(private readonly parentsService: ParentsService) {}
 
+  @Get('stats')
+  @Permissions('students.read')
+  getStats() {
+    return this.parentsService.getStats();
+  }
+
   @Get()
   @Permissions('students.read')
   findAll(@Query(createZodPipe(listParentsQuerySchema)) query: ListParentsQuery) {

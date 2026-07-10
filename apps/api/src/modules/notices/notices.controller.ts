@@ -29,6 +29,12 @@ import type { CreateNoticeInput, UpdateNoticeInput, ListNoticesQuery } from '@ei
 export class NoticesController {
   constructor(private readonly noticesService: NoticesService) {}
 
+  @Get('stats')
+  @Permissions('students.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.noticesService.getStats(branchId);
+  }
+
   @Get()
   @Permissions('students.read')
   findAll(

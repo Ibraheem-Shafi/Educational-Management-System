@@ -10,10 +10,13 @@ import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../../common/email/email.service';
 import { AuthCacheService } from '../../common/auth/auth-cache.service';
-import type { AuthUser, PaginatedResponse } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import type { AuthUser, PaginatedResponse, StaffListRow, UsersStatsResponse } from '@eims/types';
 import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
+import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class UsersService {
@@ -23,22 +26,39 @@ export class UsersService {
     private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly authCache: AuthCacheService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async findAll(query: ListUsersQuery, branchId: string | null): Promise<PaginatedResponse<Record<string, unknown>>> {
-    const effectiveBranchId = branchId ?? query.branchId;
-    const where = {
-      deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { fullName: { contains: query.search, mode: 'insensitive' as const } },
-              { email: { contains: query.search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
-    };
+  async getStats(branchId: string | null): Promise<UsersStatsResponse> {
+    const cacheKey = `users:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<UsersStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.buildStats(branchId);
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
+
+  async findAll(query: ListUsersQuery, branchId: string | null): Promise<PaginatedResponse<StaffListRow>> {
+    const effectiveBranchId = branchId ?? query.branchId ?? null;
+
+    if (query.status === 'invited') {
+      return this.findInvitationsPaginated(query, effectiveBranchId);
+    }
+
+    if (query.status === 'active' || query.status === 'inactive') {
+      return this.findUsersPaginated(query, effectiveBranchId, query.status);
+    }
+
+    return this.findStaffCombined(query, effectiveBranchId);
+  }
+
+  private async findUsersPaginated(
+    query: ListUsersQuery,
+    effectiveBranchId: string | null,
+    status: 'active' | 'inactive',
+  ): Promise<PaginatedResponse<StaffListRow>> {
+    const where = this.buildUserWhere(query, effectiveBranchId, status);
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -55,13 +75,195 @@ export class UsersService {
     ]);
 
     return {
-      data: users.map((u) => this.toUserResponse(u)),
+      data: users.map((user) => this.toStaffRow(user)),
       meta: {
         total,
         page: query.page,
         limit: query.limit,
         totalPages: Math.ceil(total / query.limit),
       },
+    };
+  }
+
+  private async findInvitationsPaginated(
+    query: ListUsersQuery,
+    effectiveBranchId: string | null,
+  ): Promise<PaginatedResponse<StaffListRow>> {
+    const where = {
+      acceptedAt: null,
+      expiresAt: { gt: new Date() },
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.roleId ? { roleId: query.roleId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { email: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [invitations, total] = await Promise.all([
+      this.prisma.invitation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.invitation.count({ where }),
+    ]);
+
+    const roleIds = [...new Set(invitations.map((inv) => inv.roleId))];
+    const branchIds = [...new Set(invitations.map((inv) => inv.branchId).filter(Boolean))] as string[];
+
+    const [roles, branches] = await Promise.all([
+      roleIds.length
+        ? this.prisma.role.findMany({
+            where: { id: { in: roleIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+      branchIds.length
+        ? this.prisma.branch.findMany({
+            where: { id: { in: branchIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+    ]);
+
+    const roleMap = new Map(roles.map((role) => [role.id, role.name]));
+    const branchMap = new Map(branches.map((branch) => [branch.id, branch.name]));
+
+    return {
+      data: invitations.map((invitation) =>
+        this.toInvitationStaffRow(invitation, roleMap.get(invitation.roleId) ?? '—', invitation.branchId ? branchMap.get(invitation.branchId) ?? null : null),
+      ),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+  }
+
+  private async findStaffCombined(
+    query: ListUsersQuery,
+    effectiveBranchId: string | null,
+  ): Promise<PaginatedResponse<StaffListRow>> {
+    const userWhere = this.buildUserWhere(query, effectiveBranchId);
+    const invitationWhere = {
+      acceptedAt: null,
+      expiresAt: { gt: new Date() },
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.roleId ? { roleId: query.roleId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { email: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [users, invitations] = await Promise.all([
+      this.prisma.user.findMany({
+        where: userWhere,
+        include: {
+          branch: { select: { id: true, name: true, code: true } },
+          userRoles: { include: { role: { select: { id: true, code: true, name: true } } } },
+        },
+        orderBy: { fullName: 'asc' },
+      }),
+      this.prisma.invitation.findMany({ where: invitationWhere, orderBy: { createdAt: 'desc' } }),
+    ]);
+
+    const roleIds = [...new Set(invitations.map((inv) => inv.roleId))];
+    const branchIds = [...new Set(invitations.map((inv) => inv.branchId).filter(Boolean))] as string[];
+
+    const [roles, branches] = await Promise.all([
+      roleIds.length
+        ? this.prisma.role.findMany({
+            where: { id: { in: roleIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+      branchIds.length
+        ? this.prisma.branch.findMany({
+            where: { id: { in: branchIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+    ]);
+
+    const roleMap = new Map(roles.map((role) => [role.id, role.name]));
+    const branchMap = new Map(branches.map((branch) => [branch.id, branch.name]));
+
+    let rows: StaffListRow[] = [
+      ...users.map((user) => this.toStaffRow(user)),
+      ...invitations.map((invitation) =>
+        this.toInvitationStaffRow(
+          invitation,
+          roleMap.get(invitation.roleId) ?? '—',
+          invitation.branchId ? branchMap.get(invitation.branchId) ?? null : null,
+        ),
+      ),
+    ];
+
+    if (query.roleId) {
+      rows = rows.filter((row) => row.roleId === query.roleId);
+    }
+
+    if (query.search) {
+      const term = query.search.toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          row.fullName.toLowerCase().includes(term) ||
+          row.email.toLowerCase().includes(term) ||
+          row.staffCode.toLowerCase().includes(term) ||
+          row.id.toLowerCase().includes(term),
+      );
+    }
+
+    rows.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    const total = rows.length;
+    const start = (query.page - 1) * query.limit;
+    const data = rows.slice(start, start + query.limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+  }
+
+  private buildUserWhere(
+    query: ListUsersQuery,
+    effectiveBranchId: string | null,
+    status?: 'active' | 'inactive',
+  ) {
+    return {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(status === 'active' ? { isActive: true } : {}),
+      ...(status === 'inactive' ? { isActive: false } : {}),
+      ...(query.roleId ? { userRoles: { some: { roleId: query.roleId } } } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { fullName: { contains: query.search, mode: 'insensitive' as const } },
+              { email: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
   }
 
@@ -81,18 +283,25 @@ export class UsersService {
     return this.toUserResponse(user);
   }
 
-  async update(id: string, input: { isActive?: boolean }, actor: AuthUser, branchId: string | null) {
+  async update(id: string, input: UpdateUserInput, actor: AuthUser, branchId: string | null) {
     const existing = await this.prisma.user.findFirst({
       where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
     });
     if (!existing) throw new NotFoundException('User not found');
-    if (existing.id === actor.id) throw new BadRequestException('Cannot deactivate your own account');
+    if (existing.id === actor.id && input.isActive === false) {
+      throw new BadRequestException('Cannot deactivate your own account');
+    }
 
     const user = await this.prisma.user.update({
       where: { id },
       data: {
+        ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.gender !== undefined ? { gender: input.gender } : {}),
+        ...(input.cnic !== undefined ? { cnic: input.cnic } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.isActive === false ? { deletedAt: new Date() } : { deletedAt: null }),
+        ...(input.isActive === false ? { deletedAt: new Date() } : {}),
+        ...(input.isActive === true ? { deletedAt: null } : {}),
       },
       include: {
         branch: { select: { id: true, name: true, code: true } },
@@ -110,6 +319,7 @@ export class UsersService {
     });
 
     this.authCache.invalidateSupabaseUser(existing.supabaseUserId);
+    this.invalidateUsersCache();
     return this.toUserResponse(user);
   }
 
@@ -202,6 +412,8 @@ export class UsersService {
       settings?.primaryColor ?? '#2563eb',
     );
 
+    this.invalidateUsersCache();
+
     return {
       id: invitation.id,
       email: invitation.email,
@@ -213,11 +425,138 @@ export class UsersService {
     };
   }
 
+  private invalidateUsersCache(): void {
+    this.ttlCache.deleteByPrefix('users:stats:');
+  }
+
+  private async buildStats(branchId: string | null): Promise<UsersStatsResponse> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+
+    const userWhere = {
+      deletedAt: null,
+      ...(branchId ? { branchId } : {}),
+    };
+    const userWherePrevious = {
+      ...userWhere,
+      createdAt: { lte: thirtyDaysAgo },
+    };
+    const activeWhere = { ...userWhere, isActive: true };
+    const activeWherePrevious = { ...userWherePrevious, isActive: true };
+    const inactiveWhere = { ...userWhere, isActive: false };
+    const inactiveWherePrevious = { ...userWherePrevious, isActive: false };
+    const invitationWhere = {
+      acceptedAt: null,
+      expiresAt: { gt: new Date() },
+      ...(branchId ? { branchId } : {}),
+    };
+
+    const [
+      totalUsers,
+      totalUsersPrevious,
+      activeUsers,
+      activeUsersPrevious,
+      inactiveUsers,
+      inactiveUsersPrevious,
+      pendingInvitations,
+    ] = await Promise.all([
+      this.prisma.user.count({ where: userWhere }),
+      this.prisma.user.count({ where: userWherePrevious }),
+      this.prisma.user.count({ where: activeWhere }),
+      this.prisma.user.count({ where: activeWherePrevious }),
+      this.prisma.user.count({ where: inactiveWhere }),
+      this.prisma.user.count({ where: inactiveWherePrevious }),
+      this.prisma.invitation.count({ where: invitationWhere }),
+    ]);
+
+    return {
+      totalUsers: {
+        total: totalUsers,
+        changePercent: computeChangePercent(totalUsers, totalUsersPrevious),
+      },
+      activeUsers: {
+        total: activeUsers,
+        changePercent: computeChangePercent(activeUsers, activeUsersPrevious),
+      },
+      inactiveUsers: {
+        total: inactiveUsers,
+        changePercent: computeChangePercent(inactiveUsers, inactiveUsersPrevious),
+      },
+      pendingInvitations: {
+        total: pendingInvitations,
+        changePercent: null,
+      },
+    };
+  }
+
+  private formatStaffCode(id: string): string {
+    return `STF-${id.slice(-6).toUpperCase()}`;
+  }
+
+  private toStaffRow(user: {
+    id: string;
+    email: string;
+    fullName: string;
+    phone: string | null;
+    gender: string | null;
+    cnic: string | null;
+    isActive: boolean;
+    branch?: { name: string } | null;
+    userRoles: Array<{ role: { id: string; name: string } }>;
+  }): StaffListRow {
+    const primaryRole = user.userRoles[0]?.role;
+    return {
+      id: user.id,
+      staffCode: this.formatStaffCode(user.id),
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      cnic: user.cnic,
+      gender: user.gender,
+      branchName: user.branch?.name ?? 'All branches',
+      roleName: primaryRole?.name ?? '—',
+      roleId: primaryRole?.id ?? null,
+      status: user.isActive ? 'active' : 'inactive',
+      isInvitation: false,
+    };
+  }
+
+  private toInvitationStaffRow(
+    invitation: { id: string; email: string; roleId: string },
+    roleName: string,
+    branchName: string | null,
+  ): StaffListRow {
+    const localName = invitation.email.split('@')[0]?.replace(/[._]/g, ' ') ?? invitation.email;
+    const displayName = localName
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
+    return {
+      id: invitation.id,
+      staffCode: this.formatStaffCode(invitation.id),
+      fullName: displayName || invitation.email,
+      email: invitation.email,
+      phone: null,
+      cnic: null,
+      gender: null,
+      branchName: branchName ?? 'All branches',
+      roleName,
+      roleId: invitation.roleId,
+      status: 'invited',
+      isInvitation: true,
+    };
+  }
+
   private toUserResponse(user: {
     id: string;
     email: string;
     fullName: string;
     phone: string | null;
+    gender: string | null;
+    cnic: string | null;
     branchId: string | null;
     isActive: boolean;
     lastLoginAt: Date | null;
@@ -230,6 +569,8 @@ export class UsersService {
       email: user.email,
       fullName: user.fullName,
       phone: user.phone,
+      gender: user.gender,
+      cnic: user.cnic,
       branchId: user.branchId,
       branch: user.branch,
       isActive: user.isActive,

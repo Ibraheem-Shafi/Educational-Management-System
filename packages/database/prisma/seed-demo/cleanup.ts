@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { DemoConfig } from './types';
+import { DEMO_LEARNING_TITLES } from './steps/09-learning';
 
 export async function cleanupDemoData(prisma: PrismaClient, config: DemoConfig): Promise<void> {
   const demoEmails = config.accounts.map((a) => a.email);
@@ -66,6 +67,12 @@ export async function cleanupDemoData(prisma: PrismaClient, config: DemoConfig):
   });
   await prisma.document.deleteMany({
     where: { title: { in: config.documents.map((d) => d.title) } },
+  });
+  await prisma.learningAttachment.deleteMany({
+    where: { resource: { title: { in: [...DEMO_LEARNING_TITLES] } } },
+  });
+  await prisma.learningResource.deleteMany({
+    where: { title: { in: [...DEMO_LEARNING_TITLES] } },
   });
   await prisma.communicationLog.deleteMany({});
 

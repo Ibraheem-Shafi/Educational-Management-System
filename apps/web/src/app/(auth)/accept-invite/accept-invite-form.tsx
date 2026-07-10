@@ -10,6 +10,17 @@ import { useInstitution } from '@/providers/institution-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  FormFieldLabel,
+  modalFieldClassName,
+} from '@/components/features/users/invite-form-fields';
+import { cn } from '@/lib/utils';
+
+const primaryButtonClassName = cn(
+  'h-10 w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
+  'text-sm font-medium leading-5 tracking-[-0.006em] text-white',
+  'hover:bg-[var(--midnight-blue-950,#01366C)] hover:opacity-90',
+);
 
 export function AcceptInviteForm() {
   const router = useRouter();
@@ -42,28 +53,32 @@ export function AcceptInviteForm() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <p className="text-muted-foreground">Invalid invitation link.</p>
+      <div className="flex min-h-screen items-center justify-center p-4 font-[family-name:var(--font-inter)]">
+        <p className="text-[var(--text-sub-500,#525866)]">Invalid invitation link.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-weak-50,#F6F8FA)] p-4 font-[family-name:var(--font-inter)]">
+      <Card className="w-full max-w-md rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white shadow-none">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--institution-primary)]/10">
-            <GraduationCap className="h-6 w-6 text-[var(--institution-primary)]" />
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
+            <GraduationCap className="h-6 w-6 text-[var(--midnight-blue-950,#01366C)]" />
           </div>
-          <CardTitle>Join {name}</CardTitle>
-          <CardDescription>Complete your account setup</CardDescription>
+          <CardTitle className="font-[family-name:var(--font-inter)] text-[var(--text-main-900,#0A0D14)]">
+            Join {name}
+          </CardTitle>
+          <CardDescription className="font-[family-name:var(--font-inter)] text-[var(--text-sub-500,#525866)]">
+            Complete your account setup
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading && <p className="text-center text-muted-foreground">Validating invitation...</p>}
+          {isLoading && (
+            <p className="text-center text-[var(--text-sub-500,#525866)]">Validating invitation...</p>
+          )}
           {error && (
-            <p className="text-center text-red-600">
-              This invitation is invalid or has expired.
-            </p>
+            <p className="text-center text-red-600">This invitation is invalid or has expired.</p>
           )}
           {invite && (
             <form
@@ -73,29 +88,43 @@ export function AcceptInviteForm() {
                 acceptMutation.mutate();
               }}
             >
-              <div className="rounded-md bg-muted p-3 text-sm">
+              <div className="rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-[var(--bg-weak-50,#F6F8FA)] p-3 text-sm">
                 <p>
-                  <span className="text-muted-foreground">Email:</span> {invite.email}
+                  <span className="text-[var(--text-sub-500,#525866)]">Email:</span>{' '}
+                  <span className="text-[var(--text-main-900,#0A0D14)]">{invite.email}</span>
                 </p>
                 <p>
-                  <span className="text-muted-foreground">Role:</span> {invite.role?.name ?? '—'}
+                  <span className="text-[var(--text-sub-500,#525866)]">Role:</span>{' '}
+                  <span className="text-[var(--text-main-900,#0A0D14)]">
+                    {invite.role?.name ?? '—'}
+                  </span>
                 </p>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Full name</label>
-                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+              <div>
+                <FormFieldLabel required>Full name</FormFieldLabel>
+                <Input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className={modalFieldClassName}
+                />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Password</label>
+              <div>
+                <FormFieldLabel required>Password</FormFieldLabel>
                 <Input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   minLength={8}
                   required
+                  className={modalFieldClassName}
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={acceptMutation.isPending}>
+              <Button
+                type="submit"
+                className={primaryButtonClassName}
+                disabled={acceptMutation.isPending}
+              >
                 {acceptMutation.isPending ? 'Creating account...' : 'Activate account'}
               </Button>
             </form>

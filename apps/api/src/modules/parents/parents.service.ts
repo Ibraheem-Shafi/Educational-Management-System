@@ -6,15 +6,61 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser, PaginatedResponse } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput } from '@eims/shared';
+
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class ParentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(): Promise<ParentsStatsResponse> {
+    const cacheKey = 'parents:stats';
+    const cached = this.ttlCache.get<ParentsStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const thirtyAgo = thirtyDaysAgo();
+    const base = { deletedAt: null };
+
+    const [totalParents, totalParentsPrev, links, newParents, newParentsPrev] =
+      await Promise.all([
+        this.prisma.parent.count({ where: base }),
+        this.prisma.parent.count({ where: { ...base, createdAt: { lte: thirtyAgo } } }),
+        this.prisma.studentParent.count(),
+        this.prisma.parent.count({ where: { ...base, createdAt: { gte: thirtyAgo } } }),
+        this.prisma.parent.count({
+          where: {
+            ...base,
+            createdAt: {
+              gte: new Date(thirtyAgo.getTime() - 30 * 86400000),
+              lt: thirtyAgo,
+            },
+          },
+        }),
+      ]);
+
+    const parentsWithLinks = await this.prisma.parent.count({
+      where: { ...base, studentParents: { some: {} } },
+    });
+    const unlinked = totalParents - parentsWithLinks;
+
+    const result: ParentsStatsResponse = {
+      totalParents: countWithTrend(totalParents, totalParentsPrev),
+      linkedStudents: countWithTrend(links, 0),
+      unlinkedParents: countWithTrend(unlinked, 0),
+      newLast30Days: countWithTrend(newParents, newParentsPrev),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async findAll(query: ListParentsQuery): Promise<PaginatedResponse<Record<string, unknown>>> {
     const where = {

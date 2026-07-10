@@ -21,6 +21,12 @@ import type { FeeReminderInput, NoticeBroadcastInput, SendMessageInput } from '@
 export class CommunicationsController {
   constructor(private readonly service: CommunicationsService) {}
 
+  @Get('stats')
+  @Permissions('communications.send')
+  stats() {
+    return this.service.getStats();
+  }
+
   @Get('logs')
   @Permissions('communications.send')
   logs() {

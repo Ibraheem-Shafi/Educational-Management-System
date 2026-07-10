@@ -13,7 +13,7 @@ import {
 import type { SupabaseClient, Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, ApiClientError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { referenceQueryOptions } from '@/providers/query-provider';
 import { E2E_MOCK_SESSION, E2E_MOCK_USER, isE2eAuthBypass } from '@/lib/e2e-auth';
@@ -74,13 +74,18 @@ export function AuthProvider({
       const requestId = ++meRequestId.current;
 
       const promise = apiClient<{ user: AuthUser }>('/auth/me', { token: accessToken })
-        .then((me) => me.user)
-        .catch(() => null);
+        .then((me) => ({ profile: me.user, unauthorized: false as const }))
+        .catch((err: unknown) => ({
+          profile: null,
+          unauthorized:
+            err instanceof ApiClientError &&
+            (err.statusCode === 401 || err.statusCode === 403),
+        }));
 
-      inflightMe.current = promise;
+      inflightMe.current = promise.then((r) => r.profile);
 
       try {
-        const profile = await promise;
+        const { profile, unauthorized } = await promise;
         if (requestId !== meRequestId.current) return;
 
         if (profile) {
@@ -91,9 +96,12 @@ export function AuthProvider({
             queryFn: () => apiClient<{ data: unknown[] }>('/branches', { token: accessToken }),
             ...referenceQueryOptions(),
           });
-        } else if (loadedTokenRef.current !== accessToken) {
+        } else {
           loadedTokenRef.current = null;
           setUser(null);
+          if (unauthorized) {
+            await supabase.auth.signOut();
+          }
         }
       } finally {
         if (inflightMe.current === promise) {

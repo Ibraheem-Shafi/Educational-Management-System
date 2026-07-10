@@ -1,17 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { useEffectiveBranchId } from '@/hooks/use-branches';
+import type { AssessmentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
-import { LinkButton } from '@/components/ui/link-button';
-import { PageHeader } from '@/components/layout/page-header';
+import { Input } from '@/components/ui/input';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { SearchInput } from '@/components/layout/search-input';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { ContentPanel } from '@/components/layout/content-panel';
 import { ListRow } from '@/components/layout/list-row';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { CreateAssessmentDialog } from '@/components/features/assessments/create-assessment-dialog';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 
 interface Assessment {
   id: string;
@@ -34,42 +54,44 @@ interface AssessmentSeries {
   isActive: boolean;
 }
 
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 export default function AssessmentsPage() {
   const { session, user } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState('');
-  const [typeId, setTypeId] = useState('');
-  const [seriesId, setSeriesId] = useState('');
-  const [totalMarks, setTotalMarks] = useState('100');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [showSeries, setShowSeries] = useState(false);
   const [showTypes, setShowTypes] = useState(false);
   const [seriesName, setSeriesName] = useState('');
   const [seriesCode, setSeriesCode] = useState('');
   const [typeName, setTypeName] = useState('');
   const [typeCode, setTypeCode] = useState('');
-
   const [editSeriesId, setEditSeriesId] = useState<string | null>(null);
   const [editSeriesName, setEditSeriesName] = useState('');
   const [editSeriesCode, setEditSeriesCode] = useState('');
   const [editSeriesActive, setEditSeriesActive] = useState(true);
-
   const [editTypeId, setEditTypeId] = useState<string | null>(null);
   const [editTypeName, setEditTypeName] = useState('');
   const [editTypeCode, setEditTypeCode] = useState('');
   const [editTypeActive, setEditTypeActive] = useState(true);
 
-  const { data: branches } = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
+  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+  }, []);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.assessmentsStats,
+    queryFn: () => apiClient<AssessmentsStatsResponse>('/assessments/stats', { token }),
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
-
-  const { data: assessments, isLoading } = useQuery({
+  const { data: assessments, isLoading, error } = useQuery({
     queryKey: ['assessments', effectiveBranchId],
     queryFn: () =>
       apiClient<{ data: Assessment[] }>(
@@ -86,13 +108,13 @@ export default function AssessmentsPage() {
         `/assessment-types${showTypes ? '?all=true' : ''}`,
         { token },
       ),
-    enabled: !!token && (showForm || showTypes),
+    enabled: !!token && (showTypes || createOpen),
   });
 
   const { data: seriesList } = useQuery({
     queryKey: ['assessment-series'],
     queryFn: () => apiClient<{ data: AssessmentSeries[] }>('/assessment-series', { token }),
-    enabled: !!token,
+    enabled: !!token && showSeries,
   });
 
   const createSeriesMutation = useMutation({
@@ -141,44 +163,76 @@ export default function AssessmentsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const createMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiClient('/assessments', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Assessment created');
-      queryClient.invalidateQueries({ queryKey: ['assessments'] });
-      setShowForm(false);
-      setName('');
-    },
-    onError: (err: Error) => toast.error(err.message),
+  const filteredAssessments = (assessments?.data ?? []).filter((a) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      a.name.toLowerCase().includes(q) ||
+      (a.type?.name ?? '').toLowerCase().includes(q)
+    );
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={ClipboardList}
         title="Assessments"
         description="Tests, exams, and marks entry"
         actions={
-          <>
-            <Button onClick={() => setShowForm(!showForm)}>
-              {showForm ? 'Cancel' : 'New assessment'}
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => setShowSeries(!showSeries)}>
               {showSeries ? 'Hide series' : 'Manage series'}
             </Button>
             <Button variant="outline" onClick={() => setShowTypes(!showTypes)}>
               {showTypes ? 'Hide types' : 'Manage types'}
             </Button>
-          </>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              New assessment
+            </button>
+          </div>
         }
       />
 
+      <CreateAssessmentDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        branchId={effectiveBranchId}
+      />
+
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Active assessments',
+            value: formatCount(stats?.activeAssessments.total ?? 0),
+            changePercent: stats?.activeAssessments.changePercent,
+          },
+          {
+            label: 'Completed',
+            value: formatCount(stats?.completedAssessments.total ?? 0),
+            changePercent: stats?.completedAssessments.changePercent,
+          },
+          {
+            label: 'Average score',
+            value: `${stats?.averageScore.total ?? 0}%`,
+            changePercent: stats?.averageScore.changePercent,
+          },
+          {
+            label: 'Pending marks',
+            value: formatCount(stats?.pendingMarks.total ?? 0),
+            changePercent: stats?.pendingMarks.changePercent,
+          },
+        ]}
+      />
+
       {showSeries && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Assessment series</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <ContentPanel title="Assessment series">
+          <div className="space-y-4 p-5">
             <form
               className="flex flex-wrap gap-2"
               onSubmit={(e) => {
@@ -192,7 +246,7 @@ export default function AssessmentsPage() {
                 Add series
               </Button>
             </form>
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-[var(--stroke-soft-200,#E2E4E9)]">
               {seriesList?.data.map((s) => (
                 <div key={s.id} className="py-2">
                   {editSeriesId === s.id ? (
@@ -223,7 +277,7 @@ export default function AssessmentsPage() {
                     <ListRow
                       actions={
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs ${s.isActive ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          <span className={`text-xs ${s.isActive ? 'text-green-600' : 'text-[var(--text-sub-500)]'}`}>
                             {s.isActive ? 'Active' : 'Inactive'}
                           </span>
                           <Button
@@ -242,23 +296,20 @@ export default function AssessmentsPage() {
                       }
                     >
                       <p className="text-sm font-medium">
-                        {s.name} <span className="text-muted-foreground">({s.code})</span>
+                        {s.name} <span className="text-[var(--text-sub-500)]">({s.code})</span>
                       </p>
                     </ListRow>
                   )}
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </ContentPanel>
       )}
 
       {showTypes && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Assessment types</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <ContentPanel title="Assessment types">
+          <div className="space-y-4 p-5">
             <form
               className="flex flex-wrap gap-2"
               onSubmit={(e) => {
@@ -272,7 +323,7 @@ export default function AssessmentsPage() {
                 Add type
               </Button>
             </form>
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-[var(--stroke-soft-200,#E2E4E9)]">
               {types?.data.map((t) => (
                 <div key={t.id} className="py-2">
                   {editTypeId === t.id ? (
@@ -303,7 +354,7 @@ export default function AssessmentsPage() {
                     <ListRow
                       actions={
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs ${t.isActive ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          <span className={`text-xs ${t.isActive ? 'text-green-600' : 'text-[var(--text-sub-500)]'}`}>
                             {t.isActive ? 'Active' : 'Inactive'}
                           </span>
                           <Button
@@ -322,113 +373,82 @@ export default function AssessmentsPage() {
                       }
                     >
                       <p className="text-sm font-medium">
-                        {t.name} <span className="text-muted-foreground">({t.code})</span>
+                        {t.name} <span className="text-[var(--text-sub-500)]">({t.code})</span>
                       </p>
                     </ListRow>
                   )}
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create assessment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-4 sm:grid-cols-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate({
-                  branchId: effectiveBranchId,
-                  name,
-                  typeId,
-                  totalMarks: Number(totalMarks),
-                  ...(seriesId ? { seriesId } : {}),
-                });
-              }}
-            >
-              {!user?.branchId && (
-                <select
-                  className="flex h-10 rounded-md border border-border bg-background px-3 text-sm sm:col-span-2"
-                  value={branchId}
-                  onChange={(e) => setBranchId(e.target.value)}
-                >
-                  {branches?.data.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={typeId}
-                onChange={(e) => setTypeId(e.target.value)}
-                required
-              >
-                <option value="">Type</option>
-                {types?.data.filter((t) => t.isActive).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={seriesId}
-                onChange={(e) => setSeriesId(e.target.value)}
-              >
-                <option value="">Series (optional)</option>
-                {seriesList?.data.filter((s) => s.isActive).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <Input
-                type="number"
-                placeholder="Total marks"
-                value={totalMarks}
-                onChange={(e) => setTotalMarks(e.target.value)}
-                required
-              />
-              <Button type="submit" disabled={createMutation.isPending || !effectiveBranchId}>
-                Create
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>All assessments ({assessments?.data.length ?? 0})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <ListLoadingSkeleton />}
-          <div className="divide-y divide-border">
-            {assessments?.data.map((a) => (
-              <ListRow
-                key={a.id}
-                actions={
-                  <LinkButton href={`/dashboard/assessments/${a.id}/marks`}>Enter marks</LinkButton>
-                }
-              >
-                <p className="font-medium">{a.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {a.type?.name ?? '—'} · {a.totalMarks} marks
-                </p>
-              </ListRow>
-            ))}
           </div>
-        </CardContent>
-      </Card>
+        </ContentPanel>
+      )}
+
+      <FilterBar className="items-center">
+        <SearchInput value={search} onValueChange={handleSearchChange} />
+        {search && (
+          <Button variant="ghost" onClick={() => setSearch('')}>
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
+
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Name</th>
+                <th className={dataTableThClass}>Type</th>
+                <th className={dataTableThClass}>Total marks</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {isLoading && <DataTableSkeletonRows columns={4} rows={8} />}
+
+              {error && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                    Failed to load assessments
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !error && filteredAssessments.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                  >
+                    No assessments found
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading &&
+                !error &&
+                filteredAssessments.map((assessment) => (
+                  <tr key={assessment.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={dataTableTdClass}>{assessment.name}</td>
+                    <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
+                    <td className={dataTableTdClass}>{assessment.totalMarks}</td>
+                    <td className={cn(dataTableTdClass, 'text-right')}>
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: 'Enter marks',
+                            href: `/dashboard/assessments/${assessment.id}/marks`,
+                          },
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

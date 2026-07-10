@@ -19,7 +19,8 @@
     "db:seed:demo": "npm run db:seed:demo -w @eims/database",
     "db:seed:auth": "npm run db:seed:auth -w @eims/database",
     "db:seed:all": "npm run db:seed:all -w @eims/database",
-    "db:seed:verify": "npm run db:seed:verify -w @eims/database"
+    "db:seed:verify": "npm run db:seed:verify -w @eims/database",
+    "verify:app": "node scripts/verify-app-readiness.mjs"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

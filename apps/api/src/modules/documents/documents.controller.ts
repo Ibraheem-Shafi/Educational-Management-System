@@ -28,6 +28,12 @@ import type { CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
+  @Get('stats')
+  @Permissions('documents.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.documentsService.getStats(branchId);
+  }
+
   @Get()
   @Permissions('documents.read')
   findAll(

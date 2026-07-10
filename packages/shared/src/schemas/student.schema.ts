@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { CNIC_REGEX, PHONE_REGEX } from '../constants/pakistan';
 
+export const admissionGuardianSchema = z.object({
+  fullName: z.string().min(2).max(200),
+  phone: z.string().regex(PHONE_REGEX).optional(),
+  email: z.string().email().optional(),
+  address: z.string().max(500).optional(),
+  cnic: z.string().regex(CNIC_REGEX).optional(),
+  relationshipCode: z.enum(['father', 'mother', 'guardian']),
+});
+
+export type AdmissionGuardianInput = z.infer<typeof admissionGuardianSchema>;
+
 export const createStudentSchema = z.object({
   branchId: z.string().min(1),
   fullName: z.string().min(2).max(200),
@@ -15,6 +26,7 @@ export const createStudentSchema = z.object({
   statusId: z.string().min(1),
   subjectIds: z.array(z.string()).optional(),
   customFields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  guardians: z.array(admissionGuardianSchema).max(3).optional(),
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;

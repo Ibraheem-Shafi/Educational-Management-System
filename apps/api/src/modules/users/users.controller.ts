@@ -37,6 +37,12 @@ export class UsersController {
     return this.usersService.findAll(query, branchId);
   }
 
+  @Get('stats')
+  @Permissions('users.manage')
+  getStats(@BranchId() branchId: string | null) {
+    return this.usersService.getStats(branchId);
+  }
+
   @Get('roles')
   @Permissions('users.manage')
   listRoles() {

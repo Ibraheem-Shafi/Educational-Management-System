@@ -4,8 +4,12 @@ import { AuditService } from '../audit/audit.service';
 import { SmsService } from '../../common/sms/sms.service';
 import { WhatsAppService } from '../../common/sms/whatsapp.service';
 import { ReportsService } from '../reports/reports.service';
-import type { AuthUser } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, CommunicationsStatsResponse } from '@eims/types';
 import type { FeeReminderInput, NoticeBroadcastInput, SendMessageInput } from '@eims/shared';
+
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class CommunicationsService {
@@ -15,7 +19,57 @@ export class CommunicationsService {
     private readonly sms: SmsService,
     private readonly whatsapp: WhatsAppService,
     private readonly reports: ReportsService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(): Promise<CommunicationsStatsResponse> {
+    const cacheKey = 'communications:stats';
+    const cached = this.ttlCache.get<CommunicationsStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const thirtyAgo = thirtyDaysAgo();
+    const prevStart = new Date(thirtyAgo.getTime() - 30 * 86400000);
+
+    const [
+      sent,
+      sentPrev,
+      failed,
+      failedPrev,
+      sms,
+      smsPrev,
+      whatsapp,
+      whatsappPrev,
+    ] = await Promise.all([
+      this.prisma.communicationLog.count({ where: { createdAt: { gte: thirtyAgo }, status: 'sent' } }),
+      this.prisma.communicationLog.count({
+        where: { createdAt: { gte: prevStart, lt: thirtyAgo }, status: 'sent' },
+      }),
+      this.prisma.communicationLog.count({ where: { createdAt: { gte: thirtyAgo }, status: 'failed' } }),
+      this.prisma.communicationLog.count({
+        where: { createdAt: { gte: prevStart, lt: thirtyAgo }, status: 'failed' },
+      }),
+      this.prisma.communicationLog.count({ where: { createdAt: { gte: thirtyAgo }, channel: 'sms' } }),
+      this.prisma.communicationLog.count({
+        where: { createdAt: { gte: prevStart, lt: thirtyAgo }, channel: 'sms' },
+      }),
+      this.prisma.communicationLog.count({
+        where: { createdAt: { gte: thirtyAgo }, channel: 'whatsapp' },
+      }),
+      this.prisma.communicationLog.count({
+        where: { createdAt: { gte: prevStart, lt: thirtyAgo }, channel: 'whatsapp' },
+      }),
+    ]);
+
+    const result: CommunicationsStatsResponse = {
+      sentLast30Days: countWithTrend(sent, sentPrev),
+      failedLast30Days: countWithTrend(failed, failedPrev),
+      smsCount: countWithTrend(sms, smsPrev),
+      whatsappCount: countWithTrend(whatsapp, whatsappPrev),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async sendMessage(input: SendMessageInput, user: AuthUser) {
     const result =

@@ -1,6 +1,9 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { cn } from '@/lib/utils';
 
 export interface FormFieldDef {
   id: string;
@@ -22,30 +25,25 @@ export function DynamicFormFields({ fields, values, onChange, onFileChange }: Pr
   if (fields.length === 0) return null;
 
   return (
-    <div className="space-y-4 border-t border-border pt-4">
-      <p className="text-sm font-medium text-muted-foreground">Additional information</p>
+    <div className="space-y-4 border-t border-[var(--stroke-soft-200,#E2E4E9)] pt-4">
+      <p className="text-sm font-medium text-[var(--text-sub-500,#525866)]">Additional information</p>
       {fields.map((field) => (
-        <div key={field.id} className="space-y-2">
-          <label className="text-sm font-medium">
-            {field.label}
-            {field.isRequired ? ' *' : ''}
-          </label>
+        <div key={field.id}>
+          <FormFieldLabel required={field.isRequired}>{field.label}</FormFieldLabel>
           {field.fieldType === 'dropdown' ? (
-            <select
-              className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+            <SelectDropdown
+              fullWidth
+              aria-label={field.label}
+              placeholder={`Select ${field.label.toLowerCase()}`}
               value={String(values[field.code] ?? '')}
-              onChange={(e) => onChange(field.code, e.target.value)}
-              required={field.isRequired}
-            >
-              <option value="">—</option>
-              {(field.options ?? []).map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onChange(field.code, value)}
+              options={[
+                { value: '', label: `Select ${field.label.toLowerCase()}` },
+                ...(field.options ?? []).map((opt) => ({ value: opt, label: opt })),
+              ]}
+            />
           ) : field.fieldType === 'checkbox' ? (
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex h-10 items-center gap-2 text-sm text-[var(--text-main-900)]">
               <input
                 type="checkbox"
                 checked={Boolean(values[field.code])}
@@ -56,11 +54,12 @@ export function DynamicFormFields({ fields, values, onChange, onFileChange }: Pr
           ) : field.fieldType === 'file' ? (
             <Input
               type="file"
+              className={modalFieldClassName}
               onChange={(e) => onFileChange?.(field.code, e.target.files?.[0] ?? null)}
               required={field.isRequired}
             />
           ) : (
-            <Input
+            <input
               type={
                 field.fieldType === 'number'
                   ? 'number'
@@ -68,6 +67,7 @@ export function DynamicFormFields({ fields, values, onChange, onFileChange }: Pr
                     ? 'date'
                     : 'text'
               }
+              className={cn(modalFieldClassName, field.fieldType === 'date' && 'appearance-none')}
               value={String(values[field.code] ?? '')}
               onChange={(e) => onChange(field.code, e.target.value)}
               required={field.isRequired}

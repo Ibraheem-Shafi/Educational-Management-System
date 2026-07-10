@@ -1,5 +1,5 @@
 {
-  "version": "rekhta-v1",
+  "version": "rekhta-v1.1",
   "institution": {
     "siblingDiscountPercent": 10,
     "lateFeeAmount": 500,
@@ -10,54 +10,70 @@
       "email": "admin@rekhta.edu.pk",
       "fullName": "Syed Kamran Shah",
       "role": "super_admin",
-      "phone": "+923001234567"
+      "phone": "+923001234567",
+      "gender": "male",
+      "cnic": "61101-1234567-1"
     },
     {
       "email": "branchadmin@rekhta.edu.pk",
       "fullName": "Aisha Malik",
       "role": "branch_admin",
       "branchCode": "MAIN",
-      "phone": "+923112345678"
+      "phone": "+923112345678",
+      "gender": "female",
+      "cnic": "61101-2345678-2"
     },
     {
       "email": "lahore.admin@rekhta.edu.pk",
       "fullName": "Usman Tariq",
       "role": "branch_admin",
       "branchCode": "LAHORE",
-      "phone": "+923211234567"
+      "phone": "+923211234567",
+      "gender": "male",
+      "cnic": "61101-3456789-3"
     },
     {
       "email": "ahmed.teacher@rekhta.edu.pk",
       "fullName": "Dr. Ahmed Hassan",
       "role": "teacher",
       "branchCode": "MAIN",
-      "phone": "+923331234567"
+      "phone": "+923331234567",
+      "gender": "male",
+      "cnic": "61101-4567890-4"
     },
     {
       "email": "fees@rekhta.edu.pk",
       "fullName": "Sadia Bano",
       "role": "accountant",
       "branchCode": "MAIN",
-      "phone": "+923441234567"
+      "phone": "+923441234567",
+      "gender": "female",
+      "cnic": "61101-5678901-5"
     },
     {
       "email": "reception@rekhta.edu.pk",
       "fullName": "Hina Batool",
       "role": "receptionist",
       "branchCode": "MAIN",
-      "phone": "+923551234567"
+      "phone": "+923551234567",
+      "gender": "female",
+      "cnic": "61101-6789012-6"
     },
     {
       "email": "rashid.ahmad@rekhta.edu.pk",
       "fullName": "Rashid Ahmad Khan",
       "role": "parent",
-      "phone": "+923004445566"
+      "phone": "+923004445566",
+      "gender": "male",
+      "cnic": "35202-7654321-9"
     },
     {
       "email": "ali.khan@rekhta.edu.pk",
       "fullName": "Muhammad Ali Khan",
       "role": "student",
-      "phone": "+923001112233"
+      "phone": "+923001112233",
+      "gender": "male",
+      "cnic": "35202-1234567-1"
     }
   ],
   "batches": [

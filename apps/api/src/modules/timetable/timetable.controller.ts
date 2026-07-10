@@ -37,6 +37,12 @@ import type {
 export class TimetableController {
   constructor(private readonly timetableService: TimetableService) {}
 
+  @Get('stats')
+  @Permissions('timetable.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.timetableService.getStats(branchId);
+  }
+
   @Get()
   @Permissions('timetable.read')
   findAll(

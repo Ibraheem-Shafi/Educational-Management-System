@@ -1,15 +1,67 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, NoticesStatsResponse } from '@eims/types';
 import type { CreateNoticeInput, UpdateNoticeInput, ListNoticesQuery } from '@eims/shared';
+
+const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class NoticesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(branchId: string | null): Promise<NoticesStatsResponse> {
+    const cacheKey = `notices:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<NoticesStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const thirtyAgo = thirtyDaysAgo();
+    const now = new Date();
+
+    const [published, publishedPrev, draft, draftPrev, scheduled, scheduledPrev, total] =
+      await Promise.all([
+        this.prisma.notice.count({ where: { ...branchFilter, isPublished: true } }),
+        this.prisma.notice.count({
+          where: { ...branchFilter, isPublished: true, createdAt: { lte: thirtyAgo } },
+        }),
+        this.prisma.notice.count({ where: { ...branchFilter, isPublished: false } }),
+        this.prisma.notice.count({
+          where: { ...branchFilter, isPublished: false, createdAt: { lte: thirtyAgo } },
+        }),
+        this.prisma.notice.count({
+          where: {
+            ...branchFilter,
+            isPublished: false,
+            publishedAt: { gt: now },
+          },
+        }),
+        this.prisma.notice.count({
+          where: {
+            ...branchFilter,
+            isPublished: false,
+            publishedAt: { gt: now, lte: thirtyAgo },
+          },
+        }),
+        this.prisma.notice.count({ where: branchFilter }),
+      ]);
+
+    const result: NoticesStatsResponse = {
+      published: countWithTrend(published, publishedPrev),
+      draft: countWithTrend(draft, draftPrev),
+      scheduled: countWithTrend(scheduled, scheduledPrev),
+      totalViews: countWithTrend(total, total),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async findAll(query: ListNoticesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;

@@ -3,7 +3,7 @@
 Single reference for database seeding, demo logins, and what data is created for client presentations.
 
 **Institution:** Rekhta Academy Pakistan (Pakistani coaching center)  
-**Demo version:** `rekhta-v1`  
+**Demo version:** `rekhta-v1.1`  
 **Config files:** [`templates/rekhta.institution.json`](templates/rekhta.institution.json) (foundation) · [`templates/rekhta.demo.json`](templates/rekhta.demo.json) (transactional data)
 
 ---
@@ -54,6 +54,7 @@ Defined in `rekhta.institution.json` → `demo.password` and synced to Supabase 
 - **Parent** (`rashid.ahmad@rekhta.edu.pk`) is linked to **Ali Khan** and **Zainab Hussain** (sibling discount demo).
 - **Student** (`ali.khan@rekhta.edu.pk`) must match the student record email in the database.
 - Staff accounts use the main login page; parent/student use the same login and are routed to their portal by role.
+- **Learning:** demo seed creates published notes, materials, syllabus, resources, and homework (with due dates) for the MAIN campus first batch. Browse under **Learning** in `/dashboard`, `/portal/student/learning`, and `/portal/parent/learning`.
 
 ### MFA
 
@@ -152,7 +153,7 @@ npm run db:seed:auth
 | notices | 5 |
 | users | 8 |
 
-Plus `terminology._demoSeedVersion` = `rekhta-v1` on institution settings.
+Plus `terminology._demoSeedVersion` = `rekhta-v1.1` on institution settings.
 
 ---
 
@@ -165,8 +166,9 @@ Plus `terminology._demoSeedVersion` = `rekhta-v1` on institution settings.
 | Fees, reports | `fees@rekhta.edu.pk` |
 | Users, communications | `reception@rekhta.edu.pk` |
 | Lahore campus data | `lahore.admin@rekhta.edu.pk` |
-| Parent portal | `rashid.ahmad@rekhta.edu.pk` |
-| Student portal | `ali.khan@rekhta.edu.pk` |
+| Learning (publish notes / homework) | `admin@rekhta.edu.pk` or `ahmed.teacher@rekhta.edu.pk` |
+| Parent portal (+ Learning for children) | `rashid.ahmad@rekhta.edu.pk` |
+| Student portal (+ Learning / due soon) | `ali.khan@rekhta.edu.pk` |
 
 AI attendance and AI insights are intentionally empty/stubbed for demo.
 

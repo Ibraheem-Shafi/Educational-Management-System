@@ -98,6 +98,12 @@ export class AssessmentsController {
     return this.assessmentsService.updateSeries(id, body, user);
   }
 
+  @Get('assessments/stats')
+  @Permissions('assessments.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.assessmentsService.getStats(branchId);
+  }
+
   @Get('assessments')
   @Permissions('assessments.read')
   findAll(

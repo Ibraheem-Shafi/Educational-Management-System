@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, TimetableStatsResponse } from '@eims/types';
 import type {
   CreateTimetableSlotInput,
   ListTimetableQuery,
@@ -21,12 +23,52 @@ function timesOverlap(startA: string, endA: string, startB: string, endB: string
   return a0 < b1 && b0 < a1;
 }
 
+const STATS_CACHE_TTL_MS = 45_000;
+
 @Injectable()
 export class TimetableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(branchId: string | null): Promise<TimetableStatsResponse> {
+    const cacheKey = `timetable:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<TimetableStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const base = { isActive: true, ...branchFilter };
+    const thirtyAgo = thirtyDaysAgo();
+
+    const [slots, slotsPrev, rooms, teachers, batches] = await Promise.all([
+      this.prisma.timetableSlot.count({ where: base }),
+      this.prisma.timetableSlot.count({ where: { ...base, createdAt: { lte: thirtyAgo } } }),
+      this.prisma.timetableSlot.groupBy({
+        by: ['room'],
+        where: { ...base, room: { not: null } },
+      }),
+      this.prisma.timetableSlot.groupBy({
+        by: ['teacherId'],
+        where: { ...base, teacherId: { not: null } },
+      }),
+      this.prisma.timetableSlot.groupBy({
+        by: ['batchId'],
+        where: base,
+      }),
+    ]);
+
+    const result: TimetableStatsResponse = {
+      slotsPerWeek: countWithTrend(slots, slotsPrev),
+      roomsUsed: countWithTrend(rooms.length, 0),
+      teachersScheduled: countWithTrend(teachers.length, 0),
+      batchesScheduled: countWithTrend(batches.length, 0),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async findAll(query: ListTimetableQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;

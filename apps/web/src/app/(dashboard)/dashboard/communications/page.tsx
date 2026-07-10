@@ -1,187 +1,299 @@
 'use client';
 
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useCallback, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { MessageSquare, Radio } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/layout/page-header';
-import { ListRow } from '@/components/layout/list-row';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import type { CommunicationsStatsResponse, PaginatedResponse } from '@eims/types';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
-import { Input } from '@/components/ui/input';
+import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
+import { SendMessageDialog } from '@/components/features/communications/send-message-dialog';
+import { BroadcastDialog } from '@/components/features/communications/broadcast-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
+
+interface CommunicationLog {
+  id: string;
+  channel: string;
+  recipient: string;
+  status: string;
+  createdAt: string;
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+function channelShare(count: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((count / total) * 100);
+}
 
 export default function CommunicationsPage() {
   const { session } = useAuth();
   const token = session?.access_token;
-  const queryClient = useQueryClient();
-
-  const [channel, setChannel] = useState<'sms' | 'whatsapp'>('sms');
-  const [recipient, setRecipient] = useState('');
-  const [body, setBody] = useState('');
-  const [noticeId, setNoticeId] = useState('');
+  const [sendOpen, setSendOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [channelFilter, setChannelFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [logPage, setLogPage] = useState(1);
+  const [logLimit, setLogLimit] = useState(8);
 
-  const { data: logs, isLoading: logsLoading } = useQuery({
-    queryKey: ['communication-logs', logPage],
-    queryFn: () =>
-      apiClient<
-        PaginatedResponse<{
-          id: string;
-          channel: string;
-          recipient: string;
-          status: string;
-          createdAt: string;
-        }>
-      >(`/communications/logs?page=${logPage}&limit=20`, { token }),
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setLogPage(1);
+  }, []);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.communicationsStats,
+    queryFn: () => apiClient<CommunicationsStatsResponse>('/communications/stats', { token }),
     enabled: !!token,
   });
 
-  const { data: notices } = useQuery({
-    queryKey: ['notices-broadcast'],
+  const queryParams = new URLSearchParams({
+    page: String(logPage),
+    limit: String(logLimit),
+  });
+
+  const { data: logs, isLoading, error } = useQuery({
+    queryKey: ['communication-logs', logPage, logLimit],
     queryFn: () =>
-      apiClient<{ data: Array<{ id: string; title: string }> }>('/notices?publishedOnly=true', { token }),
+      apiClient<PaginatedResponse<CommunicationLog>>(
+        `/communications/logs?${queryParams.toString()}`,
+        { token },
+      ),
     enabled: !!token,
   });
 
-  const sendMutation = useMutation({
-    mutationFn: () =>
-      apiClient('/communications/send', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ channel, recipient, body }),
-      }),
-    onSuccess: () => {
-      toast.success('Message queued');
-      queryClient.invalidateQueries({ queryKey: ['communication-logs'] });
-      setBody('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const filteredLogs = useMemo(() => {
+    const list = logs?.data ?? [];
+    return list.filter((log) => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (!log.recipient.toLowerCase().includes(q)) return false;
+      }
+      if (channelFilter && log.channel !== channelFilter) return false;
+      if (statusFilter && log.status !== statusFilter) return false;
+      return true;
+    });
+  }, [logs?.data, search, channelFilter, statusFilter]);
 
-  const feeReminderMutation = useMutation({
-    mutationFn: () =>
-      apiClient<{ sent: number }>('/communications/fee-reminders', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ channel }),
-      }),
-    onSuccess: (res) => {
-      toast.success(`Sent ${res.sent} fee reminders`);
-      queryClient.invalidateQueries({ queryKey: ['communication-logs'] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const broadcastMutation = useMutation({
-    mutationFn: () =>
-      apiClient<{ sent: number }>('/communications/notice-broadcast', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ noticeId, channel, audience: 'parents' }),
-      }),
-    onSuccess: (res) => {
-      toast.success(`Broadcast sent to ${res.sent} recipients`);
-      queryClient.invalidateQueries({ queryKey: ['communication-logs'] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const smsTotal = stats?.smsCount.total ?? 0;
+  const whatsappTotal = stats?.whatsappCount.total ?? 0;
+  const channelTotal = smsTotal + whatsappTotal;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Communications" description="SMS and WhatsApp messaging (Twilio)" />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Send message</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <select
-              className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value as 'sms' | 'whatsapp')}
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={MessageSquare}
+        title="Communications"
+        description="SMS and WhatsApp messaging (Twilio)"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBroadcastOpen(true)}
+              className={cn(
+                pageHeaderActionClassName,
+                'border border-[var(--stroke-soft-200,#E2E4E9)] bg-white text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]',
+              )}
             >
-              <option value="sms">SMS</option>
-              <option value="whatsapp">WhatsApp</option>
-            </select>
-            <Input
-              placeholder="Recipient phone (+92...)"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-            />
-            <textarea
-              className="min-h-20 w-full rounded-md border border-border bg-background p-3 text-sm"
-              placeholder="Message body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
-              Send
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Bulk actions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button variant="outline" onClick={() => feeReminderMutation.mutate()}>
-              Send fee reminders to defaulters
-            </Button>
-            <select
-              className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-              value={noticeId}
-              onChange={(e) => setNoticeId(e.target.value)}
+              <Radio className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+              Broadcast
+            </button>
+            <button
+              type="button"
+              onClick={() => setSendOpen(true)}
+              className={pageHeaderActionClassName}
             >
-              <option value="">Select notice to broadcast</option>
-              {notices?.data.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.title}
-                </option>
-              ))}
-            </select>
-            <Button
-              onClick={() => broadcastMutation.mutate()}
-              disabled={!noticeId || broadcastMutation.isPending}
-            >
-              Broadcast notice to parents
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent messages</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {logsLoading && <ListLoadingSkeleton />}
-          <div className="divide-y divide-border">
-            {logs?.data.map((log) => (
-              <ListRow
-                key={log.id}
-                actions={
-                  <span className="text-sm text-muted-foreground">
-                    {log.status} · {new Date(log.createdAt).toLocaleString()}
-                  </span>
-                }
-              >
-                <span>
-                  {log.channel} → {log.recipient}
-                </span>
-              </ListRow>
-            ))}
+              <PageHeaderActionIcon />
+              Send message
+            </button>
           </div>
-          {logs && (
-            <PaginationBar page={logPage} totalPages={logs.meta.totalPages} onPageChange={setLogPage} />
-          )}
-        </CardContent>
-      </Card>
+        }
+      />
+
+      <SendMessageDialog open={sendOpen} onOpenChange={setSendOpen} />
+      <BroadcastDialog open={broadcastOpen} onOpenChange={setBroadcastOpen} />
+
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Sent (30d)',
+            value: formatCount(stats?.sentLast30Days.total ?? 0),
+            changePercent: stats?.sentLast30Days.changePercent,
+          },
+          {
+            label: 'Failed (30d)',
+            value: formatCount(stats?.failedLast30Days.total ?? 0),
+            changePercent: stats?.failedLast30Days.changePercent,
+          },
+          {
+            label: 'SMS messages',
+            value: formatCount(smsTotal),
+            changePercent: stats?.smsCount.changePercent,
+          },
+          {
+            label: 'WhatsApp messages',
+            value: formatCount(whatsappTotal),
+            changePercent: stats?.whatsappCount.changePercent,
+          },
+        ]}
+      />
+
+      <MetricDonutCard
+        title="Channel distribution"
+        subtitle="Last 30 days"
+        isLoading={statsLoading}
+        segments={[
+          {
+            label: 'SMS',
+            rate: channelShare(smsTotal, channelTotal),
+            color: '#003E73',
+          },
+          {
+            label: 'WhatsApp',
+            rate: channelShare(whatsappTotal, channelTotal),
+            color: '#25D366',
+          },
+        ]}
+      />
+
+      <FilterBar className="items-center">
+        <SearchInput value={search} onValueChange={handleSearchChange} placeholder="Search recipient" />
+        <SelectDropdown
+          aria-label="Filter by channel"
+          placeholder="All channels"
+          value={channelFilter}
+          onValueChange={(next) => {
+            setChannelFilter(next);
+            setLogPage(1);
+          }}
+          options={[
+            { value: '', label: 'All channels' },
+            { value: 'sms', label: 'SMS' },
+            { value: 'whatsapp', label: 'WhatsApp' },
+          ]}
+        />
+        <SelectDropdown
+          aria-label="Filter by status"
+          placeholder="All statuses"
+          value={statusFilter}
+          onValueChange={(next) => {
+            setStatusFilter(next);
+            setLogPage(1);
+          }}
+          options={[
+            { value: '', label: 'All statuses' },
+            { value: 'sent', label: 'Sent' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'queued', label: 'Queued' },
+          ]}
+        />
+        {(search || channelFilter || statusFilter) && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('');
+              setChannelFilter('');
+              setStatusFilter('');
+              setLogPage(1);
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
+
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Channel</th>
+                <th className={dataTableThClass}>Recipient</th>
+                <th className={dataTableThClass}>Status</th>
+                <th className={dataTableThClass}>Sent at</th>
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {isLoading && <DataTableSkeletonRows columns={4} rows={logLimit} />}
+
+              {error && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                    Failed to load messages
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !error && filteredLogs.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                  >
+                    No messages found
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading &&
+                !error &&
+                filteredLogs.map((log) => (
+                  <tr key={log.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={cn(dataTableTdClass, 'uppercase')}>{log.channel}</td>
+                    <td className={dataTableTdClass}>{log.recipient}</td>
+                    <td className={dataTableTdClass}>
+                      <StatusBadge
+                        label={log.status.charAt(0).toUpperCase() + log.status.slice(1)}
+                        code={log.status}
+                      />
+                    </td>
+                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                      {new Date(log.createdAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+
+        {logs && (
+          <PaginationBar
+            page={logPage}
+            totalPages={logs.meta.totalPages}
+            limit={logLimit}
+            onPageChange={setLogPage}
+            onLimitChange={(next) => {
+              setLogLimit(next);
+              setLogPage(1);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -93,9 +93,46 @@ export async function setupMockStaffApi(page: Page): Promise<void> {
       return route.fulfill({ status: 201, json: { id: 'student-new-1', fullName: 'New Student' } });
     }
 
+    if (path === '/students/stats' && route.request().method() === 'GET') {
+      return route.fulfill({
+        json: {
+          totalStudents: { total: 1294, changePercent: 5 },
+          activeStudents: { total: 1200, changePercent: null },
+          inactiveStudents: { total: 94, changePercent: -3 },
+          totalBatches: { total: 6, changePercent: null },
+        },
+      });
+    }
+
     if (path.startsWith('/students') && route.request().method() === 'GET') {
       return route.fulfill({
         json: { data: [MOCK_STUDENT], meta: { total: 1, page: 1, limit: 100 } },
+      });
+    }
+
+    if (path.includes('/attendance/grid') && route.request().method() === 'GET') {
+      const month = url.searchParams.get('month') ?? '2026-04';
+      const date = `${month}-01`;
+      return route.fulfill({
+        json: {
+          month,
+          branchId: 'branch-1',
+          batchId: 'batch-1',
+          batchName: 'Batch A',
+          entityType: 'student',
+          total: 1,
+          dates: [date],
+          rows: [
+            {
+              id: 'student-1',
+              fullName: 'Ali Khan',
+              subtitle: 'Batch A',
+              gender: 'male',
+              photographUrl: null,
+              attendance: { [date]: null },
+            },
+          ],
+        },
       });
     }
 
@@ -117,8 +154,41 @@ export async function setupMockStaffApi(page: Page): Promise<void> {
       return route.fulfill({ json: { data: [MOCK_FEE_TYPE] } });
     }
 
+    if (path === '/fees/stats' && route.request().method() === 'GET') {
+      return route.fulfill({
+        json: {
+          outstandingAmount: { total: 15000, changePercent: 5 },
+          collectedLast30Days: { total: 85000, changePercent: 12.5 },
+          overdueCount: { total: 3, changePercent: -10 },
+          invoicesIssued: { total: 42, changePercent: 8 },
+        },
+      });
+    }
+
+    if (path === '/fees/revenue-trend' && route.request().method() === 'GET') {
+      return route.fulfill({
+        json: {
+          points: [
+            { label: 'Jan', value: 12000 },
+            { label: 'Feb', value: 15000 },
+            { label: 'Mar', value: 18000 },
+          ],
+          changePercent: 12.5,
+        },
+      });
+    }
+
+    if (path.startsWith('/students') && route.request().method() === 'GET') {
+      return route.fulfill({
+        json: {
+          data: [{ id: 'student-1', fullName: 'Ali Khan' }],
+          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
+        },
+      });
+    }
+
     if (path.startsWith('/fee-invoices') && route.request().method() === 'GET') {
-      return route.fulfill({ json: { data: [], meta: { total: 0, page: 1, limit: 20 } } });
+      return route.fulfill({ json: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } });
     }
 
     if (path === '/fee-invoices' && route.request().method() === 'POST') {
@@ -132,10 +202,16 @@ export async function setupMockStaffApi(page: Page): Promise<void> {
     if (path.startsWith('/reports/overview')) {
       return route.fulfill({
         json: {
-          students: { total: 42 },
-          fees: { pendingCount: 3, paidCount: 10, pendingAmount: 15000, collectedAmount: 85000 },
-          attendanceMarkedToday: 12,
-          parents: 30,
+          students: { total: 42, changePercent: 5 },
+          fees: {
+            pendingCount: 3,
+            paidCount: 10,
+            pendingAmount: 15000,
+            collectedAmount: 85000,
+            changePercent: 12.5,
+          },
+          attendanceMarkedToday: { count: 12, changePercent: -8.3 },
+          parents: { total: 30, changePercent: 3.2 },
           staffUsers: 5,
         },
       });

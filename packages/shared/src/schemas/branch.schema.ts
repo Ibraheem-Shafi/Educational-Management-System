@@ -21,3 +21,12 @@ export const updateBranchSchema = createBranchSchema.partial().extend({
 });
 
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
+
+export const listBranchesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  search: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+});
+
+export type ListBranchesQuery = z.infer<typeof listBranchesQuerySchema>;

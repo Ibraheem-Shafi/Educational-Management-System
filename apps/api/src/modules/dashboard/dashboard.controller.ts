@@ -18,4 +18,29 @@ export class DashboardController {
   getSummary(@CurrentUser() user: AuthUser, @BranchId() branchId: string | null) {
     return this.dashboardService.getSummary(user, branchId);
   }
+
+  @Get('stats')
+  getStats(@BranchId() branchId: string | null) {
+    return this.dashboardService.getStats(branchId);
+  }
+
+  @Get('today-attendance')
+  getTodayAttendance(@BranchId() branchId: string | null) {
+    return this.dashboardService.getTodayAttendance(branchId);
+  }
+
+  @Get('monthly-revenue')
+  getMonthlyRevenue(@BranchId() branchId: string | null) {
+    return this.dashboardService.getMonthlyRevenue(branchId);
+  }
+
+  @Get('branch-performance')
+  getBranchPerformance(@BranchId() branchId: string | null) {
+    return this.dashboardService.getBranchPerformance(branchId);
+  }
+
+  @Get('recent-activities')
+  getRecentActivities(@BranchId() branchId: string | null) {
+    return this.dashboardService.getRecentActivities(branchId);
+  }
 }

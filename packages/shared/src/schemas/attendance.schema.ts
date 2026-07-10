@@ -35,6 +35,27 @@ export const attendanceHistoryQuerySchema = z.object({
 
 export type AttendanceHistoryQuery = z.infer<typeof attendanceHistoryQuerySchema>;
 
+const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, 'Month must be YYYY-MM');
+
+export const attendanceGridQuerySchema = z
+  .object({
+    month: monthSchema,
+    branchId: z.string().optional(),
+    entityType: z.enum(['student', 'teacher', 'staff']).default('student'),
+    batchId: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.entityType === 'student' && !value.batchId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'batchId is required for student attendance grid',
+        path: ['batchId'],
+      });
+    }
+  });
+
+export type AttendanceGridQuery = z.infer<typeof attendanceGridQuerySchema>;
+
 export const ATTENDANCE_ENTITY_STUDENT = 'student' as const;
 export const ATTENDANCE_ENTITY_TEACHER = 'teacher' as const;
 export const ATTENDANCE_ENTITY_STAFF = 'staff' as const;

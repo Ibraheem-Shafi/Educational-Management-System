@@ -1,67 +1,78 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
+import { useEffectiveBranchId } from '@/hooks/use-branches';
+import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
 import { formatCurrency } from '@eims/shared';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/page-header';
-import { ListRow } from '@/components/layout/list-row';
-import { filterSelectClass } from '@/components/layout/filter-bar';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { StatusBadge } from '@/components/layout/status-badge';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
+import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { queryKeys } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 
 interface Invoice {
   id: string;
   student?: { fullName: string };
   feeType?: { name: string };
   netAmount: number;
+  dueDate: string | null;
   status?: { label: string; code: string };
   paidAt: string | null;
 }
 
-interface Student {
-  id: string;
-  fullName: string;
-}
-
-interface FeeType {
-  id: string;
-  name: string;
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US');
 }
 
 export default function FeesPage() {
   const { session, user } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [studentId, setStudentId] = useState('');
-  const [feeTypeId, setFeeTypeId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [discount, setDiscount] = useState('');
-  const [fine, setFine] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
   const [invoicePage, setInvoicePage] = useState(1);
-  const branchId = user?.branchId ?? '';
+  const [invoiceLimit, setInvoiceLimit] = useState(8);
 
-  const { data: branches } = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
+  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.feesStats,
+    queryFn: () => apiClient<FeesStatsResponse>('/fees/stats', { token }),
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  const { data: trend, isLoading: trendLoading } = useQuery({
+    queryKey: queryKeys.feesRevenueTrend,
+    queryFn: () => apiClient<FeesRevenueTrendResponse>('/fees/revenue-trend', { token }),
+    enabled: !!token,
+  });
 
-  const { data: invoices, isLoading } = useQuery({
-    queryKey: ['fee-invoices', effectiveBranchId, invoicePage],
+  const { data: invoices, isLoading, error } = useQuery({
+    queryKey: ['fee-invoices', effectiveBranchId, invoicePage, invoiceLimit],
     queryFn: () =>
       apiClient<PaginatedResponse<Invoice>>(
-        `/fee-invoices?branchId=${effectiveBranchId}&page=${invoicePage}&limit=20`,
+        `/fee-invoices?branchId=${effectiveBranchId}&page=${invoicePage}&limit=${invoiceLimit}`,
         { token },
       ),
     enabled: !!token && !!effectiveBranchId,
@@ -78,31 +89,8 @@ export default function FeesPage() {
           dueDate: string | null;
         }>;
         total: number;
-      }>(`/reports/fee-defaulters`, { token }),
+      }>('/reports/fee-defaulters', { token }),
     enabled: !!token,
-  });
-
-  const { data: students } = useQuery({
-    queryKey: ['students-fees'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && showForm,
-  });
-
-  const { data: feeTypes } = useQuery({
-    queryKey: ['fee-types'],
-    queryFn: () => apiClient<{ data: FeeType[] }>('/fee-types', { token }),
-    enabled: !!token && showForm,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiClient('/fee-invoices', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Invoice created');
-      queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
-      setShowForm(false);
-    },
-    onError: (err: Error) => toast.error(err.message),
   });
 
   const payMutation = useMutation({
@@ -111,162 +99,207 @@ export default function FeesPage() {
     onSuccess: () => {
       toast.success('Payment recorded');
       queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
+      queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setInvoiceLimit(next);
+    setInvoicePage(1);
+  }, []);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={Receipt}
         title="Fees"
         description="Invoices and payment collection"
         actions={
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? 'Cancel' : 'New invoice'}
-          </Button>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className={pageHeaderActionClassName}
+          >
+            <PageHeaderActionIcon />
+            New invoice
+          </button>
         }
       />
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create invoice</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-4 sm:grid-cols-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate({
-                  branchId: effectiveBranchId,
-                  studentId,
-                  feeTypeId,
-                  amount: Number(amount),
-                  ...(discount ? { discount: Number(discount) } : {}),
-                  ...(fine ? { fine: Number(fine) } : {}),
-                  ...(dueDate ? { dueDate: new Date(dueDate).toISOString() } : {}),
-                });
-              }}
-            >
-              <select
-                className={filterSelectClass}
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                required
-              >
-                <option value="">Student</option>
-                {students?.data.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.fullName}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={filterSelectClass}
-                value={feeTypeId}
-                onChange={(e) => setFeeTypeId(e.target.value)}
-                required
-              >
-                <option value="">Fee type</option>
-                {feeTypes?.data.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-              <Input
-                type="number"
-                placeholder="Amount (PKR)"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-              <Input
-                type="number"
-                placeholder="Discount"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-              />
-              <Input
-                type="number"
-                placeholder="Late fine"
-                value={fine}
-                onChange={(e) => setFine(e.target.value)}
-              />
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              <Button type="submit" disabled={createMutation.isPending} className="sm:col-span-2 w-fit">
-                Create invoice
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <CreateInvoiceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        branchId={effectiveBranchId}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Fee defaulters ({defaulters?.total ?? 0})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="divide-y divide-border">
-            {defaulters?.data.length === 0 && (
-              <p className="py-4 text-center text-muted-foreground">No overdue invoices</p>
-            )}
-            {defaulters?.data.map((inv) => (
-              <ListRow
-                key={inv.id}
-                actions={
-                  <Button size="sm" onClick={() => payMutation.mutate(inv.id)}>
-                    Record payment
-                  </Button>
-                }
-              >
-                <p className="font-medium">{inv.student.fullName}</p>
-                <p className="text-sm text-muted-foreground">
-                  Due {inv.dueDate ?? '—'} · {formatCurrency(inv.netAmount)}
-                </p>
-              </ListRow>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Outstanding',
+            value: formatCurrency(stats?.outstandingAmount.total ?? 0),
+            changePercent: stats?.outstandingAmount.changePercent,
+          },
+          {
+            label: 'Collected (30d)',
+            value: formatCurrency(stats?.collectedLast30Days.total ?? 0),
+            changePercent: stats?.collectedLast30Days.changePercent,
+          },
+          {
+            label: 'Overdue invoices',
+            value: formatCount(stats?.overdueCount.total ?? 0),
+            changePercent: stats?.overdueCount.changePercent,
+          },
+          {
+            label: 'Invoices issued',
+            value: formatCount(stats?.invoicesIssued.total ?? 0),
+            changePercent: stats?.invoicesIssued.changePercent,
+          },
+        ]}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Invoices ({invoices?.meta.total ?? 0})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <ListLoadingSkeleton />}
-          <div className="divide-y divide-border">
-            {invoices?.data.map((inv) => (
-              <ListRow
-                key={inv.id}
-                actions={
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm text-muted-foreground">{inv.status?.label}</span>
-                    {!inv.paidAt && (
-                      <Button size="sm" onClick={() => payMutation.mutate(inv.id)}>
-                        Record payment
-                      </Button>
-                    )}
-                  </div>
-                }
-              >
-                <p className="font-medium">{inv.student?.fullName ?? '—'}</p>
-                <p className="text-sm text-muted-foreground">
-                  {inv.feeType?.name} · {formatCurrency(inv.netAmount)}
-                </p>
-              </ListRow>
-            ))}
-          </div>
-          {invoices && (
-            <PaginationBar
-              page={invoicePage}
-              totalPages={invoices.meta.totalPages}
-              onPageChange={setInvoicePage}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <TrendAreaChart
+        title="Revenue trend"
+        subtitle="Last 6 months"
+        data={trend?.points ?? []}
+        changePercent={trend?.changePercent}
+        isLoading={trendLoading}
+        valueFormatter={(v) => formatCurrency(v)}
+        gradientId="feesRevenueGradient"
+      />
+
+      <ContentPanel title={`Fee defaulters (${defaulters?.total ?? 0})`}>
+        <div className={dataTableWrapperClass}>
+          <table className={cn(dataTableClass, 'min-w-[640px]')}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Student</th>
+                <th className={dataTableThClass}>Due date</th>
+                <th className={dataTableThClass}>Amount</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {defaulters?.data.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                  >
+                    No overdue invoices
+                  </td>
+                </tr>
+              )}
+              {defaulters?.data.map((inv) => (
+                <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <td className={dataTableTdClass}>{inv.student.fullName}</td>
+                  <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                    {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+                  </td>
+                  <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                    {formatCurrency(inv.netAmount)}
+                  </td>
+                  <td className={cn(dataTableTdClass, 'text-right')}>
+                    <RowActionsMenu
+                      items={[
+                        {
+                          label: 'Record payment',
+                          onClick: () => payMutation.mutate(inv.id),
+                        },
+                      ]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ContentPanel>
+
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
+            <thead>
+              <tr>
+                <th className={dataTableThClass}>Student</th>
+                <th className={dataTableThClass}>Fee type</th>
+                <th className={dataTableThClass}>Amount</th>
+                <th className={dataTableThClass}>Due date</th>
+                <th className={dataTableThClass}>Status</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {isLoading && <DataTableSkeletonRows columns={6} rows={invoiceLimit} />}
+
+              {error && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
+                    Failed to load invoices
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !error && invoices?.data.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                  >
+                    No invoices found
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading &&
+                !error &&
+                invoices?.data.map((inv) => (
+                  <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={dataTableTdClass}>{inv.student?.fullName ?? '—'}</td>
+                    <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
+                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                      {formatCurrency(inv.netAmount)}
+                    </td>
+                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                      {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+                    </td>
+                    <td className={dataTableTdClass}>
+                      {inv.status ? (
+                        <StatusBadge label={inv.status.label} code={inv.status.code} />
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className={cn(dataTableTdClass, 'text-right')}>
+                      {!inv.paidAt ? (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Record payment',
+                              onClick: () => payMutation.mutate(inv.id),
+                            },
+                          ]}
+                        />
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+
+        {invoices && (
+          <PaginationBar
+            page={invoicePage}
+            totalPages={invoices.meta.totalPages}
+            limit={invoiceLimit}
+            onPageChange={setInvoicePage}
+            onLimitChange={handleLimitChange}
+          />
+        )}
+      </div>
     </div>
   );
 }
