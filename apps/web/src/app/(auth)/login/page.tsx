@@ -1,14 +1,15 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { apiClient } from '@/lib/api-client';
 import { getPostLoginPath } from '@/lib/auth-redirect';
+import { getLoginErrorMessage, isPortalDisabledLoginError } from '@/lib/login-errors';
 import { resolveAdminMfaStep, startMfaChallenge } from '@/lib/mfa';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
@@ -37,7 +38,19 @@ const primaryButtonClassName = cn(
 );
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<PageContentSkeleton />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const errorCode = searchParams.get('error');
+  const errorMessage = getLoginErrorMessage(errorCode);
+  const portalDisabled = isPortalDisabledLoginError(errorCode);
   const navigatedRef = useRef(false);
   const { name } = useInstitution();
   const { session, user, loading: authLoading, syncAuth } = useAuth();
@@ -57,6 +70,8 @@ export default function LoginPage() {
   };
 
   useEffect(() => {
+    // Stay on login with the portal-disabled message instead of bouncing back into the portal.
+    if (portalDisabled) return;
     if (authLoading || !session?.access_token || !user || step !== 'credentials') return;
 
     const resume = async () => {
@@ -78,7 +93,7 @@ export default function LoginPage() {
     };
 
     void resume();
-  }, [authLoading, session, user, step]);
+  }, [authLoading, session, user, step, portalDisabled]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +216,14 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {errorMessage && (
+            <div
+              role="alert"
+              className="mb-4 rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-sm leading-5 text-[#991B1B]"
+            >
+              {errorMessage}
+            </div>
+          )}
           {step === 'mfa-enroll' ? (
             <MfaEnrollLogin onEnrolled={handleEnrolled} />
           ) : step === 'mfa-verify' ? (
