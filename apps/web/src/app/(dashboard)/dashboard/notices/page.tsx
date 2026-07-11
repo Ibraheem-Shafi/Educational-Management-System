@@ -41,6 +41,7 @@ interface Notice {
   body: string;
   audience: string;
   isPublished: boolean;
+  publishedAt: string | null;
 }
 
 function formatCount(value: number): string {
@@ -49,6 +50,33 @@ function formatCount(value: number): string {
 
 function formatAudience(audience: string): string {
   return audience.charAt(0).toUpperCase() + audience.slice(1);
+}
+
+function formatPublishAt(value: string | null): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-PK', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getNoticeStatus(notice: Notice): { label: string; code: string } {
+  if (notice.isPublished) return { label: 'Published', code: 'active' };
+  if (notice.publishedAt && new Date(notice.publishedAt).getTime() > Date.now()) {
+    return { label: 'Scheduled', code: 'pending' };
+  }
+  return { label: 'Draft', code: 'draft' };
+}
+
+function matchesStatusFilter(notice: Notice, statusFilter: string): boolean {
+  if (!statusFilter) return true;
+  const status = getNoticeStatus(notice).label.toLowerCase();
+  return status === statusFilter;
 }
 
 export default function NoticesPage() {
@@ -95,8 +123,7 @@ export default function NoticesPage() {
         }
       }
       if (audience && notice.audience !== audience) return false;
-      if (statusFilter === 'published' && !notice.isPublished) return false;
-      if (statusFilter === 'draft' && notice.isPublished) return false;
+      if (!matchesStatusFilter(notice, statusFilter)) return false;
       return true;
     });
   }, [data?.data, search, audience, statusFilter]);
@@ -200,6 +227,7 @@ export default function NoticesPage() {
           options={[
             { value: '', label: 'All statuses' },
             { value: 'published', label: 'Published' },
+            { value: 'scheduled', label: 'Scheduled' },
             { value: 'draft', label: 'Draft' },
           ]}
         />
@@ -234,15 +262,16 @@ export default function NoticesPage() {
                 <th className={dataTableThClass}>Title</th>
                 <th className={dataTableThClass}>Audience</th>
                 <th className={dataTableThClass}>Status</th>
+                <th className={dataTableThClass}>Publish at</th>
                 <th className={cn(dataTableThClass, 'w-12')} />
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={4} rows={8} />}
+              {isLoading && <DataTableSkeletonRows columns={5} rows={8} />}
 
               {error && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
                     Failed to load notices
                   </td>
                 </tr>
@@ -251,7 +280,7 @@ export default function NoticesPage() {
               {!isLoading && !error && filteredNotices.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
                     No notices found
@@ -261,49 +290,50 @@ export default function NoticesPage() {
 
               {!isLoading &&
                 !error &&
-                filteredNotices.map((notice) => (
-                  <tr key={notice.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                    <td className={dataTableTdClass}>
-                      <div className="min-w-0">
-                        <p className="font-normal text-[var(--text-main-900,#0A0D14)]">
-                          {notice.title}
-                        </p>
-                        <p className="mt-0.5 line-clamp-1 text-sm text-[var(--text-sub-500,#525866)]">
-                          {notice.body}
-                        </p>
-                      </div>
-                    </td>
-                    <td className={dataTableTdClass}>{formatAudience(notice.audience)}</td>
-                    <td className={dataTableTdClass}>
-                      <StatusBadge
-                        label={notice.isPublished ? 'Published' : 'Draft'}
-                        code={notice.isPublished ? 'active' : 'draft'}
-                      />
-                    </td>
-                    <td className={cn(dataTableTdClass, 'text-right')}>
-                      <RowActionsMenu
-                        items={[
-                          ...(!notice.isPublished
-                            ? [
-                                {
-                                  label: 'Publish',
-                                  onClick: () => publishMutation.mutate(notice.id),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: 'Delete',
-                            onClick: () => {
-                              if (confirm('Delete this notice?')) {
-                                deleteMutation.mutate(notice.id);
-                              }
+                filteredNotices.map((notice) => {
+                  const status = getNoticeStatus(notice);
+                  return (
+                    <tr key={notice.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={dataTableTdClass}>
+                        <div className="min-w-0">
+                          <p className="font-normal text-[var(--text-main-900,#0A0D14)]">
+                            {notice.title}
+                          </p>
+                          <p className="mt-0.5 line-clamp-1 text-sm text-[var(--text-sub-500,#525866)]">
+                            {notice.body}
+                          </p>
+                        </div>
+                      </td>
+                      <td className={dataTableTdClass}>{formatAudience(notice.audience)}</td>
+                      <td className={dataTableTdClass}>
+                        <StatusBadge label={status.label} code={status.code} />
+                      </td>
+                      <td className={dataTableTdClass}>{formatPublishAt(notice.publishedAt)}</td>
+                      <td className={cn(dataTableTdClass, 'text-right')}>
+                        <RowActionsMenu
+                          items={[
+                            ...(!notice.isPublished
+                              ? [
+                                  {
+                                    label: 'Publish now',
+                                    onClick: () => publishMutation.mutate(notice.id),
+                                  },
+                                ]
+                              : []),
+                            {
+                              label: 'Delete',
+                              onClick: () => {
+                                if (confirm('Delete this notice?')) {
+                                  deleteMutation.mutate(notice.id);
+                                }
+                              },
                             },
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

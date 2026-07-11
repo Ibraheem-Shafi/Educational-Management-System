@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
@@ -17,6 +17,8 @@ export class NoticesService {
   ) {}
 
   async getStats(branchId: string | null): Promise<NoticesStatsResponse> {
+    await this.promoteDueScheduledNotices();
+
     const cacheKey = `notices:stats:${branchId ?? 'all'}`;
     const cached = this.ttlCache.get<NoticesStatsResponse>(cacheKey);
     if (cached) return cached;
@@ -25,28 +27,29 @@ export class NoticesService {
     const thirtyAgo = thirtyDaysAgo();
     const now = new Date();
 
+    const draftWhere = { ...branchFilter, isPublished: false, publishedAt: null };
+    const scheduledWhere = {
+      ...branchFilter,
+      isPublished: false,
+      publishedAt: { gt: now },
+    };
+
     const [published, publishedPrev, draft, draftPrev, scheduled, scheduledPrev, total] =
       await Promise.all([
         this.prisma.notice.count({ where: { ...branchFilter, isPublished: true } }),
         this.prisma.notice.count({
           where: { ...branchFilter, isPublished: true, createdAt: { lte: thirtyAgo } },
         }),
-        this.prisma.notice.count({ where: { ...branchFilter, isPublished: false } }),
+        this.prisma.notice.count({ where: draftWhere }),
         this.prisma.notice.count({
-          where: { ...branchFilter, isPublished: false, createdAt: { lte: thirtyAgo } },
+          where: { ...draftWhere, createdAt: { lte: thirtyAgo } },
         }),
+        this.prisma.notice.count({ where: scheduledWhere }),
         this.prisma.notice.count({
           where: {
             ...branchFilter,
             isPublished: false,
-            publishedAt: { gt: now },
-          },
-        }),
-        this.prisma.notice.count({
-          where: {
-            ...branchFilter,
-            isPublished: false,
-            publishedAt: { gt: now, lte: thirtyAgo },
+            publishedAt: { not: null, lte: thirtyAgo },
           },
         }),
         this.prisma.notice.count({ where: branchFilter }),
@@ -64,6 +67,8 @@ export class NoticesService {
   }
 
   async findAll(query: ListNoticesQuery, branchId: string | null) {
+    await this.promoteDueScheduledNotices();
+
     const effectiveBranchId = branchId ?? query.branchId;
     const notices = await this.prisma.notice.findMany({
       where: {
@@ -77,6 +82,8 @@ export class NoticesService {
   }
 
   async findOne(id: string, branchId: string | null) {
+    await this.promoteDueScheduledNotices();
+
     const notice = await this.prisma.notice.findFirst({
       where: { id, ...(branchId ? { branchId } : {}) },
     });
@@ -85,6 +92,8 @@ export class NoticesService {
   }
 
   async create(input: CreateNoticeInput, user: AuthUser) {
+    const scheduledAt = this.parseScheduleTime(input.publishedAt);
+
     const notice = await this.prisma.notice.create({
       data: {
         branchId: input.branchId,
@@ -92,11 +101,14 @@ export class NoticesService {
         body: input.body,
         audience: input.audience,
         createdById: user.id,
+        isPublished: false,
+        publishedAt: scheduledAt,
       },
     });
+    this.invalidateStatsCache();
     await this.audit.log({
       userId: user.id,
-      action: 'notice.created',
+      action: scheduledAt ? 'notice.scheduled' : 'notice.created',
       entityType: 'Notice',
       entityId: notice.id,
       newValue: notice,
@@ -111,6 +123,12 @@ export class NoticesService {
     if (!existing) throw new NotFoundException('Notice not found');
 
     const publishing = input.isPublished === true && !existing.isPublished;
+    const scheduledAt =
+      input.publishedAt !== undefined ? this.parseScheduleTime(input.publishedAt) : undefined;
+
+    if (scheduledAt && (input.isPublished === true || existing.isPublished)) {
+      throw new BadRequestException('Cannot schedule a published notice');
+    }
 
     const notice = await this.prisma.notice.update({
       where: { id },
@@ -120,12 +138,18 @@ export class NoticesService {
         ...(input.audience !== undefined ? { audience: input.audience } : {}),
         ...(input.isPublished !== undefined ? { isPublished: input.isPublished } : {}),
         ...(publishing ? { publishedAt: new Date() } : {}),
+        ...(!publishing && scheduledAt !== undefined ? { publishedAt: scheduledAt } : {}),
       },
     });
 
+    this.invalidateStatsCache();
     await this.audit.log({
       userId: user.id,
-      action: publishing ? 'notice.published' : 'notice.updated',
+      action: publishing
+        ? 'notice.published'
+        : scheduledAt
+          ? 'notice.scheduled'
+          : 'notice.updated',
       entityType: 'Notice',
       entityId: notice.id,
       previousValue: existing,
@@ -143,6 +167,7 @@ export class NoticesService {
 
     await this.prisma.notice.delete({ where: { id } });
 
+    this.invalidateStatsCache();
     await this.audit.log({
       userId: user.id,
       action: 'notice.deleted',
@@ -154,7 +179,39 @@ export class NoticesService {
     return { success: true };
   }
 
+  private invalidateStatsCache(): void {
+    this.ttlCache.deleteByPrefix('notices:stats:');
+  }
+
+  /** Flip scheduled notices whose publish time has arrived. */
+  private async promoteDueScheduledNotices(): Promise<void> {
+    const result = await this.prisma.notice.updateMany({
+      where: {
+        isPublished: false,
+        publishedAt: { not: null, lte: new Date() },
+      },
+      data: { isPublished: true },
+    });
+    if (result.count > 0) {
+      this.invalidateStatsCache();
+    }
+  }
+
+  private parseScheduleTime(value: string | null | undefined): Date | null {
+    if (value === undefined || value === null || value === '') return null;
+    const scheduledAt = new Date(value);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      throw new BadRequestException('Invalid publish schedule time');
+    }
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Publish schedule must be in the future');
+    }
+    return scheduledAt;
+  }
+
   async getPortalNotices(user: AuthUser, branchId: string | null) {
+    await this.promoteDueScheduledNotices();
+
     const audiences: string[] = ['all'];
     if (user.roles.includes('parent')) audiences.push('parents');
     if (user.roles.includes('student')) audiences.push('students');

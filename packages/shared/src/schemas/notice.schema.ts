@@ -7,6 +7,8 @@ export const createNoticeSchema = z.object({
   title: z.string().min(2).max(200),
   body: z.string().min(1).max(10000),
   audience: z.enum(NOTICE_AUDIENCES),
+  /** Future ISO datetime to schedule publish; omit/null for a plain draft. */
+  publishedAt: z.string().datetime().optional().nullable(),
 });
 
 export type CreateNoticeInput = z.infer<typeof createNoticeSchema>;

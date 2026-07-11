@@ -21,6 +21,7 @@ const emptyForm = {
   title: '',
   body: '',
   audience: 'all',
+  publishAt: '',
 };
 
 export function CreateNoticeDialog({
@@ -41,9 +42,21 @@ export function CreateNoticeDialog({
     if (!open) setForm(emptyForm);
   }, [open]);
 
+  const isScheduling = Boolean(form.publishAt.trim());
+
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiClient('/notices', {
+    mutationFn: () => {
+      const publishedAt = form.publishAt.trim()
+        ? new Date(form.publishAt).toISOString()
+        : undefined;
+      if (publishedAt && Number.isNaN(new Date(publishedAt).getTime())) {
+        throw new Error('Invalid publish date/time');
+      }
+      if (publishedAt && new Date(publishedAt).getTime() <= Date.now()) {
+        throw new Error('Publish schedule must be in the future');
+      }
+
+      return apiClient('/notices', {
         method: 'POST',
         token,
         body: JSON.stringify({
@@ -51,10 +64,12 @@ export function CreateNoticeDialog({
           title: form.title,
           body: form.body,
           audience: form.audience,
+          ...(publishedAt ? { publishedAt } : {}),
         }),
-      }),
+      });
+    },
     onSuccess: () => {
-      toast.success('Notice created');
+      toast.success(isScheduling ? 'Notice scheduled' : 'Notice created');
       queryClient.invalidateQueries({ queryKey: ['notices'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.noticesStats });
       onOpenChange(false);
@@ -132,6 +147,20 @@ export function CreateNoticeDialog({
                 className="w-full"
               />
             </div>
+
+            <div>
+              <FormFieldLabel>Publish at</FormFieldLabel>
+              <input
+                type="datetime-local"
+                className={modalFieldClassName}
+                value={form.publishAt}
+                onChange={(e) => setForm((prev) => ({ ...prev, publishAt: e.target.value }))}
+                aria-label="Publish at"
+              />
+              <p className="mt-1.5 text-xs text-[var(--text-sub-500,#525866)]">
+                Leave empty to save as a draft. Set a future date to schedule publishing.
+              </p>
+            </div>
           </div>
 
           <div className="flex shrink-0 gap-4 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-4 pb-5 pt-4">
@@ -154,7 +183,11 @@ export function CreateNoticeDialog({
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',
               )}
             >
-              {createMutation.isPending ? 'Saving…' : 'Save draft'}
+              {createMutation.isPending
+                ? 'Saving…'
+                : isScheduling
+                  ? 'Schedule notice'
+                  : 'Save draft'}
             </button>
           </div>
         </form>
