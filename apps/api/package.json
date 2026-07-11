@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "npm run build -w @eims/types && npm run build -w @eims/shared && npm run build -w @eims/database && nest build",
-    "dev": "npm run build -w @eims/types && nest start --watch",
+    "dev": "npm run build -w @eims/types && npm run build -w @eims/shared && npm run db:generate -w @eims/database && npm run build -w @eims/database && nest start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",
     "lint": "tsc --noEmit"

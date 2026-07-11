@@ -181,6 +181,10 @@ export function useDropdownMenu({
   };
 }
 
+export function getDropdownPortalRoot(): HTMLElement {
+  return document.body;
+}
+
 export function dropdownMenuStyle(position: DropdownMenuPosition): CSSProperties {
   return {
     position: 'fixed',
