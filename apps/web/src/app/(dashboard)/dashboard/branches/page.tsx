@@ -4,7 +4,9 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Mail, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { BranchListRow, BranchesStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
@@ -78,8 +80,10 @@ function ContactIcon({
 
 export default function BranchesPage() {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canManage = can(PERMISSIONS.BRANCHES_MANAGE);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -139,14 +143,16 @@ export default function BranchesPage() {
         title="Branches"
         description="Manage institution branches"
         actions={
-          <button
-            type="button"
-            onClick={() => setAddBranchOpen(true)}
-            className={pageHeaderActionClassName}
-          >
-            <PageHeaderActionIcon />
-            Add branch
-          </button>
+          canManage ? (
+            <button
+              type="button"
+              onClick={() => setAddBranchOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              Add branch
+            </button>
+          ) : undefined
         }
       />
 
@@ -288,38 +294,31 @@ export default function BranchesPage() {
                       />
                     </td>
                     <td className={cn(tdClass, 'text-right')}>
-                      {branch.isActive ? (
-                        <RowActionsMenu
-                          items={[
-                            {
-                              label: 'View branch',
-                              href: `/dashboard/branches/${branch.id}`,
-                            },
-                            {
-                              label: 'Edit branch',
-                              onClick: () => setEditBranchId(branch.id),
-                            },
-                            {
-                              label: 'Deactivate',
-                              onClick: () =>
-                                setDeactivateTarget({
-                                  id: branch.id,
-                                  name: branch.name,
-                                  code: branch.code,
-                                }),
-                            },
-                          ]}
-                        />
-                      ) : (
-                        <RowActionsMenu
-                          items={[
-                            {
-                              label: 'View branch',
-                              href: `/dashboard/branches/${branch.id}`,
-                            },
-                          ]}
-                        />
-                      )}
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: 'View branch',
+                            href: `/dashboard/branches/${branch.id}`,
+                          },
+                          ...(canManage && branch.isActive
+                            ? [
+                                {
+                                  label: 'Edit branch',
+                                  onClick: () => setEditBranchId(branch.id),
+                                },
+                                {
+                                  label: 'Deactivate',
+                                  onClick: () =>
+                                    setDeactivateTarget({
+                                      id: branch.id,
+                                      name: branch.name,
+                                      code: branch.code,
+                                    }),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

@@ -4,7 +4,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import type { NoticesStatsResponse } from '@eims/types';
@@ -81,8 +83,10 @@ function matchesStatusFilter(notice: Notice, statusFilter: string): boolean {
 
 export default function NoticesPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canMutate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [createOpen, setCreateOpen] = useState(false);
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
   const [search, setSearch] = useState('');
@@ -160,14 +164,16 @@ export default function NoticesPage() {
         title="Notices"
         description="Announcements for staff and portals"
         actions={
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className={pageHeaderActionClassName}
-          >
-            <PageHeaderActionIcon />
-            New notice
-          </button>
+          canMutate ? (
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              New notice
+            </button>
+          ) : undefined
         }
       />
 
@@ -310,26 +316,28 @@ export default function NoticesPage() {
                       </td>
                       <td className={dataTableTdClass}>{formatPublishAt(notice.publishedAt)}</td>
                       <td className={cn(dataTableTdClass, 'text-right')}>
-                        <RowActionsMenu
-                          items={[
-                            ...(!notice.isPublished
-                              ? [
-                                  {
-                                    label: 'Publish now',
-                                    onClick: () => publishMutation.mutate(notice.id),
-                                  },
-                                ]
-                              : []),
-                            {
-                              label: 'Delete',
-                              onClick: () => {
-                                if (confirm('Delete this notice?')) {
-                                  deleteMutation.mutate(notice.id);
-                                }
+                        {canMutate ? (
+                          <RowActionsMenu
+                            items={[
+                              ...(!notice.isPublished
+                                ? [
+                                    {
+                                      label: 'Publish now',
+                                      onClick: () => publishMutation.mutate(notice.id),
+                                    },
+                                  ]
+                                : []),
+                              {
+                                label: 'Delete',
+                                onClick: () => {
+                                  if (confirm('Delete this notice?')) {
+                                    deleteMutation.mutate(notice.id);
+                                  }
+                                },
                               },
-                            },
-                          ]}
-                        />
+                            ]}
+                          />
+                        ) : null}
                       </td>
                     </tr>
                   );

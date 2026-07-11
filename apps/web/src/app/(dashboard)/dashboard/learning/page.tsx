@@ -6,7 +6,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked } from 'lucide-react';
 import type { LearningResourceResponse, LearningStatsResponse, PaginatedResponse } from '@eims/types';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { useBatches } from '@/hooks/use-batches';
@@ -58,8 +60,10 @@ function labelize(value: string) {
 
 export default function LearningPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canPublish = can(PERMISSIONS.LEARNING_PUBLISH);
   const [openCreate, setOpenCreate] = useState(false);
   const [editing, setEditing] = useState<LearningResourceResponse | null>(null);
   const [search, setSearch] = useState('');
@@ -148,8 +152,6 @@ export default function LearningPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const canPublish = user?.permissions.includes('learning.publish');
-
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
@@ -157,21 +159,23 @@ export default function LearningPage() {
         title="Learning"
         description="Manage notes, materials, homework and syllabus"
         actions={
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setOpenCreate(true)} className={pageHeaderActionClassName}>
-              <PageHeaderActionIcon />
-              Add content
-            </button>
-            <Link
-              href="/dashboard/learning/new"
-              className={cn(
-                pageHeaderActionClassName,
-                'border border-stroke-soft-200 bg-white text-text-main-900 hover:bg-neutral-50',
-              )}
-            >
-              New homework/syllabus
-            </Link>
-          </div>
+          canPublish ? (
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setOpenCreate(true)} className={pageHeaderActionClassName}>
+                <PageHeaderActionIcon />
+                Add content
+              </button>
+              <Link
+                href="/dashboard/learning/new"
+                className={cn(
+                  pageHeaderActionClassName,
+                  'border border-stroke-soft-200 bg-white text-text-main-900 hover:bg-neutral-50',
+                )}
+              >
+                New homework/syllabus
+              </Link>
+            </div>
+          ) : undefined
         }
       />
 
@@ -293,31 +297,29 @@ export default function LearningPage() {
                       {row.dueAt ? new Date(row.dueAt).toLocaleString() : '—'}
                     </td>
                     <td className={cn(dataTableTdClass, 'text-right')}>
-                      <RowActionsMenu
-                        items={[
-                          {
-                            label: 'Edit',
-                            ...(row.type === 'note' || row.type === 'material' || row.type === 'resource'
-                              ? { onClick: () => setEditing(row) }
-                              : { href: `/dashboard/learning/${row.id}/edit` }),
-                          },
-                          ...(canPublish
-                            ? [
-                                {
-                                  label: row.isPublished ? 'Unpublish' : 'Publish',
-                                  onClick: () =>
-                                    togglePublishMutation.mutate({ id: row.id, isPublished: row.isPublished }),
-                                },
-                                {
-                                  label: 'Delete',
-                                  onClick: () => {
-                                    if (confirm('Delete this learning content?')) deleteMutation.mutate(row.id);
-                                  },
-                                },
-                              ]
-                            : []),
-                        ]}
-                      />
+                      {canPublish ? (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Edit',
+                              ...(row.type === 'note' || row.type === 'material' || row.type === 'resource'
+                                ? { onClick: () => setEditing(row) }
+                                : { href: `/dashboard/learning/${row.id}/edit` }),
+                            },
+                            {
+                              label: row.isPublished ? 'Unpublish' : 'Publish',
+                              onClick: () =>
+                                togglePublishMutation.mutate({ id: row.id, isPublished: row.isPublished }),
+                            },
+                            {
+                              label: 'Delete',
+                              onClick: () => {
+                                if (confirm('Delete this learning content?')) deleteMutation.mutate(row.id);
+                              },
+                            },
+                          ]}
+                        />
+                      ) : null}
                     </td>
                   </tr>
                 ))}

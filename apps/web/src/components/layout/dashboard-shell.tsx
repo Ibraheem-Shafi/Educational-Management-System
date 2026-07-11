@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { DashboardHeader } from './dashboard-header';
 import { StaffGuard } from './staff-guard';
 import { AdminMfaGuard } from './admin-mfa-guard';
+import { PermissionGuard } from './permission-guard';
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
@@ -16,7 +17,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <DashboardHeader />
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-6 font-[family-name:var(--font-inter)] lg:p-6">
             <StaffGuard>
-              <AdminMfaGuard>{children}</AdminMfaGuard>
+              <AdminMfaGuard>
+                <PermissionGuard>{children}</PermissionGuard>
+              </AdminMfaGuard>
             </StaffGuard>
           </main>
         </div>

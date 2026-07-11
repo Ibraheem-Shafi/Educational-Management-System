@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormInput, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -50,8 +52,10 @@ const fieldTypeOptions = FIELD_TYPES.map((t) => ({ value: t, label: t }));
 
 export default function FormFieldsPage() {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canManage = can(PERMISSIONS.FORM_FIELDS_MANAGE);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [code, setCode] = useState('');
@@ -129,10 +133,12 @@ export default function FormFieldsPage() {
         title="Admission form fields"
         description="Custom fields shown on student admission"
         actions={
-          <button type="button" onClick={() => setCreateOpen(true)} className={pageHeaderActionClassName}>
-            <PageHeaderActionIcon />
-            Add field
-          </button>
+          canManage ? (
+            <button type="button" onClick={() => setCreateOpen(true)} className={pageHeaderActionClassName}>
+              <PageHeaderActionIcon />
+              Add field
+            </button>
+          ) : undefined
         }
       />
 
@@ -259,27 +265,29 @@ export default function FormFieldsPage() {
                         </td>
                         <td className={tdClass}>{f.sortOrder > 0 ? f.sortOrder : '—'}</td>
                         <td className={cn(tdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Edit',
-                                onClick: () => {
-                                  setEditId(f.id);
-                                  setEditLabel(f.label);
-                                  setEditFieldType(f.fieldType);
-                                  setEditOptions(f.options?.join(', ') ?? '');
-                                  setEditIsRequired(f.isRequired);
-                                  setEditSortOrder(String(f.sortOrder));
+                          {canManage ? (
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => {
+                                    setEditId(f.id);
+                                    setEditLabel(f.label);
+                                    setEditFieldType(f.fieldType);
+                                    setEditOptions(f.options?.join(', ') ?? '');
+                                    setEditIsRequired(f.isRequired);
+                                    setEditSortOrder(String(f.sortOrder));
+                                  },
                                 },
-                              },
-                              {
-                                label: 'Remove',
-                                onClick: () => {
-                                  if (confirm(`Remove field "${f.label}"?`)) deactivateMutation.mutate(f.id);
+                                {
+                                  label: 'Remove',
+                                  onClick: () => {
+                                    if (confirm(`Remove field "${f.label}"?`)) deactivateMutation.mutate(f.id);
+                                  },
                                 },
-                              },
-                            ]}
-                          />
+                              ]}
+                            />
+                          ) : null}
                         </td>
                       </>
                     )}

@@ -4,7 +4,9 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import type { AssessmentsStatsResponse } from '@eims/types';
@@ -60,8 +62,11 @@ function formatCount(value: number): string {
 
 export default function AssessmentsPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canEnterMarks = can(PERMISSIONS.ASSESSMENTS_MARKS_ENTER);
+  const canManageAcademic = can(PERMISSIONS.ACADEMIC_MANAGE);
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [showSeries, setShowSeries] = useState(false);
@@ -180,20 +185,26 @@ export default function AssessmentsPage() {
         description="Tests, exams, and marks entry"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => setShowSeries(!showSeries)}>
-              {showSeries ? 'Hide series' : 'Manage series'}
-            </Button>
-            <Button variant="outline" onClick={() => setShowTypes(!showTypes)}>
-              {showTypes ? 'Hide types' : 'Manage types'}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className={pageHeaderActionClassName}
-            >
-              <PageHeaderActionIcon />
-              New assessment
-            </button>
+            {canManageAcademic && (
+              <>
+                <Button variant="outline" onClick={() => setShowSeries(!showSeries)}>
+                  {showSeries ? 'Hide series' : 'Manage series'}
+                </Button>
+                <Button variant="outline" onClick={() => setShowTypes(!showTypes)}>
+                  {showTypes ? 'Hide types' : 'Manage types'}
+                </Button>
+              </>
+            )}
+            {canEnterMarks && (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                <PageHeaderActionIcon />
+                New assessment
+              </button>
+            )}
           </div>
         }
       />
@@ -230,7 +241,7 @@ export default function AssessmentsPage() {
         ]}
       />
 
-      {showSeries && (
+      {canManageAcademic && showSeries && (
         <ContentPanel title="Assessment series">
           <div className="space-y-4 p-5">
             <form
@@ -307,7 +318,7 @@ export default function AssessmentsPage() {
         </ContentPanel>
       )}
 
-      {showTypes && (
+      {canManageAcademic && showTypes && (
         <ContentPanel title="Assessment types">
           <div className="space-y-4 p-5">
             <form
@@ -434,14 +445,16 @@ export default function AssessmentsPage() {
                     <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
                     <td className={dataTableTdClass}>{assessment.totalMarks}</td>
                     <td className={cn(dataTableTdClass, 'text-right')}>
-                      <RowActionsMenu
-                        items={[
-                          {
-                            label: 'Enter marks',
-                            href: `/dashboard/assessments/${assessment.id}/marks`,
-                          },
-                        ]}
-                      />
+                      {canEnterMarks ? (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Enter marks',
+                              href: `/dashboard/assessments/${assessment.id}/marks`,
+                            },
+                          ]}
+                        />
+                      ) : null}
                     </td>
                   </tr>
                 ))}

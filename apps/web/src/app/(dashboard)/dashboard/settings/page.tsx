@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useInstitution } from '@/providers/institution-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadInstitutionAsset } from '@/lib/upload-institution-asset';
@@ -15,6 +17,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import { PermissionGate } from '@/components/auth/permission-gate';
 
 interface LookupStatus {
   id: string;
@@ -226,20 +229,24 @@ export default function SettingsPage() {
               className="max-w-[140px]"
             />
             <Input placeholder="Label" value={newStatusLabel} onChange={(e) => setNewStatusLabel(e.target.value)} />
-            <Button
-              variant="outline"
-              disabled={!newStatusCode || !newStatusLabel || createStatusMutation.isPending}
-              onClick={() => createStatusMutation.mutate({ code: newStatusCode, label: newStatusLabel })}
-            >
-              Add status
-            </Button>
+            <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
+              <Button
+                variant="outline"
+                disabled={!newStatusCode || !newStatusLabel || createStatusMutation.isPending}
+                onClick={() => createStatusMutation.mutate({ code: newStatusCode, label: newStatusLabel })}
+              >
+                Add status
+              </Button>
+            </PermissionGate>
           </div>
         </div>
       </ContentPanel>
 
-      <Button onClick={handleSave} disabled={saveMutation.isPending}>
-        Save settings
-      </Button>
+      <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
+        <Button onClick={handleSave} disabled={saveMutation.isPending}>
+          Save settings
+        </Button>
+      </PermissionGate>
     </div>
   );
 }

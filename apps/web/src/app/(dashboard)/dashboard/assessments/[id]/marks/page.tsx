@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ import { FilterBar, filterSelectClass } from '@/components/layout/filter-bar';
 import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
 import { VirtualList } from '@/components/layout/virtual-list';
 import { MarksStudentRow } from '@/components/features/marks-student-row';
+import { PermissionGate } from '@/components/auth/permission-gate';
 
 interface Batch {
   id: string;
@@ -37,8 +40,10 @@ interface SheetStudent {
 export default function MarksEntryPage() {
   const { id } = useParams<{ id: string }>();
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canEnterMarks = can(PERMISSIONS.ASSESSMENTS_MARKS_ENTER);
   const [batchId, setBatchId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [marks, setMarks] = useState<Record<string, string>>({});
@@ -155,12 +160,14 @@ export default function MarksEntryPage() {
                 </option>
               ))}
             </select>
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={!batchId || !subjectId || saveMutation.isPending}
-            >
-              Save marks
-            </Button>
+            <PermissionGate permission={PERMISSIONS.ASSESSMENTS_MARKS_ENTER}>
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={!batchId || !subjectId || saveMutation.isPending}
+              >
+                Save marks
+              </Button>
+            </PermissionGate>
           </FilterBar>
         </CardContent>
       </Card>
@@ -186,6 +193,7 @@ export default function MarksEntryPage() {
                     remarks={remarks[row.studentId] ?? ''}
                     onMarksChange={handleMarksChange}
                     onRemarksChange={handleRemarksChange}
+                    disabled={!canEnterMarks}
                   />
                 )}
               />

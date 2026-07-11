@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LeaveRequestResponse } from '@eims/types';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -12,6 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { Button } from '@/components/ui/button';
+import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -84,22 +86,24 @@ export default function LeaveRequestsPage() {
                     </td>
                     <td className={dataTableTdClass}>
                       {row.status === 'pending' ? (
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => review.mutate({ id: row.id, status: 'approved' })}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => review.mutate({ id: row.id, status: 'rejected' })}
-                          >
-                            Reject
-                          </Button>
-                        </div>
+                        <PermissionGate permission={PERMISSIONS.STUDENTS_UPDATE} fallback="—">
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => review.mutate({ id: row.id, status: 'approved' })}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => review.mutate({ id: row.id, status: 'rejected' })}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        </PermissionGate>
                       ) : (
                         '—'
                       )}

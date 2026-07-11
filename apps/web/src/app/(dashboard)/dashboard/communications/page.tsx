@@ -3,7 +3,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, Radio } from 'lucide-react';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { CommunicationsStatsResponse, PaginatedResponse } from '@eims/types';
 import {
@@ -51,7 +53,9 @@ function channelShare(count: number, total: number): number {
 
 export default function CommunicationsPage() {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
+  const canSend = can(PERMISSIONS.COMMUNICATIONS_SEND);
   const [sendOpen, setSendOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -110,27 +114,29 @@ export default function CommunicationsPage() {
         title="Communications"
         description="SMS and WhatsApp messaging (Twilio)"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setBroadcastOpen(true)}
-              className={cn(
-                pageHeaderActionClassName,
-                'border border-[var(--stroke-soft-200,#E2E4E9)] bg-white text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]',
-              )}
-            >
-              <Radio className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-              Broadcast
-            </button>
-            <button
-              type="button"
-              onClick={() => setSendOpen(true)}
-              className={pageHeaderActionClassName}
-            >
-              <PageHeaderActionIcon />
-              Send message
-            </button>
-          </div>
+          canSend ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBroadcastOpen(true)}
+                className={cn(
+                  pageHeaderActionClassName,
+                  'border border-[var(--stroke-soft-200,#E2E4E9)] bg-white text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]',
+                )}
+              >
+                <Radio className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                Broadcast
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                <PageHeaderActionIcon />
+                Send message
+              </button>
+            </div>
+          ) : undefined
         }
       />
 

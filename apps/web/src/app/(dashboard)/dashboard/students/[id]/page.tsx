@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { uploadStudentPhoto } from '@/lib/upload-photo';
 import { uploadStudentDocument } from '@/lib/upload-document';
@@ -12,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import { StudentDetailView } from '@/components/features/students/student-detail-view';
+import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -40,9 +43,12 @@ export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
+  const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
+  const canDelete = can(PERMISSIONS.STUDENTS_DELETE);
 
   const { data: student, isLoading } = useQuery({
     queryKey: ['student', id],
@@ -203,7 +209,7 @@ export default function StudentDetailPage() {
     <div className="space-y-6">
       <StudentDetailView
         student={student}
-        onEdit={() => setEditOpen(true)}
+        onEdit={canUpdate ? () => setEditOpen(true) : undefined}
         subjectsSection={
           <div className="space-y-3">
             {allSubjects?.data.map((s) => (
@@ -211,6 +217,7 @@ export default function StudentDetailPage() {
                 <input
                   type="checkbox"
                   checked={selectedSubjectIds.includes(s.id)}
+                  disabled={!canUpdate}
                   onChange={(e) =>
                     setSelectedSubjectIds((prev) =>
                       e.target.checked ? [...prev, s.id] : prev.filter((x) => x !== s.id),
@@ -220,14 +227,16 @@ export default function StudentDetailPage() {
                 {s.name}
               </label>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => saveSubjectsMutation.mutate()}
-              disabled={saveSubjectsMutation.isPending}
-            >
-              Save subjects
-            </Button>
+            <PermissionGate permission={PERMISSIONS.STUDENTS_UPDATE}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => saveSubjectsMutation.mutate()}
+                disabled={saveSubjectsMutation.isPending}
+              >
+                Save subjects
+              </Button>
+            </PermissionGate>
           </div>
         }
         customFieldsSection={
@@ -340,14 +349,16 @@ export default function StudentDetailPage() {
                 Save
               </Button>
             </div>
-            <Button
-              variant="outline"
-              className="mt-3 w-full text-red-600"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-            >
-              Remove student
-            </Button>
+            {canDelete && (
+              <Button
+                variant="outline"
+                className="mt-3 w-full text-red-600"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+              >
+                Remove student
+              </Button>
+            )}
           </div>
         </div>
       )}

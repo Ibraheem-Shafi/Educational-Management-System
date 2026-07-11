@@ -4,7 +4,9 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, UserCog, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { PaginatedResponse, StaffListRow, UsersStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
@@ -99,8 +101,10 @@ function formatGender(gender: string | null): string {
 
 export default function UsersPage() {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canManage = can(PERMISSIONS.USERS_MANAGE);
 
   const [search, setSearch] = useState('');
   const [roleId, setRoleId] = useState('');
@@ -178,14 +182,16 @@ export default function UsersPage() {
         title="Users"
         description="Staff accounts and invitations"
         actions={
-          <button
-            type="button"
-            onClick={() => setInviteOpen(true)}
-            className={pageHeaderActionClassName}
-          >
-            <UserPlus className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
-            Invite User
-          </button>
+          canManage ? (
+            <button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <UserPlus className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
+              Invite User
+            </button>
+          ) : undefined
         }
       />
 
@@ -381,7 +387,8 @@ export default function UsersPage() {
                       />
                     </td>
                     <td className={cn(tdClass, 'text-right')}>
-                      {!staff.isInvitation &&
+                      {canManage &&
+                      !staff.isInvitation &&
                       staff.status === 'active' &&
                       staff.roleCode !== 'super_admin' ? (
                         <RowActionsMenu

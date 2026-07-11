@@ -9,7 +9,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { useBatches } from '@/hooks/use-batches';
 import { downloadCsv } from '@/lib/download-csv';
-import { formatCurrency } from '@eims/shared';
+import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
@@ -17,6 +17,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import type { ReportsOverviewResponse } from '@eims/types';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
 
 const thClass =
   'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
@@ -40,9 +41,10 @@ interface CorrelationStudent {
 
 export default function ReportsPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
-  const canViewReports = user?.permissions.includes('reports.view');
-  const canViewAnalytics = user?.permissions.includes('analytics.read');
+  const canViewReports = can(PERMISSIONS.REPORTS_VIEW);
+  const canViewAnalytics = can(PERMISSIONS.ANALYTICS_READ);
   const [correlationBatchId, setCorrelationBatchId] = useState('');
 
   const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);

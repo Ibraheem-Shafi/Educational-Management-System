@@ -10,6 +10,9 @@ import {
   GraduationCap,
   Megaphone,
 } from 'lucide-react';
+import { PERMISSIONS } from '@eims/shared';
+import { usePermissions } from '@/hooks/use-permissions';
+import type { Permission } from '@/lib/permissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -17,16 +20,50 @@ const QUICK_ACTIONS: Array<{
   label: string;
   href: string;
   icon: LucideIcon;
+  permission: Permission;
 }> = [
-  { label: 'Add Branch', href: '/dashboard/branches/new', icon: Building2 },
-  { label: 'Add Student', href: '/dashboard/students/new', icon: GraduationCap },
-  { label: 'Add Teacher', href: '/dashboard/users', icon: BookOpen },
-  { label: 'Create Notice', href: '/dashboard/notices', icon: Megaphone },
-  { label: 'Generate Report', href: '/dashboard/reports', icon: FileBarChart },
-  { label: 'View Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+  {
+    label: 'Add Branch',
+    href: '/dashboard/branches/new',
+    icon: Building2,
+    permission: PERMISSIONS.BRANCHES_MANAGE,
+  },
+  {
+    label: 'Add Student',
+    href: '/dashboard/students/new',
+    icon: GraduationCap,
+    permission: PERMISSIONS.STUDENTS_CREATE,
+  },
+  {
+    label: 'Add Teacher',
+    href: '/dashboard/users',
+    icon: BookOpen,
+    permission: PERMISSIONS.USERS_MANAGE,
+  },
+  {
+    label: 'Create Notice',
+    href: '/dashboard/notices',
+    icon: Megaphone,
+    permission: PERMISSIONS.STUDENTS_UPDATE,
+  },
+  {
+    label: 'Generate Report',
+    href: '/dashboard/reports',
+    icon: FileBarChart,
+    permission: PERMISSIONS.REPORTS_VIEW,
+  },
+  {
+    label: 'View Analytics',
+    href: '/dashboard/analytics',
+    icon: BarChart3,
+    permission: PERMISSIONS.ANALYTICS_READ,
+  },
 ];
 
 export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
+  const { can } = usePermissions();
+  const actions = QUICK_ACTIONS.filter((action) => can(action.permission));
+
   if (isLoading) {
     return (
       <div className="overflow-hidden rounded-xl border border-stroke-soft-200 bg-neutral-0">
@@ -53,26 +90,32 @@ export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 p-5">
-        {QUICK_ACTIONS.map((action) => {
-          const Icon = action.icon;
-          return (
-            <Link
-              key={action.label}
-              href={action.href}
-              className={cn(
-                'flex flex-col items-center justify-center gap-2 rounded-xl border border-stroke-soft-200',
-                'bg-white px-3 py-4 text-center transition-colors hover:bg-neutral-50',
-              )}
-            >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EFF6FF]">
-                <Icon className="h-5 w-5 text-[#2563EB]" strokeWidth={1.75} />
-              </span>
-              <span className="text-sm font-medium leading-5 text-text-main-900">
-                {action.label}
-              </span>
-            </Link>
-          );
-        })}
+        {actions.length === 0 ? (
+          <p className="col-span-2 py-6 text-center text-sm text-text-sub-500">
+            No quick actions available
+          </p>
+        ) : (
+          actions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.label}
+                href={action.href}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-2 rounded-xl border border-stroke-soft-200',
+                  'bg-white px-3 py-4 text-center transition-colors hover:bg-neutral-50',
+                )}
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EFF6FF]">
+                  <Icon className="h-5 w-5 text-[#2563EB]" strokeWidth={1.75} />
+                </span>
+                <span className="text-sm font-medium leading-5 text-text-main-900">
+                  {action.label}
+                </span>
+              </Link>
+            );
+          })
+        )}
       </div>
     </div>
   );

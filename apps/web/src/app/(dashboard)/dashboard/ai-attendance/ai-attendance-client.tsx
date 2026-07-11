@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { uploadAttendanceRegister } from '@/lib/upload-attendance-register';
 import { queryKeys } from '@/lib/query-keys';
@@ -16,6 +18,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { PermissionGate } from '@/components/auth/permission-gate';
 import { cn } from '@/lib/utils';
 
 const thClass =
@@ -46,8 +49,10 @@ interface LookupStatus {
 
 export default function AiAttendancePage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canUseAi = can(PERMISSIONS.AI_ATTENDANCE_USE);
   const branchId = user?.branchId ?? '';
 
   const [batchId, setBatchId] = useState('');
@@ -195,31 +200,33 @@ export default function AiAttendancePage() {
         ]}
       />
 
-      <ContentPanel title="1. Upload register">
-        <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-          <SelectDropdown
-            aria-label="Batch"
-            placeholder="Select batch"
-            value={batchId}
-            onValueChange={setBatchId}
-            options={batchOptions}
-            fullWidth
-          />
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <Input
-            type="file"
-            accept="image/*"
-            className="sm:col-span-2"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file && batchId) uploadMutation.mutate(file);
-              else if (!batchId) toast.error('Select a batch first');
-            }}
-          />
-        </div>
-      </ContentPanel>
+      <PermissionGate permission={PERMISSIONS.AI_ATTENDANCE_USE}>
+        <ContentPanel title="1. Upload register">
+          <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
+            <SelectDropdown
+              aria-label="Batch"
+              placeholder="Select batch"
+              value={batchId}
+              onValueChange={setBatchId}
+              options={batchOptions}
+              fullWidth
+            />
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input
+              type="file"
+              accept="image/*"
+              className="sm:col-span-2"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file && batchId) uploadMutation.mutate(file);
+                else if (!batchId) toast.error('Select a batch first');
+              }}
+            />
+          </div>
+        </ContentPanel>
+      </PermissionGate>
 
-      {activeSessionId && (
+      {canUseAi && activeSessionId && (
         <ContentPanel title="2. Analyze & review">
           <div className="space-y-4 px-5 py-5">
             <textarea

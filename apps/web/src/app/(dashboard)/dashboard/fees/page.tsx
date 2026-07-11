@@ -8,7 +8,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
-import { formatCurrency } from '@eims/shared';
+import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -31,6 +31,7 @@ import {
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
 
 interface Invoice {
   id: string;
@@ -48,8 +49,10 @@ function formatCount(value: number): string {
 
 export default function FeesPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canCollect = can(PERMISSIONS.FEES_COLLECT);
   const [createOpen, setCreateOpen] = useState(false);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
@@ -117,14 +120,16 @@ export default function FeesPage() {
         title="Fees"
         description="Invoices and payment collection"
         actions={
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className={pageHeaderActionClassName}
-          >
-            <PageHeaderActionIcon />
-            New invoice
-          </button>
+          canCollect ? (
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              New invoice
+            </button>
+          ) : undefined
         }
       />
 
@@ -202,14 +207,16 @@ export default function FeesPage() {
                     {formatCurrency(inv.netAmount)}
                   </td>
                   <td className={cn(dataTableTdClass, 'text-right')}>
-                    <RowActionsMenu
-                      items={[
-                        {
-                          label: 'Record payment',
-                          onClick: () => payMutation.mutate(inv.id),
-                        },
-                      ]}
-                    />
+                    {canCollect ? (
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: 'Record payment',
+                            onClick: () => payMutation.mutate(inv.id),
+                          },
+                        ]}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -273,7 +280,7 @@ export default function FeesPage() {
                       )}
                     </td>
                     <td className={cn(dataTableTdClass, 'text-right')}>
-                      {!inv.paidAt ? (
+                      {canCollect && !inv.paidAt ? (
                         <RowActionsMenu
                           items={[
                             {

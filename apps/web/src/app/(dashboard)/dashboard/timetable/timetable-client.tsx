@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -46,10 +48,11 @@ interface Slot {
 
 export default function TimetablePage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const branchId = user?.branchId ?? '';
-  const canManage = user?.permissions.includes('timetable.manage');
+  const canManage = can(PERMISSIONS.TIMETABLE_MANAGE);
 
   const [view, setView] = useState<'batch' | 'teacher' | 'room'>('batch');
   const [filterBatchId, setFilterBatchId] = useState('');

@@ -4,7 +4,9 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Mail, Phone, Users } from 'lucide-react';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { PaginatedResponse, StudentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
@@ -98,7 +100,9 @@ const tdClass =
 
 export default function StudentsPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
+  const canCreate = can(PERMISSIONS.STUDENTS_CREATE);
   const [search, setSearch] = useState('');
   const [batchId, setBatchId] = useState('');
   const [statusId, setStatusId] = useState('');
@@ -154,10 +158,12 @@ export default function StudentsPage() {
         title="Students"
         description="View and manage student records"
         actions={
-          <Link href="/dashboard/students/new" className={pageHeaderActionClassName}>
-            <PageHeaderActionIcon />
-            Admit student
-          </Link>
+          canCreate ? (
+            <Link href="/dashboard/students/new" className={pageHeaderActionClassName}>
+              <PageHeaderActionIcon />
+              Admit student
+            </Link>
+          ) : undefined
         }
       />
 

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { useBatches } from '@/hooks/use-batches';
@@ -34,8 +36,10 @@ const MODE_TABS = [
 
 export default function AttendancePage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canMark = can(PERMISSIONS.ATTENDANCE_MARK);
 
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [mode, setMode] = useState<AttendanceMode>('student');
@@ -138,7 +142,7 @@ export default function AttendancePage() {
 
   const handleCellClick = useCallback(
     (rowId: string, date: string) => {
-      if (!statusCycle.length) return;
+      if (!canMark || !statusCycle.length) return;
 
       const row = grid?.rows.find((r) => r.id === rowId);
       const current = row?.attendance[date];
@@ -150,7 +154,7 @@ export default function AttendancePage() {
 
       markMutation.mutate({ rowId, date, statusId: next.id });
     },
-    [grid?.rows, markMutation, statusCycle],
+    [canMark, grid?.rows, markMutation, statusCycle],
   );
 
   const batchOptions = useMemo(

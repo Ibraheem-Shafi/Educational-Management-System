@@ -4,7 +4,9 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
@@ -80,8 +82,10 @@ function formatCount(value: number): string {
 
 export default function ParentsPage() {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
@@ -127,14 +131,16 @@ export default function ParentsPage() {
         title="Parents"
         description="Guardians linked to students"
         actions={
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className={pageHeaderActionClassName}
-          >
-            <PageHeaderActionIcon />
-            Add parent
-          </button>
+          canUpdate ? (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              Add parent
+            </button>
+          ) : undefined
         }
       />
 
@@ -270,23 +276,25 @@ export default function ParentsPage() {
                       )}
                     </td>
                     <td className={cn(dataTableTdClass, 'text-right')}>
-                      <RowActionsMenu
-                        items={[
-                          {
-                            label: 'Link student',
-                            onClick: () =>
-                              setLinkTarget({ id: parent.id, name: parent.fullName }),
-                          },
-                          ...parent.students.map((s) => ({
-                            label: `Unlink ${s.student.fullName}`,
-                            onClick: () =>
-                              unlinkMutation.mutate({
-                                parentId: parent.id,
-                                studentId: s.student.id,
-                              }),
-                          })),
-                        ]}
-                      />
+                      {canUpdate ? (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Link student',
+                              onClick: () =>
+                                setLinkTarget({ id: parent.id, name: parent.fullName }),
+                            },
+                            ...parent.students.map((s) => ({
+                              label: `Unlink ${s.student.fullName}`,
+                              onClick: () =>
+                                unlinkMutation.mutate({
+                                  parentId: parent.id,
+                                  studentId: s.student.id,
+                                }),
+                            })),
+                          ]}
+                        />
+                      ) : null}
                     </td>
                   </tr>
                 ))}

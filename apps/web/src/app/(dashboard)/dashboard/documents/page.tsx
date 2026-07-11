@@ -4,7 +4,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
 import type { DocumentsStatsResponse } from '@eims/types';
@@ -58,8 +60,10 @@ function categoryLabel(value: string): string {
 
 export default function DocumentsPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canUpload = can(PERMISSIONS.DOCUMENTS_UPLOAD);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -118,8 +122,6 @@ export default function DocumentsPage() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
-
-  const canUpload = user?.permissions.includes('documents.upload');
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -248,7 +250,7 @@ export default function DocumentsPage() {
                       <RowActionsMenu
                         items={[
                           { label: 'Open', onClick: () => openDocument(doc.id) },
-                          ...(user?.permissions.includes('documents.delete')
+                          ...(canUpload
                             ? [
                                 {
                                   label: 'Delete',

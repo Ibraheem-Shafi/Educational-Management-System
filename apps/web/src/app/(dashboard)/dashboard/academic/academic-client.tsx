@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -99,8 +101,10 @@ function tabStats(tab: AcademicTab, stats?: AcademicStatsResponse): MainStatItem
 
 export default function AcademicPage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canManage = can(PERMISSIONS.ACADEMIC_MANAGE);
   const [tab, setTab] = useState<AcademicTab>('programs');
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
 
@@ -336,7 +340,7 @@ export default function AcademicPage() {
         title="Academic"
         description="Programs, batches, and subjects"
         actions={
-          createAction ? (
+          canManage && createAction ? (
             <button type="button" onClick={createAction.onClick} className={pageHeaderActionClassName}>
               <PageHeaderActionIcon />
               {createAction.label}
@@ -427,18 +431,20 @@ export default function AcademicPage() {
                         <td className={tdClass}>{p.name}</td>
                         <td className={tdClass}>{p.code ?? '—'}</td>
                         <td className={cn(tdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Edit',
-                                onClick: () => {
-                                  setEditProgramId(p.id);
-                                  setEditProgramName(p.name);
-                                  setEditProgramCode(p.code ?? '');
+                          {canManage ? (
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => {
+                                    setEditProgramId(p.id);
+                                    setEditProgramName(p.name);
+                                    setEditProgramCode(p.code ?? '');
+                                  },
                                 },
-                              },
-                            ]}
-                          />
+                              ]}
+                            />
+                          ) : null}
                         </td>
                       </>
                     )}
@@ -498,17 +504,19 @@ export default function AcademicPage() {
                         <td className={tdClass}>{b.name}</td>
                         <td className={tdClass}>{b.program?.name ?? '—'}</td>
                         <td className={cn(tdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Edit',
-                                onClick: () => {
-                                  setEditBatchId(b.id);
-                                  setEditBatchName(b.name);
+                          {canManage ? (
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => {
+                                    setEditBatchId(b.id);
+                                    setEditBatchName(b.name);
+                                  },
                                 },
-                              },
-                            ]}
-                          />
+                              ]}
+                            />
+                          ) : null}
                         </td>
                       </>
                     )}
@@ -599,20 +607,22 @@ export default function AcademicPage() {
                           )}
                         </td>
                         <td className={cn(tdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Edit',
-                                onClick: () => {
-                                  setEditSessionId(s.id);
-                                  setEditSessionName(s.name);
-                                  setEditSessionStart(s.startDate.slice(0, 10));
-                                  setEditSessionEnd(s.endDate.slice(0, 10));
-                                  setEditSessionCurrent(s.isCurrent);
+                          {canManage ? (
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => {
+                                    setEditSessionId(s.id);
+                                    setEditSessionName(s.name);
+                                    setEditSessionStart(s.startDate.slice(0, 10));
+                                    setEditSessionEnd(s.endDate.slice(0, 10));
+                                    setEditSessionCurrent(s.isCurrent);
+                                  },
                                 },
-                              },
-                            ]}
-                          />
+                              ]}
+                            />
+                          ) : null}
                         </td>
                       </>
                     )}
@@ -682,18 +692,20 @@ export default function AcademicPage() {
                         <td className={tdClass}>{s.name}</td>
                         <td className={tdClass}>{s.code ?? '—'}</td>
                         <td className={cn(tdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Edit',
-                                onClick: () => {
-                                  setEditSubjectId(s.id);
-                                  setEditSubjectName(s.name);
-                                  setEditSubjectCode(s.code ?? '');
+                          {canManage ? (
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => {
+                                    setEditSubjectId(s.id);
+                                    setEditSubjectName(s.name);
+                                    setEditSubjectCode(s.code ?? '');
+                                  },
                                 },
-                              },
-                            ]}
-                          />
+                              ]}
+                            />
+                          ) : null}
                         </td>
                       </>
                     )}
@@ -733,6 +745,7 @@ export default function AcademicPage() {
                             <input
                               type="checkbox"
                               checked={selectedSubjectIds.includes(s.id)}
+                              disabled={!canManage}
                               onChange={(e) => {
                                 setSelectedSubjectIds((prev) =>
                                   e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id),
@@ -745,9 +758,11 @@ export default function AcademicPage() {
                     </tbody>
                   </table>
                 </div>
-                <Button onClick={() => saveBatchSubjects.mutate()} disabled={saveBatchSubjects.isPending}>
-                  Save assignments
-                </Button>
+                {canManage && (
+                  <Button onClick={() => saveBatchSubjects.mutate()} disabled={saveBatchSubjects.isPending}>
+                    Save assignments
+                  </Button>
+                )}
               </>
             )}
           </div>

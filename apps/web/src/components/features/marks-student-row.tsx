@@ -11,6 +11,7 @@ interface MarksStudentRowProps {
   remarks: string;
   onMarksChange: (studentId: string, value: string) => void;
   onRemarksChange: (studentId: string, value: string) => void;
+  disabled?: boolean;
 }
 
 export const MarksStudentRow = memo(function MarksStudentRow({
@@ -20,6 +21,7 @@ export const MarksStudentRow = memo(function MarksStudentRow({
   remarks,
   onMarksChange,
   onRemarksChange,
+  disabled = false,
 }: MarksStudentRowProps) {
   const handleMarks = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => onMarksChange(studentId, e.target.value),
@@ -41,12 +43,14 @@ export const MarksStudentRow = memo(function MarksStudentRow({
             placeholder="0"
             value={marks}
             onChange={handleMarks}
+            disabled={disabled}
           />
           <Input
             className="w-full sm:w-40"
             placeholder="Remarks"
             value={remarks}
             onChange={handleRemarks}
+            disabled={disabled}
           />
         </div>
       }
