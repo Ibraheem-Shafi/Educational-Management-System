@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 
-export function TrendBadge({ changePercent }: { changePercent: number | null }) {
-  if (changePercent === null) return null;
+export function TrendBadge({ changePercent }: { changePercent: number | null | undefined }) {
+  if (changePercent === null || changePercent === undefined) return null;
 
   const isPositive = changePercent > 0;
   const isNegative = changePercent < 0;

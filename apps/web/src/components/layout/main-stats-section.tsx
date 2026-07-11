@@ -78,7 +78,7 @@ export function MainStatsSection({
                 <p className="text-sm font-medium leading-5 text-[var(--base-muted-foreground)]">
                   {stat.label}
                 </p>
-                {stat.changePercent !== undefined && (
+                {stat.changePercent != null && (
                   <TrendBadge changePercent={stat.changePercent} />
                 )}
               </div>

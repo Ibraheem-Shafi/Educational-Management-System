@@ -40,7 +40,7 @@ export function StatMetricsRow({
             <div className="relative flex min-w-0 flex-1 flex-col gap-1 px-5 py-4 lg:px-6">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium leading-5 text-text-soft-400">{metric.label}</p>
-                {metric.changePercent !== undefined && (
+                {metric.changePercent != null && (
                   <TrendBadge changePercent={metric.changePercent} />
                 )}
               </div>
