@@ -10,6 +10,12 @@ out/
 build/
 .turbo/
 
+# Accidental in-source tsc emits (packages compile to dist/)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+
 # Env
 .env
 .env.local

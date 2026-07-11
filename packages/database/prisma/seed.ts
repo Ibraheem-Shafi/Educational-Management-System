@@ -90,6 +90,8 @@ const PERMISSION_LABELS: Record<string, { name: string; module: string }> = {
   [PERMISSIONS.ANALYTICS_READ]: { name: 'View Analytics', module: 'analytics' },
   [PERMISSIONS.DOCUMENTS_READ]: { name: 'View Documents', module: 'documents' },
   [PERMISSIONS.DOCUMENTS_UPLOAD]: { name: 'Upload Documents', module: 'documents' },
+  [PERMISSIONS.LEARNING_READ]: { name: 'View Learning Content', module: 'learning' },
+  [PERMISSIONS.LEARNING_PUBLISH]: { name: 'Publish Learning Content', module: 'learning' },
   [PERMISSIONS.AI_ATTENDANCE_USE]: { name: 'Use AI Attendance OCR', module: 'ai-attendance' },
   [PERMISSIONS.COMMUNICATIONS_SEND]: { name: 'Send SMS/WhatsApp', module: 'communications' },
   [PERMISSIONS.AI_INSIGHTS_READ]: { name: 'View AI Insights', module: 'ai-insights' },
@@ -141,7 +143,12 @@ async function main() {
   });
 
   const permissionMap = new Map<string, string>();
-  for (const [code, meta] of Object.entries(PERMISSION_LABELS)) {
+  // Seed every code in PERMISSIONS (labels are optional metadata; missing labels must not skip codes).
+  for (const code of Object.values(PERMISSIONS)) {
+    const meta = PERMISSION_LABELS[code] ?? {
+      name: code.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      module: code.split('.')[0] ?? 'general',
+    };
     const perm = await prisma.permission.upsert({
       where: { code },
       create: { code, name: meta.name, module: meta.module },
