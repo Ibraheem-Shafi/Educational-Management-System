@@ -142,6 +142,7 @@ export function AuthProvider({
   }, [e2eBypass, supabase, queryClient, initialUser, user?.id]);
 
   const signOut = useCallback(async () => {
+    queryClient.clear();
     if (e2eBypass) {
       setUser(null);
       setSession(null);
@@ -152,7 +153,7 @@ export function AuthProvider({
     inflightMe.current = null;
     setUser(null);
     setSession(null);
-  }, [e2eBypass, supabase]);
+  }, [e2eBypass, supabase, queryClient]);
 
   const syncAuth = useCallback((nextSession: Session, profile: AuthUser) => {
     loadedTokenRef.current = nextSession.access_token;
