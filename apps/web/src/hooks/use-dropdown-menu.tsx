@@ -114,7 +114,7 @@ export function useDropdownMenu({
   minWidth?: number;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLUListElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
   const [position, setPosition] = useState<DropdownMenuPosition | null>(null);
   const [clickShield, setClickShield] = useState(false);
 
