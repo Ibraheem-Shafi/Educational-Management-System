@@ -13,6 +13,7 @@ import { AuthCacheService } from '../../common/auth/auth-cache.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import type { AuthUser, PaginatedResponse, StaffListRow, UsersStatsResponse } from '@eims/types';
 import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
+import { isSuperAdmin } from '@eims/shared';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
@@ -286,10 +287,15 @@ export class UsersService {
   async update(id: string, input: UpdateUserInput, actor: AuthUser, branchId: string | null) {
     const existing = await this.prisma.user.findFirst({
       where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      include: { userRoles: { include: { role: { select: { code: true } } } } },
     });
     if (!existing) throw new NotFoundException('User not found');
     if (existing.id === actor.id && input.isActive === false) {
       throw new BadRequestException('Cannot deactivate your own account');
+    }
+    const targetRoles = existing.userRoles.map((ur) => ur.role.code);
+    if (input.isActive === false && isSuperAdmin(targetRoles)) {
+      throw new BadRequestException('Cannot deactivate a Super Admin account');
     }
 
     const user = await this.prisma.user.update({
@@ -503,7 +509,7 @@ export class UsersService {
     cnic: string | null;
     isActive: boolean;
     branch?: { name: string } | null;
-    userRoles: Array<{ role: { id: string; name: string } }>;
+    userRoles: Array<{ role: { id: string; code: string; name: string } }>;
   }): StaffListRow {
     const primaryRole = user.userRoles[0]?.role;
     return {
@@ -516,6 +522,7 @@ export class UsersService {
       gender: user.gender,
       branchName: user.branch?.name ?? 'All branches',
       roleName: primaryRole?.name ?? '—',
+      roleCode: primaryRole?.code ?? null,
       roleId: primaryRole?.id ?? null,
       status: user.isActive ? 'active' : 'inactive',
       isInvitation: false,
@@ -526,6 +533,7 @@ export class UsersService {
     invitation: { id: string; email: string; roleId: string },
     roleName: string,
     branchName: string | null,
+    roleCode?: string | null,
   ): StaffListRow {
     const localName = invitation.email.split('@')[0]?.replace(/[._]/g, ' ') ?? invitation.email;
     const displayName = localName
@@ -544,6 +552,7 @@ export class UsersService {
       gender: null,
       branchName: branchName ?? 'All branches',
       roleName,
+      roleCode: roleCode ?? null,
       roleId: invitation.roleId,
       status: 'invited',
       isInvitation: true,

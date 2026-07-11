@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { DEMO_SEED_VERSION } from './seed-demo/types';
 
 const THRESHOLDS = {
   students: 45,
@@ -60,9 +61,11 @@ async function main() {
     console.log(`  ${ok ? '✓' : '✗'} ${c.name}: ${c.actual} (need >= ${c.min})`);
   }
 
-  if (demoVersion !== 'rekhta-v1') {
-    console.log(`  ✗ demoSeedVersion should be rekhta-v1`);
+  if (demoVersion !== DEMO_SEED_VERSION) {
+    console.log(`  ✗ demoSeedVersion should be ${DEMO_SEED_VERSION}`);
     failed = true;
+  } else {
+    console.log(`  ✓ demoSeedVersion: ${demoVersion}`);
   }
 
   await prisma.$disconnect();

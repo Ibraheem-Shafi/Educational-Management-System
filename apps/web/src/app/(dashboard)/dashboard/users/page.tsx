@@ -381,7 +381,9 @@ export default function UsersPage() {
                       />
                     </td>
                     <td className={cn(tdClass, 'text-right')}>
-                      {!staff.isInvitation && staff.status === 'active' ? (
+                      {!staff.isInvitation &&
+                      staff.status === 'active' &&
+                      staff.roleCode !== 'super_admin' ? (
                         <RowActionsMenu
                           items={[
                             {

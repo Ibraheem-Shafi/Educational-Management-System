@@ -10,6 +10,7 @@ export interface StaffListRow {
   gender: string | null;
   branchName: string | null;
   roleName: string;
+  roleCode: string | null;
   roleId: string | null;
   status: StaffListStatus;
   isInvitation: boolean;
