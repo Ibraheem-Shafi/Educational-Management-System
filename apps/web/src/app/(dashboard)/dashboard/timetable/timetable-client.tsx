@@ -24,7 +24,7 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
-import { PageTabs } from '@/components/layout/page-tabs';
+import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
@@ -224,14 +224,15 @@ export default function TimetablePage() {
         ]}
       />
 
-      <PageTabs
+      <Tabs
+        aria-label="Timetable views"
         tabs={[
           { id: 'batch', label: 'By batch' },
           { id: 'teacher', label: 'By teacher' },
           { id: 'room', label: 'By room' },
         ]}
-        activeId={view}
-        onChange={(id) => setView(id as typeof view)}
+        value={view}
+        onValueChange={(id) => setView(id as typeof view)}
       />
 
       <div className="flex flex-wrap items-center gap-3">

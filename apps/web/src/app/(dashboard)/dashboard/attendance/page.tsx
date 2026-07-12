@@ -18,7 +18,7 @@ import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import { queryKeys } from '@/lib/query-keys';
 import type { AttendanceStatsResponse, AttendanceTrendResponse } from '@eims/types';
 import { AttendanceDateNav, monthFromIso } from '@/components/features/attendance/attendance-date-nav';
-import { AttendanceSegmentedTabs } from '@/components/features/attendance/attendance-segmented-tabs';
+import { Tabs } from '@/components/ui/tabs';
 import { AttendanceGrid } from '@/components/features/attendance/attendance-grid';
 import type { AttendanceGridResponse } from '@eims/types';
 
@@ -228,10 +228,11 @@ export default function AttendancePage() {
           )}
         </div>
 
-        <AttendanceSegmentedTabs
+        <Tabs
+          aria-label="Attendance type"
           tabs={[...MODE_TABS]}
-          activeId={mode}
-          onChange={(id) => setMode(id as AttendanceMode)}
+          value={mode}
+          onValueChange={(id) => setMode(id as AttendanceMode)}
         />
       </div>
 

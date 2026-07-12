@@ -24,7 +24,7 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { MainStatsSection, type MainStatItem } from '@/components/layout/main-stats-section';
-import { PageTabs } from '@/components/layout/page-tabs';
+import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
@@ -349,7 +349,8 @@ export default function AcademicPage() {
         }
       />
 
-      <PageTabs
+      <Tabs
+        aria-label="Academic sections"
         tabs={[
           { id: 'programs', label: 'Programs' },
           { id: 'batches', label: 'Batches' },
@@ -357,8 +358,8 @@ export default function AcademicPage() {
           { id: 'sessions', label: 'Sessions' },
           { id: 'assignments', label: 'Batch subjects' },
         ]}
-        activeId={tab}
-        onChange={(id) => setTab(id as AcademicTab)}
+        value={tab}
+        onValueChange={(id) => setTab(id as AcademicTab)}
       />
 
       {!user?.branchId && tab !== 'subjects' && tab !== 'sessions' && (
