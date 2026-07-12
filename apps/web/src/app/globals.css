@@ -93,3 +93,13 @@ body {
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Radix modal dialogs set pointer-events: none on body children outside the dialog.
+ * Portaled dropdown menus/backdrops live on document.body, so restore clicks.
+ */
+[data-dropdown-menu],
+[data-dropdown-layer],
+#dropdown-click-shield {
+  pointer-events: auto !important;
+}

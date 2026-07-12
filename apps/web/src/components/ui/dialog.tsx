@@ -26,10 +26,17 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+function isDropdownLayerTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    !!target.closest('[data-dropdown-menu], [data-dropdown-layer], #dropdown-click-shield')
+  );
+}
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -40,6 +47,18 @@ const DialogContent = React.forwardRef<
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}
+      onPointerDownOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onPointerDownOutside?.(event);
+      }}
+      onInteractOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onInteractOutside?.(event);
+      }}
+      onFocusOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onFocusOutside?.(event);
+      }}
       {...props}
     >
       {children}

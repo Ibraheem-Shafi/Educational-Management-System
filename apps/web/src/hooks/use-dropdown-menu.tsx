@@ -26,9 +26,10 @@ function mountImmediateClickShield() {
   let shield = document.getElementById(CLICK_SHIELD_ID);
   if (!shield) {
     shield = document.createElement('div');
-    shield.id = CLICK_SHIELD_ID;
-    shield.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(shield);
+  shield.id = CLICK_SHIELD_ID;
+  shield.setAttribute('aria-hidden', 'true');
+  shield.setAttribute('data-dropdown-layer', '');
+  document.body.appendChild(shield);
   }
 
   const absorb = (event: Event) => {
@@ -225,6 +226,7 @@ export function DropdownClickShield({ active }: { active: boolean }) {
   return createPortal(
     <div
       aria-hidden
+      data-dropdown-layer
       style={dropdownClickShieldStyle()}
       onPointerDown={absorbPointerEvent}
       onPointerUp={absorbPointerEvent}
@@ -241,6 +243,7 @@ export function DropdownMenuBackdrop({ onClose }: { onClose: () => void }) {
   return createPortal(
     <div
       aria-hidden
+      data-dropdown-layer
       style={dropdownBackdropStyle()}
       onPointerDown={(event) => {
         event.preventDefault();
