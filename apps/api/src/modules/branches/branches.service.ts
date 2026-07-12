@@ -113,7 +113,12 @@ export class BranchesService {
 
     const branchIds = branches.map((branch) => branch.id);
 
-    const [studentCounts, staffCounts, principals] = await Promise.all([
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+
+    const [studentCounts, staffCounts, principals, revenueRows] = await Promise.all([
       this.prisma.student.groupBy({
         by: ['branchId'],
         where: { branchId: { in: branchIds }, deletedAt: null },
@@ -139,12 +144,23 @@ export class BranchesService {
         select: { branchId: true, fullName: true },
         orderBy: { fullName: 'asc' },
       }),
+      this.prisma.feeInvoice.groupBy({
+        by: ['branchId'],
+        where: {
+          branchId: { in: branchIds },
+          paidAt: { gte: monthStart, lt: monthEnd },
+        },
+        _sum: { netAmount: true },
+      }),
     ]);
 
     const studentsByBranch = new Map(
       studentCounts.map((row) => [row.branchId, row._count._all]),
     );
     const staffByBranch = new Map(staffCounts.map((row) => [row.branchId, row._count._all]));
+    const revenueByBranch = new Map(
+      revenueRows.map((row) => [row.branchId, Number(row._sum.netAmount ?? 0)]),
+    );
     const principalByBranch = new Map<string, string>();
     for (const principal of principals) {
       if (principal.branchId && !principalByBranch.has(principal.branchId)) {
@@ -163,6 +179,7 @@ export class BranchesService {
         principalName: principalByBranch.get(branch.id) ?? null,
         studentCount: studentsByBranch.get(branch.id) ?? 0,
         staffCount: staffByBranch.get(branch.id) ?? 0,
+        monthlyRevenue: revenueByBranch.get(branch.id) ?? 0,
         isActive: branch.isActive,
       })),
       meta: {

@@ -64,9 +64,12 @@ function AttendanceCell({ rate }: { rate: number }) {
 export function BranchPerformanceCard({
   data,
   isLoading,
+  showViewAll = false,
 }: {
   data?: DashboardBranchPerformanceResponse;
   isLoading?: boolean;
+  /** Requires `branches.manage`. */
+  showViewAll?: boolean;
 }) {
   if (isLoading || !data) {
     return (
@@ -76,7 +79,7 @@ export function BranchPerformanceCard({
             <Skeleton className="h-6 w-40" />
             <Skeleton className="h-4 w-56" />
           </div>
-          <Skeleton className="h-9 w-36 rounded-[10px]" />
+          {showViewAll && <Skeleton className="h-9 w-36 rounded-[10px]" />}
         </div>
         <div className="space-y-3 px-5 py-4">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -96,13 +99,15 @@ export function BranchPerformanceCard({
             Real-time metrics across all campuses
           </p>
         </div>
-        <Link
-          href="/dashboard/branches"
-          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-stroke-soft-200 bg-white px-3 text-sm font-medium text-text-main-900 transition-colors hover:bg-neutral-50"
-        >
-          View All Branches
-          <ArrowUpRight className="h-4 w-4 text-text-sub-500" strokeWidth={1.75} />
-        </Link>
+        {showViewAll && (
+          <Link
+            href="/dashboard/branches"
+            className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-stroke-soft-200 bg-white px-3 text-sm font-medium text-text-main-900 transition-colors hover:bg-neutral-50"
+          >
+            View All Branches
+            <ArrowUpRight className="h-4 w-4 text-text-sub-500" strokeWidth={1.75} />
+          </Link>
+        )}
       </div>
 
       <div className="overflow-x-auto">

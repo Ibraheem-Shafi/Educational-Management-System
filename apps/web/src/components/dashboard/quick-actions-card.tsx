@@ -9,6 +9,7 @@ import {
   FileBarChart,
   GraduationCap,
   Megaphone,
+  Wallet,
 } from 'lucide-react';
 import { PERMISSIONS } from '@eims/shared';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -24,7 +25,7 @@ const QUICK_ACTIONS: Array<{
 }> = [
   {
     label: 'Add Branch',
-    href: '/dashboard/branches/new',
+    href: '/dashboard/branches?create=1',
     icon: Building2,
     permission: PERMISSIONS.BRANCHES_MANAGE,
   },
@@ -36,15 +37,21 @@ const QUICK_ACTIONS: Array<{
   },
   {
     label: 'Add Teacher',
-    href: '/dashboard/users',
+    href: '/dashboard/users?create=1',
     icon: BookOpen,
     permission: PERMISSIONS.USERS_MANAGE,
   },
   {
     label: 'Create Notice',
-    href: '/dashboard/notices',
+    href: '/dashboard/notices?create=1',
     icon: Megaphone,
     permission: PERMISSIONS.STUDENTS_UPDATE,
+  },
+  {
+    label: 'Collect Fee',
+    href: '/dashboard/fees',
+    icon: Wallet,
+    permission: PERMISSIONS.FEES_COLLECT,
   },
   {
     label: 'Generate Report',

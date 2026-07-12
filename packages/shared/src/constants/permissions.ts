@@ -28,13 +28,17 @@ export const PERMISSIONS = {
   AI_ATTENDANCE_USE: 'ai_attendance.use',
   COMMUNICATIONS_SEND: 'communications.send',
   AI_INSIGHTS_READ: 'ai_insights.read',
+  /** Super Admin: recent activities across all branches. */
+  DASHBOARD_ACTIVITIES_READ_ALL: 'dashboard.activities.read_all',
+  /** Branch Admin: recent activities for assigned branch only. */
+  DASHBOARD_ACTIVITIES_READ_BRANCH: 'dashboard.activities.read_branch',
 } as const;
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   super_admin: Object.values(PERMISSIONS),
   branch_admin: [
     PERMISSIONS.BRANCHES_READ,
-    PERMISSIONS.BRANCHES_READ,
+    PERMISSIONS.DASHBOARD_ACTIVITIES_READ_BRANCH,
     PERMISSIONS.STUDENTS_READ,
     PERMISSIONS.STUDENTS_CREATE,
     PERMISSIONS.STUDENTS_UPDATE,
@@ -79,7 +83,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.AI_INSIGHTS_READ,
   ],
   accountant: [
-    PERMISSIONS.STUDENTS_READ,
     PERMISSIONS.FEES_COLLECT,
     PERMISSIONS.FEES_READ,
     PERMISSIONS.REPORTS_VIEW,
@@ -89,8 +92,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.STUDENTS_READ,
     PERMISSIONS.STUDENTS_CREATE,
     PERMISSIONS.STUDENTS_UPDATE,
-    PERMISSIONS.ATTENDANCE_MARK,
-    PERMISSIONS.ATTENDANCE_READ,
     PERMISSIONS.ACADEMIC_READ,
     PERMISSIONS.DOCUMENTS_READ,
     PERMISSIONS.DOCUMENTS_UPLOAD,

@@ -1,18 +1,15 @@
+export interface DashboardStatMetric {
+  total: number;
+  changePercent: number | null;
+}
+
 export interface DashboardStatsResponse {
-  totalBranches: {
-    total: number;
-    changePercent: number | null;
-  };
-  totalStudents: {
-    total: number;
-    changePercent: number | null;
-  };
-  teachersAndStaff: {
-    total: number;
-    changePercent: number | null;
-  };
-  totalClasses: {
-    total: number;
-    changePercent: number | null;
-  };
+  /** Present when caller has `branches.manage`. */
+  totalBranches?: DashboardStatMetric;
+  /** Present when caller has `students.read`. */
+  totalStudents?: DashboardStatMetric;
+  /** Present when caller has `users.manage`. */
+  teachersAndStaff?: DashboardStatMetric;
+  /** Present when caller has `academic.read`, or teacher-scoped classes when only students.read. */
+  totalClasses?: DashboardStatMetric;
 }

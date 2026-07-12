@@ -42,14 +42,21 @@ export class DashboardService {
     private readonly lookupCache: LookupCacheService,
   ) {}
 
-  async getTodayAttendance(branchId: string | null): Promise<DashboardTodayAttendanceResponse> {
+  async getTodayAttendance(
+    user: AuthUser,
+    branchId: string | null,
+  ): Promise<DashboardTodayAttendanceResponse> {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const cacheKey = `dashboard:today-attendance:${branchId ?? 'all'}:${today.toISOString().slice(0, 10)}`;
+    const assignedBatchIds = this.shouldScopeToAssignedBatches(user)
+      ? await this.getAssignedBatchIds(user.id)
+      : null;
+    const scopeKey = assignedBatchIds ? `teacher:${user.id}` : (branchId ?? 'all');
+    const cacheKey = `dashboard:today-attendance:${scopeKey}:${today.toISOString().slice(0, 10)}`;
     const cached = this.ttlCache.get<DashboardTodayAttendanceResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildTodayAttendance(branchId, today);
+    const result = await this.buildTodayAttendance(user, branchId, today, assignedBatchIds);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
@@ -66,12 +73,15 @@ export class DashboardService {
     return result;
   }
 
-  async getRecentActivities(branchId: string | null): Promise<DashboardRecentActivitiesResponse> {
-    const cacheKey = `dashboard:recent-activities:${branchId ?? 'all'}`;
+  async getRecentActivities(
+    user: AuthUser,
+    branchId: string | null,
+  ): Promise<DashboardRecentActivitiesResponse> {
+    const cacheKey = `dashboard:recent-activities:${branchId ?? 'all'}:${user.id}`;
     const cached = this.ttlCache.get<DashboardRecentActivitiesResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildRecentActivities(branchId);
+    const result = await this.buildRecentActivities(user, branchId);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
@@ -87,14 +97,28 @@ export class DashboardService {
     return result;
   }
 
-  async getStats(branchId: string | null): Promise<DashboardStatsResponse> {
-    const cacheKey = `dashboard:stats:${branchId ?? 'all'}`;
+  async getStats(user: AuthUser, branchId: string | null): Promise<DashboardStatsResponse> {
+    const assignedScope = this.shouldScopeToAssignedBatches(user);
+    const cacheKey = `dashboard:stats:${branchId ?? 'all'}:${user.id}:${assignedScope ? 'assigned' : 'org'}`;
     const cached = this.ttlCache.get<DashboardStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildStats(branchId);
+    const result = await this.buildStats(user, branchId);
     this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
     return result;
+  }
+
+  private shouldScopeToAssignedBatches(user: AuthUser): boolean {
+    return user.roles.includes('teacher');
+  }
+
+  private async getAssignedBatchIds(teacherId: string): Promise<string[]> {
+    const slots = await this.prisma.timetableSlot.findMany({
+      where: { teacherId },
+      select: { batchId: true },
+      distinct: ['batchId'],
+    });
+    return slots.map((slot) => slot.batchId);
   }
 
   async getSummary(user: AuthUser, branchId: string | null) {
@@ -107,74 +131,107 @@ export class DashboardService {
     return result;
   }
 
-  private async buildStats(branchId: string | null): Promise<DashboardStatsResponse> {
-    const branchFilter = branchId ? { branchId } : {};
+  private async buildStats(
+    user: AuthUser,
+    branchId: string | null,
+  ): Promise<DashboardStatsResponse> {
+    const canManageBranches = user.permissions.includes('branches.manage');
+    const canReadStudents = user.permissions.includes('students.read');
+    const canManageUsers = user.permissions.includes('users.manage');
+    const canReadAcademic = user.permissions.includes('academic.read');
+    const assignedScope = this.shouldScopeToAssignedBatches(user);
+
+    if (!canManageBranches && !canReadStudents && !canManageUsers && !canReadAcademic && !assignedScope) {
+      return {};
+    }
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
 
-    const branchWhere = {
-      deletedAt: null,
-      isActive: true,
-      ...(branchId ? { id: branchId } : {}),
-    };
-    const branchWherePrevious = {
-      ...branchWhere,
-      createdAt: { lte: thirtyDaysAgo },
-    };
+    const assignedBatchIds = assignedScope ? await this.getAssignedBatchIds(user.id) : null;
+    const branchFilter = branchId ? { branchId } : {};
 
-    const studentWhere = { ...branchFilter, deletedAt: null };
-    const studentWherePrevious = { ...studentWhere, createdAt: { lte: thirtyDaysAgo } };
+    const result: DashboardStatsResponse = {};
 
-    const batchWhere = { ...branchFilter, deletedAt: null };
-    const batchWherePrevious = { ...batchWhere, createdAt: { lte: thirtyDaysAgo } };
-
-    const staffWhere = {
-      deletedAt: null,
-      isActive: true,
-      ...(branchId ? { branchId } : {}),
-      userRoles: { some: { role: { code: { in: [...STAFF_ROLE_CODES] } } } },
-    };
-    const staffWherePrevious = { ...staffWhere, createdAt: { lte: thirtyDaysAgo } };
-
-    const [
-      totalBranches,
-      totalBranchesPrevious,
-      totalStudents,
-      totalStudentsPrevious,
-      teachersAndStaff,
-      teachersAndStaffPrevious,
-      totalClasses,
-      totalClassesPrevious,
-    ] = await Promise.all([
-      this.prisma.branch.count({ where: branchWhere }),
-      this.prisma.branch.count({ where: branchWherePrevious }),
-      this.prisma.student.count({ where: studentWhere }),
-      this.prisma.student.count({ where: studentWherePrevious }),
-      this.prisma.user.count({ where: staffWhere }),
-      this.prisma.user.count({ where: staffWherePrevious }),
-      this.prisma.batch.count({ where: batchWhere }),
-      this.prisma.batch.count({ where: batchWherePrevious }),
-    ]);
-
-    return {
-      totalBranches: {
+    if (canManageBranches) {
+      const branchWhere = {
+        deletedAt: null,
+        isActive: true,
+        ...(branchId ? { id: branchId } : {}),
+      };
+      const [totalBranches, totalBranchesPrevious] = await Promise.all([
+        this.prisma.branch.count({ where: branchWhere }),
+        this.prisma.branch.count({ where: { ...branchWhere, createdAt: { lte: thirtyDaysAgo } } }),
+      ]);
+      result.totalBranches = {
         total: totalBranches,
         changePercent: computeChangePercent(totalBranches, totalBranchesPrevious),
-      },
-      totalStudents: {
+      };
+    }
+
+    if (canReadStudents) {
+      const studentWhere =
+        assignedBatchIds !== null
+          ? {
+              deletedAt: null,
+              batchId: { in: assignedBatchIds },
+              ...branchFilter,
+            }
+          : { ...branchFilter, deletedAt: null };
+      const [totalStudents, totalStudentsPrevious] = await Promise.all([
+        this.prisma.student.count({ where: studentWhere }),
+        this.prisma.student.count({
+          where: { ...studentWhere, createdAt: { lte: thirtyDaysAgo } },
+        }),
+      ]);
+      result.totalStudents = {
         total: totalStudents,
         changePercent: computeChangePercent(totalStudents, totalStudentsPrevious),
-      },
-      teachersAndStaff: {
+      };
+    }
+
+    if (canManageUsers) {
+      const staffWhere = {
+        deletedAt: null,
+        isActive: true,
+        ...(branchId ? { branchId } : {}),
+        userRoles: { some: { role: { code: { in: [...STAFF_ROLE_CODES] } } } },
+      };
+      const [teachersAndStaff, teachersAndStaffPrevious] = await Promise.all([
+        this.prisma.user.count({ where: staffWhere }),
+        this.prisma.user.count({
+          where: { ...staffWhere, createdAt: { lte: thirtyDaysAgo } },
+        }),
+      ]);
+      result.teachersAndStaff = {
         total: teachersAndStaff,
         changePercent: computeChangePercent(teachersAndStaff, teachersAndStaffPrevious),
-      },
-      totalClasses: {
+      };
+    }
+
+    if (canReadAcademic || (assignedScope && canReadStudents)) {
+      const batchWhere =
+        assignedBatchIds !== null
+          ? {
+              deletedAt: null,
+              id: { in: assignedBatchIds },
+              ...branchFilter,
+            }
+          : { ...branchFilter, deletedAt: null };
+      const [totalClasses, totalClassesPrevious] = await Promise.all([
+        this.prisma.batch.count({ where: batchWhere }),
+        this.prisma.batch.count({
+          where: { ...batchWhere, createdAt: { lte: thirtyDaysAgo } },
+        }),
+      ]);
+      result.totalClasses = {
         total: totalClasses,
         changePercent: computeChangePercent(totalClasses, totalClassesPrevious),
-      },
-    };
+      };
+    }
+
+    return result;
   }
 
   private async buildSummary(user: AuthUser, branchId: string | null) {
@@ -191,8 +248,10 @@ export class DashboardService {
   }
 
   private async buildTodayAttendance(
+    user: AuthUser,
     branchId: string | null,
     today: Date,
+    assignedBatchIds: string[] | null,
   ): Promise<DashboardTodayAttendanceResponse> {
     const presentStatusId = await this.lookupCache.getStatusId('attendance_status', 'present');
     const branchFilter = branchId ? Prisma.sql`AND ar."branchId" = ${branchId}` : Prisma.empty;
@@ -200,7 +259,66 @@ export class DashboardService {
       ? Prisma.sql`COUNT(*) FILTER (WHERE ar."statusId" = ${presentStatusId})::bigint`
       : Prisma.sql`0::bigint`;
 
-    const rows = await this.prisma.$queryRaw<
+    const canViewStaffAttendance = user.permissions.includes('users.manage');
+    const studentOnly = !canViewStaffAttendance;
+
+    let studentBatchFilter = Prisma.empty;
+    if (assignedBatchIds !== null) {
+      if (assignedBatchIds.length === 0) {
+        const emptyRing = this.toAttendanceRing();
+        return {
+          date: today.toISOString().slice(0, 10),
+          dateLabel: today.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            timeZone: 'UTC',
+          }),
+          scopeLabel: 'Your assigned classes',
+          students: emptyRing,
+        };
+      }
+      studentBatchFilter = Prisma.sql`AND s."batchId" IN (${Prisma.join(
+        assignedBatchIds.map((id) => Prisma.sql`${id}`),
+      )})`;
+    }
+
+    const studentRows = await this.prisma.$queryRaw<
+      Array<{ entity_type: string; total: bigint; present: bigint }>
+    >`
+      SELECT
+        ar."entityType" AS entity_type,
+        COUNT(*)::bigint AS total,
+        ${presentCountSql} AS present
+      FROM "AttendanceRecord" ar
+      INNER JOIN "Student" s ON s.id = ar."entityId" AND s."deletedAt" IS NULL
+      WHERE ar.date = ${today}::date
+        AND ar."entityType" = 'student'
+      ${branchFilter}
+      ${studentBatchFilter}
+      GROUP BY ar."entityType"
+    `;
+
+    const students = this.toAttendanceRing(studentRows[0]);
+
+    if (studentOnly) {
+      return {
+        date: today.toISOString().slice(0, 10),
+        dateLabel: today.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }),
+        scopeLabel:
+          assignedBatchIds !== null
+            ? 'Your assigned classes'
+            : branchId
+              ? 'This branch'
+              : 'Across all branches',
+        students,
+      };
+    }
+
+    const staffRows = await this.prisma.$queryRaw<
       Array<{ entity_type: string; total: bigint; present: bigint }>
     >`
       SELECT
@@ -209,20 +327,15 @@ export class DashboardService {
         ${presentCountSql} AS present
       FROM "AttendanceRecord" ar
       WHERE ar.date = ${today}::date
+        AND ar."entityType" IN ('teacher', 'staff')
       ${branchFilter}
       GROUP BY ar."entityType"
     `;
 
-    const byType = new Map(rows.map((row) => [row.entity_type, row]));
-
-    const studentsRow = byType.get('student');
-    const teacherRow = byType.get('teacher');
-    const staffRow = byType.get('staff');
-
-    const students = this.toAttendanceRing(studentsRow);
+    const byType = new Map(staffRows.map((row) => [row.entity_type, row]));
     const teachersAndStaff = this.combineAttendanceRings(
-      this.toAttendanceRing(teacherRow),
-      this.toAttendanceRing(staffRow),
+      this.toAttendanceRing(byType.get('teacher')),
+      this.toAttendanceRing(byType.get('staff')),
     );
     const overall = this.combineAttendanceRings(students, teachersAndStaff);
 
@@ -399,6 +512,7 @@ export class DashboardService {
   }
 
   private async buildRecentActivities(
+    user: AuthUser,
     branchId: string | null,
   ): Promise<DashboardRecentActivitiesResponse> {
     const since = new Date();
@@ -406,6 +520,14 @@ export class DashboardService {
 
     const branchFilter = branchId ? { branchId } : {};
     const branchIdFilter = branchId ? { id: branchId } : {};
+
+    const canReadStudents = user.permissions.includes('students.read');
+    const canReadFees = user.permissions.includes('fees.read');
+    const canReadAttendance = user.permissions.includes('attendance.read');
+    const canReadBranches = user.permissions.includes('branches.read');
+    const canReadDocuments = user.permissions.includes('documents.read');
+    const canManageUsers = user.permissions.includes('users.manage');
+    const canReadTimetable = user.permissions.includes('timetable.read');
 
     type ActivityDraft = {
       id: string;
@@ -419,64 +541,76 @@ export class DashboardService {
 
     const [students, paidInvoices, teacherSlots, attendanceGroups, branchUpdates, documents] =
       await Promise.all([
-        this.prisma.student.findMany({
-          where: { deletedAt: null, createdAt: { gte: since }, ...branchFilter },
-          orderBy: { createdAt: 'desc' },
-          take: 8,
-          select: {
-            id: true,
-            fullName: true,
-            createdAt: true,
-            branch: { select: { name: true } },
-          },
-        }),
-        this.prisma.feeInvoice.findMany({
-          where: { paidAt: { not: null, gte: since }, ...branchFilter },
-          orderBy: { paidAt: 'desc' },
-          take: 8,
-          select: { id: true, netAmount: true, paidAt: true, branchId: true },
-        }),
-        this.prisma.timetableSlot.findMany({
-          where: { teacherId: { not: null }, createdAt: { gte: since }, ...branchFilter },
-          orderBy: { createdAt: 'desc' },
-          take: 8,
-          select: { id: true, teacherId: true, batchId: true, createdAt: true },
-        }),
-        this.prisma.$queryRaw<
-          Array<{ branch_id: string; batch_id: string | null; session_date: Date; latest_at: Date }>
-        >`
-          SELECT
-            ar."branchId" AS branch_id,
-            s."batchId" AS batch_id,
-            ar.date AS session_date,
-            MAX(ar."createdAt") AS latest_at
-          FROM "AttendanceRecord" ar
-          INNER JOIN "Student" s ON s.id = ar."entityId" AND s."deletedAt" IS NULL
-          WHERE ar."entityType" = 'student'
-            AND ar."createdAt" >= ${since}
-            ${branchId ? Prisma.sql`AND ar."branchId" = ${branchId}` : Prisma.empty}
-          GROUP BY ar."branchId", s."batchId", ar.date
-          ORDER BY latest_at DESC
-          LIMIT 8
-        `,
-        this.prisma.branch.findMany({
-          where: { deletedAt: null, updatedAt: { gte: since }, ...branchIdFilter },
-          orderBy: { updatedAt: 'desc' },
-          take: 5,
-          select: {
-            id: true,
-            name: true,
-            isActive: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        }),
-        this.prisma.document.findMany({
-          where: { deletedAt: null, createdAt: { gte: since }, ...branchFilter },
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-          select: { id: true, title: true, createdAt: true },
-        }),
+        canReadStudents
+          ? this.prisma.student.findMany({
+              where: { deletedAt: null, createdAt: { gte: since }, ...branchFilter },
+              orderBy: { createdAt: 'desc' },
+              take: 8,
+              select: {
+                id: true,
+                fullName: true,
+                createdAt: true,
+                branch: { select: { name: true } },
+              },
+            })
+          : Promise.resolve([]),
+        canReadFees
+          ? this.prisma.feeInvoice.findMany({
+              where: { paidAt: { not: null, gte: since }, ...branchFilter },
+              orderBy: { paidAt: 'desc' },
+              take: 8,
+              select: { id: true, netAmount: true, paidAt: true, branchId: true },
+            })
+          : Promise.resolve([]),
+        canManageUsers || canReadTimetable
+          ? this.prisma.timetableSlot.findMany({
+              where: { teacherId: { not: null }, createdAt: { gte: since }, ...branchFilter },
+              orderBy: { createdAt: 'desc' },
+              take: 8,
+              select: { id: true, teacherId: true, batchId: true, createdAt: true },
+            })
+          : Promise.resolve([]),
+        canReadAttendance
+          ? this.prisma.$queryRaw<
+              Array<{ branch_id: string; batch_id: string | null; session_date: Date; latest_at: Date }>
+            >`
+              SELECT
+                ar."branchId" AS branch_id,
+                s."batchId" AS batch_id,
+                ar.date AS session_date,
+                MAX(ar."createdAt") AS latest_at
+              FROM "AttendanceRecord" ar
+              INNER JOIN "Student" s ON s.id = ar."entityId" AND s."deletedAt" IS NULL
+              WHERE ar."entityType" = 'student'
+                AND ar."createdAt" >= ${since}
+                ${branchId ? Prisma.sql`AND ar."branchId" = ${branchId}` : Prisma.empty}
+              GROUP BY ar."branchId", s."batchId", ar.date
+              ORDER BY latest_at DESC
+              LIMIT 8
+            `
+          : Promise.resolve([]),
+        canReadBranches
+          ? this.prisma.branch.findMany({
+              where: { deletedAt: null, updatedAt: { gte: since }, ...branchIdFilter },
+              orderBy: { updatedAt: 'desc' },
+              take: 5,
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            })
+          : Promise.resolve([]),
+        canReadDocuments
+          ? this.prisma.document.findMany({
+              where: { deletedAt: null, createdAt: { gte: since }, ...branchFilter },
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+              select: { id: true, title: true, createdAt: true },
+            })
+          : Promise.resolve([]),
       ]);
 
     for (const student of students) {

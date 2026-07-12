@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, UserCog, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -106,6 +107,8 @@ export default function UsersPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const canManage = can(PERMISSIONS.USERS_MANAGE);
 
   const [search, setSearch] = useState('');
@@ -117,6 +120,13 @@ export default function UsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateUserTarget | null>(null);
+
+  useEffect(() => {
+    if (!canManage) return;
+    if (searchParams.get('create') !== '1') return;
+    setInviteOpen(true);
+    router.replace('/dashboard/users', { scroll: false });
+  }, [canManage, router, searchParams]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);

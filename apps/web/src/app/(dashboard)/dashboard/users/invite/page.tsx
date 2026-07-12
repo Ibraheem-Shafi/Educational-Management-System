@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { InviteUserDialog } from '@/components/features/users/invite-user-dialog';
 
+/** Legacy modal route — redirect to list with create dialog. */
 export default function InviteUserPage() {
   const router = useRouter();
-  const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    if (!open) router.push('/dashboard/users');
-  }, [open, router]);
+    router.replace('/dashboard/users?create=1');
+  }, [router]);
 
-  return <InviteUserDialog open={open} onOpenChange={setOpen} />;
+  return null;
 }

@@ -1,6 +1,7 @@
 import type { DashboardTodayAttendanceResponse } from '@eims/types';
 import { AttendanceDonut } from './attendance-donut';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 const RING_COLORS = {
   students: 'var(--midnight-blue-950, #01366C)',
@@ -37,10 +38,15 @@ function AttendanceRing({
 export function TodayAttendanceCard({
   data,
   isLoading,
+  showStaffRings = true,
 }: {
   data?: DashboardTodayAttendanceResponse;
   isLoading?: boolean;
+  /** When false (no `users.manage`), only the students ring is shown. */
+  showStaffRings?: boolean;
 }) {
+  const studentOnly = !showStaffRings || !data?.teachersAndStaff || !data?.overall;
+
   if (isLoading || !data) {
     return (
       <div className="rounded-xl border border-stroke-soft-200 bg-neutral-0 p-5">
@@ -51,8 +57,8 @@ export function TodayAttendanceCard({
           </div>
           <Skeleton className="h-4 w-12" />
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className={cn('grid gap-4', studentOnly ? 'grid-cols-1' : 'grid-cols-3')}>
+          {Array.from({ length: studentOnly ? 1 : 3 }).map((_, i) => (
             <div key={i} className="flex flex-col items-center gap-3">
               <Skeleton className="h-[104px] w-[104px] rounded-full" />
               <Skeleton className="h-4 w-20" />
@@ -78,14 +84,18 @@ export function TodayAttendanceCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      <div className={cn('grid gap-2 sm:gap-4', studentOnly ? 'grid-cols-1 place-items-center' : 'grid-cols-3')}>
         <AttendanceRing label="Students" ring={data.students} color={RING_COLORS.students} />
-        <AttendanceRing
-          label="Teachers & Staff"
-          ring={data.teachersAndStaff}
-          color={RING_COLORS.teachersAndStaff}
-        />
-        <AttendanceRing label="Overall" ring={data.overall} color={RING_COLORS.overall} />
+        {!studentOnly && data.teachersAndStaff && data.overall && (
+          <>
+            <AttendanceRing
+              label="Teachers & Staff"
+              ring={data.teachersAndStaff}
+              color={RING_COLORS.teachersAndStaff}
+            />
+            <AttendanceRing label="Overall" ring={data.overall} color={RING_COLORS.overall} />
+          </>
+        )}
       </div>
     </div>
   );

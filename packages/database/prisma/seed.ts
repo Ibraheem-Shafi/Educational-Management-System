@@ -95,6 +95,14 @@ const PERMISSION_LABELS: Record<string, { name: string; module: string }> = {
   [PERMISSIONS.AI_ATTENDANCE_USE]: { name: 'Use AI Attendance OCR', module: 'ai-attendance' },
   [PERMISSIONS.COMMUNICATIONS_SEND]: { name: 'Send SMS/WhatsApp', module: 'communications' },
   [PERMISSIONS.AI_INSIGHTS_READ]: { name: 'View AI Insights', module: 'ai-insights' },
+  [PERMISSIONS.DASHBOARD_ACTIVITIES_READ_ALL]: {
+    name: 'View All-Branch Recent Activities',
+    module: 'dashboard',
+  },
+  [PERMISSIONS.DASHBOARD_ACTIVITIES_READ_BRANCH]: {
+    name: 'View Branch Recent Activities',
+    module: 'dashboard',
+  },
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -173,9 +181,11 @@ async function main() {
     roleMap.set(code, role.id);
 
     const permCodes = DEFAULT_ROLE_PERMISSIONS[code] ?? [];
+    const allowedPermissionIds = new Set<string>();
     for (const permCode of permCodes) {
       const permissionId = permissionMap.get(permCode);
       if (!permissionId) continue;
+      allowedPermissionIds.add(permissionId);
       await prisma.rolePermission.upsert({
         where: {
           roleId_permissionId: { roleId: role.id, permissionId },
@@ -184,6 +194,16 @@ async function main() {
         update: {},
       });
     }
+
+    // Revoke permissions removed from DEFAULT_ROLE_PERMISSIONS for this role.
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+        ...(allowedPermissionIds.size > 0
+          ? { permissionId: { notIn: [...allowedPermissionIds] } }
+          : {}),
+      },
+    });
   }
 
   const branchMap = new Map<string, string>();

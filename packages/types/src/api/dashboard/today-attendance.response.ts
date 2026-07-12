@@ -9,6 +9,8 @@ export interface DashboardTodayAttendanceResponse {
   dateLabel: string;
   scopeLabel: string;
   students: DashboardAttendanceRing;
-  teachersAndStaff: DashboardAttendanceRing;
-  overall: DashboardAttendanceRing;
+  /** Omitted when caller lacks `users.manage` (student-only view). */
+  teachersAndStaff?: DashboardAttendanceRing;
+  /** Omitted when caller lacks `users.manage` (student-only view). */
+  overall?: DashboardAttendanceRing;
 }

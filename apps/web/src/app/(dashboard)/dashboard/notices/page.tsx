@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
@@ -86,6 +87,8 @@ export default function NoticesPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const canMutate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [createOpen, setCreateOpen] = useState(false);
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
@@ -96,6 +99,13 @@ export default function NoticesPage() {
   useNoticesRealtime(NOTICES_KEYS);
 
   const { effectiveBranchId, branches } = useEffectiveBranchId(token, user?.branchId, branchId);
+
+  useEffect(() => {
+    if (!canMutate) return;
+    if (searchParams.get('create') !== '1') return;
+    setCreateOpen(true);
+    router.replace('/dashboard/notices', { scroll: false });
+  }, [canMutate, router, searchParams]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);

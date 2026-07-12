@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { AddBranchDialog } from '@/components/features/branches/add-branch-dialog';
 
+/** Legacy modal route — redirect to list with create dialog. */
 export default function NewBranchPage() {
   const router = useRouter();
-  const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    if (!open) router.push('/dashboard/branches');
-  }, [open, router]);
+    router.replace('/dashboard/branches?create=1');
+  }, [router]);
 
-  return <AddBranchDialog open={open} onOpenChange={setOpen} />;
+  return null;
 }

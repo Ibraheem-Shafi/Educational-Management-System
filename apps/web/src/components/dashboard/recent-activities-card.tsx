@@ -47,9 +47,11 @@ function formatRelativeTime(iso: string): string {
 export function RecentActivitiesCard({
   data,
   isLoading,
+  scopeLabel = 'Live feed across all branches',
 }: {
   data?: DashboardRecentActivitiesResponse;
   isLoading?: boolean;
+  scopeLabel?: string;
 }) {
   if (isLoading || !data) {
     return (
@@ -82,9 +84,7 @@ export function RecentActivitiesCard({
       <div className="flex items-start justify-between gap-3 border-b border-stroke-soft-200 px-5 py-4">
         <div>
           <h3 className="text-base font-medium leading-6 text-text-main-900">Recent Activities</h3>
-          <p className="text-sm font-normal leading-5 text-text-sub-500">
-            Live feed across all branches
-          </p>
+          <p className="text-sm font-normal leading-5 text-text-sub-500">{scopeLabel}</p>
         </div>
         <span
           className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#38C793]"
