@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, UserCog, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,6 +24,7 @@ import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { InviteUserDialog } from '@/components/features/users/invite-user-dialog';
+import { EditUserDialog } from '@/components/features/users/edit-user-dialog';
 import {
   DeactivateUserDialog,
   type DeactivateUserTarget,
@@ -113,6 +115,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editUserId, setEditUserId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateUserTarget | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -196,6 +199,14 @@ export default function UsersPage() {
       />
 
       <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      <EditUserDialog
+        userId={editUserId}
+        open={editUserId !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditUserId(null);
+        }}
+      />
 
       <DeactivateUserDialog
         user={deactivateTarget}
@@ -354,9 +365,18 @@ export default function UsersPage() {
                           seed={staff.id}
                           size="sm"
                         />
-                        <span className="truncate font-normal text-[var(--text-main-900,#0A0D14)]">
-                          {staff.fullName}
-                        </span>
+                        {staff.isInvitation ? (
+                          <span className="truncate font-normal text-[var(--text-main-900,#0A0D14)]">
+                            {staff.fullName}
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/dashboard/users/${staff.id}`}
+                            className="truncate font-normal text-[var(--text-main-900,#0A0D14)] hover:underline"
+                          >
+                            {staff.fullName}
+                          </Link>
+                        )}
                       </div>
                     </td>
                     <td className={tdClass}>
@@ -387,22 +407,37 @@ export default function UsersPage() {
                       />
                     </td>
                     <td className={cn(tdClass, 'text-right')}>
-                      {canManage &&
-                      !staff.isInvitation &&
-                      staff.status === 'active' &&
-                      staff.roleCode !== 'super_admin' ? (
+                      {!staff.isInvitation ? (
                         <RowActionsMenu
                           items={[
                             {
-                              label: 'Deactivate',
-                              onClick: () => {
-                                setDeactivateTarget({
-                                  id: staff.id,
-                                  fullName: staff.fullName,
-                                  staffCode: staff.staffCode,
-                                });
-                              },
+                              label: 'View details',
+                              href: `/dashboard/users/${staff.id}`,
                             },
+                            ...(canManage
+                              ? [
+                                  {
+                                    label: 'Edit',
+                                    onClick: () => setEditUserId(staff.id),
+                                  },
+                                ]
+                              : []),
+                            ...(canManage &&
+                            staff.status === 'active' &&
+                            staff.roleCode !== 'super_admin'
+                              ? [
+                                  {
+                                    label: 'Deactivate',
+                                    onClick: () => {
+                                      setDeactivateTarget({
+                                        id: staff.id,
+                                        fullName: staff.fullName,
+                                        staffCode: staff.staffCode,
+                                      });
+                                    },
+                                  },
+                                ]
+                              : []),
                           ]}
                         />
                       ) : null}

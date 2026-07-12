@@ -11,13 +11,66 @@ import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../../common/email/email.service';
 import { AuthCacheService } from '../../common/auth/auth-cache.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
-import type { AuthUser, PaginatedResponse, StaffListRow, UsersStatsResponse } from '@eims/types';
+import type {
+  AuthUser,
+  PaginatedResponse,
+  StaffListRow,
+  UserDetailResponse,
+  UserPermissionDetail,
+  UsersStatsResponse,
+} from '@eims/types';
 import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
 import { isSuperAdmin } from '@eims/shared';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const STATS_CACHE_TTL_MS = 45_000;
+
+const userDetailInclude = {
+  branch: { select: { id: true, name: true, code: true } },
+  userRoles: {
+    include: {
+      role: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          description: true,
+          rolePermissions: {
+            include: {
+              permission: { select: { code: true, name: true, module: true } },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+type UserDetailRecord = {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  gender: string | null;
+  cnic: string | null;
+  branchId: string | null;
+  isActive: boolean;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  branch: { id: string; name: string; code: string } | null;
+  userRoles: Array<{
+    role: {
+      id: string;
+      code: string;
+      name: string;
+      description: string | null;
+      rolePermissions: Array<{
+        permission: { code: string; name: string; module: string };
+      }>;
+    };
+  }>;
+};
 
 @Injectable()
 export class UsersService {
@@ -268,23 +321,25 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string, branchId: string | null) {
+  async findOne(id: string, branchId: string | null): Promise<UserDetailResponse> {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
         deletedAt: null,
         ...(branchId ? { branchId } : {}),
       },
-      include: {
-        branch: { select: { id: true, name: true, code: true } },
-        userRoles: { include: { role: { select: { id: true, code: true, name: true } } } },
-      },
+      include: userDetailInclude,
     });
     if (!user) throw new NotFoundException('User not found');
     return this.toUserResponse(user);
   }
 
-  async update(id: string, input: UpdateUserInput, actor: AuthUser, branchId: string | null) {
+  async update(
+    id: string,
+    input: UpdateUserInput,
+    actor: AuthUser,
+    branchId: string | null,
+  ): Promise<UserDetailResponse> {
     const existing = await this.prisma.user.findFirst({
       where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
       include: { userRoles: { include: { role: { select: { code: true } } } } },
@@ -309,10 +364,7 @@ export class UsersService {
         ...(input.isActive === false ? { deletedAt: new Date() } : {}),
         ...(input.isActive === true ? { deletedAt: null } : {}),
       },
-      include: {
-        branch: { select: { id: true, name: true, code: true } },
-        userRoles: { include: { role: { select: { id: true, code: true, name: true } } } },
-      },
+      include: userDetailInclude,
     });
 
     await this.audit.log({
@@ -559,22 +611,33 @@ export class UsersService {
     };
   }
 
-  private toUserResponse(user: {
-    id: string;
-    email: string;
-    fullName: string;
-    phone: string | null;
-    gender: string | null;
-    cnic: string | null;
-    branchId: string | null;
-    isActive: boolean;
-    lastLoginAt: Date | null;
-    createdAt: Date;
-    branch?: { id: string; name: string; code: string } | null;
-    userRoles: Array<{ role: { id: string; code: string; name: string } }>;
-  }) {
+  private collectPermissions(
+    userRoles: UserDetailRecord['userRoles'],
+  ): UserPermissionDetail[] {
+    const byCode = new Map<string, UserPermissionDetail>();
+    for (const ur of userRoles) {
+      for (const rp of ur.role.rolePermissions) {
+        const permission = rp.permission;
+        if (!byCode.has(permission.code)) {
+          byCode.set(permission.code, {
+            code: permission.code,
+            name: permission.name,
+            module: permission.module,
+          });
+        }
+      }
+    }
+    return [...byCode.values()].sort((a, b) => {
+      const moduleCmp = a.module.localeCompare(b.module);
+      if (moduleCmp !== 0) return moduleCmp;
+      return a.code.localeCompare(b.code);
+    });
+  }
+
+  private toUserResponse(user: UserDetailRecord): UserDetailResponse {
     return {
       id: user.id,
+      staffCode: this.formatStaffCode(user.id),
       email: user.email,
       fullName: user.fullName,
       phone: user.phone,
@@ -583,7 +646,13 @@ export class UsersService {
       branchId: user.branchId,
       branch: user.branch,
       isActive: user.isActive,
-      roles: user.userRoles.map((ur) => ur.role),
+      roles: user.userRoles.map((ur) => ({
+        id: ur.role.id,
+        code: ur.role.code,
+        name: ur.role.name,
+        description: ur.role.description,
+      })),
+      permissions: this.collectPermissions(user.userRoles),
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
       createdAt: user.createdAt.toISOString(),
     };

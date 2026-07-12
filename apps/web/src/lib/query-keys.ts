@@ -13,6 +13,7 @@ export const queryKeys = {
   studentsRecent: ['students-recent'] as const,
   studentsStats: ['students-stats'] as const,
   usersStats: ['users-stats'] as const,
+  userDetail: (id: string) => ['user', id] as const,
   reportsOverview: ['reports-overview'] as const,
   dashboardStats: ['dashboard-stats'] as const,
   dashboardTodayAttendance: ['dashboard-today-attendance'] as const,
