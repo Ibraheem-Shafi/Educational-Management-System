@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
+export const programBatchInputSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(2).max(200),
+  subjectIds: z.array(z.string().min(1)).optional(),
+});
+
+export type ProgramBatchInput = z.infer<typeof programBatchInputSchema>;
+
 export const createProgramSchema = z.object({
   branchId: z.string().min(1),
   name: z.string().min(2).max(200),
   code: z.string().min(1).max(50).optional(),
   description: z.string().max(1000).optional(),
+  batches: z.array(programBatchInputSchema).optional(),
 });
 
 export type CreateProgramInput = z.infer<typeof createProgramSchema>;
@@ -30,6 +39,7 @@ export const createBatchSchema = z.object({
   code: z.string().max(50).optional(),
   sessionId: z.string().optional(),
   scheduleType: z.enum(['morning', 'evening', 'weekend', 'other']).optional(),
+  subjectIds: z.array(z.string().min(1)).optional(),
 });
 
 export type CreateBatchInput = z.infer<typeof createBatchSchema>;

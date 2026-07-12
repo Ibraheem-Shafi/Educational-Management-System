@@ -34,6 +34,11 @@ export const queryKeys = {
   communicationsStats: ['communications-stats'] as const,
   assessmentsStats: ['assessments-stats'] as const,
   academicStats: (tab?: string) => (tab ? (['academic-stats', tab] as const) : (['academic-stats'] as const)),
+  programs: (branchId?: string) =>
+    branchId ? (['programs', branchId] as const) : (['programs'] as const),
+  programDetail: (id: string) => ['program', id] as const,
+  subjects: ['subjects'] as const,
+  batchSubjects: (batchId: string) => ['batch-subjects', batchId] as const,
   timetableStats: ['timetable-stats'] as const,
   auditStats: ['audit-stats'] as const,
   formFields: ['form-fields'] as const,

@@ -29,6 +29,7 @@ export * from './api/documents/stats.response';
 export * from './api/communications/stats.response';
 export * from './api/assessments/stats.response';
 export * from './api/academic/stats.response';
+export * from './api/academic/program.response';
 export * from './api/timetable/stats.response';
 export * from './api/audit/stats.response';
 export * from './api/portal/stats.response';
