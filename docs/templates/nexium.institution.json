@@ -1,7 +1,7 @@
 {
-  "$schema": "Rekhta Academy Pakistan — reference deployment seed config",
+  "$schema": "Nexium Academy Pakistan — reference deployment seed config",
   "institution": {
-    "name": "Rekhta Academy Pakistan",
+    "name": "Nexium Academy Pakistan",
     "institutionType": "coaching",
     "primaryColor": "#1e40af",
     "logoPath": "logos/default/logo.png",
@@ -11,8 +11,8 @@
     "province": "ICT",
     "country": "Pakistan",
     "phone": "+925121345678",
-    "email": "info@rekhta.edu.pk",
-    "website": "https://rekhta.edu.pk",
+    "email": "info@nexium.edu.pk",
+    "website": "https://nexium.edu.pk",
     "timezone": "Asia/Karachi",
     "currency": "PKR",
     "terminology": {
@@ -40,7 +40,7 @@
       "address": "Plot 14, College Road, F-7 Markaz",
       "city": "Islamabad",
       "phone": "+925121345678",
-      "email": "main@rekhta.edu.pk"
+      "email": "main@nexium.edu.pk"
     },
     {
       "name": "Lahore Campus — Gulberg",
@@ -48,16 +48,16 @@
       "address": "45-B, Main Boulevard, Gulberg III",
       "city": "Lahore",
       "phone": "+924212345678",
-      "email": "lahore@rekhta.edu.pk"
+      "email": "lahore@nexium.edu.pk"
     }
   ],
   "superAdmin": {
-    "email": "admin@rekhta.edu.pk",
+    "email": "admin@nexium.edu.pk",
     "fullName": "Syed Kamran Shah"
   },
   "demo": {
     "enabled": true,
-    "password": "Rekhta@2026!"
+    "password": "Nexium@2026!"
   },
   "lookupStatuses": {
     "student_status": [

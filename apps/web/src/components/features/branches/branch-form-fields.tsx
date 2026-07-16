@@ -75,7 +75,7 @@ export function BranchFormFields({
         <input
           type="email"
           className={modalFieldClassName}
-          placeholder="e.g., info@rekhta.com"
+          placeholder="e.g., info@nexium.edu.pk"
           value={form.email}
           onChange={(e) => onChange('email', e.target.value)}
         />

@@ -2,8 +2,8 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import type { DemoContext } from '../types';
 
 export async function seedCommsAndAudit(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
-  const receptionId = ctx.userIds.get('reception@rekhta.edu.pk') ?? null;
-  const adminId = ctx.userIds.get('admin@rekhta.edu.pk') ?? null;
+  const receptionId = ctx.userIds.get('reception@nexium.edu.pk') ?? null;
+  const adminId = ctx.userIds.get('admin@nexium.edu.pk') ?? null;
 
   const commCount = await prisma.communicationLog.count();
   if (commCount < 5) {

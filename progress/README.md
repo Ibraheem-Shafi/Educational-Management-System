@@ -1,7 +1,7 @@
 # EIMS Progress Dashboard
 
 **Last updated:** 2026-07-01  
-**Current target:** Rekhta Academy — **Sprint 6 security & QA complete**  
+**Current target:** Nexium Academy — **Sprint 6 security & QA complete**  
 **Reference deployment:** coaching center profile
 
 Track implementation against:

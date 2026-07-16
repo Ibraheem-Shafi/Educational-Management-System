@@ -29,17 +29,17 @@ const webEnv = parseEnv(resolve(root, 'apps/web/.env.local'));
 const SUPABASE_URL = apiEnv.SUPABASE_URL || webEnv.NEXT_PUBLIC_SUPABASE_URL;
 const ANON_KEY = apiEnv.SUPABASE_ANON_KEY || webEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const API_URL = webEnv.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-const PASSWORD = 'Rekhta@2026!';
+const PASSWORD = 'Nexium@2026!';
 
 const ACCOUNTS = {
-  superAdmin: 'admin@rekhta.edu.pk',
-  branchAdmin: 'branchadmin@rekhta.edu.pk',
-  lahoreAdmin: 'lahore.admin@rekhta.edu.pk',
-  teacher: 'ahmed.teacher@rekhta.edu.pk',
-  accountant: 'fees@rekhta.edu.pk',
-  receptionist: 'reception@rekhta.edu.pk',
-  parent: 'rashid.ahmad@rekhta.edu.pk',
-  student: 'ali.khan@rekhta.edu.pk',
+  superAdmin: 'admin@nexium.edu.pk',
+  branchAdmin: 'branchadmin@nexium.edu.pk',
+  lahoreAdmin: 'lahore.admin@nexium.edu.pk',
+  teacher: 'ahmed.teacher@nexium.edu.pk',
+  accountant: 'fees@nexium.edu.pk',
+  receptionist: 'reception@nexium.edu.pk',
+  parent: 'rashid.ahmad@nexium.edu.pk',
+  student: 'ali.khan@nexium.edu.pk',
 };
 
 const results = [];

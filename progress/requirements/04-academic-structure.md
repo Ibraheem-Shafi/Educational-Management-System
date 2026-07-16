@@ -10,7 +10,7 @@
 
 | Item (from client doc) | Module | Status | Notes |
 |------------------------|--------|--------|-------|
-| Programs (SSC, HSSC, MDCAT, etc.) — not hardcoded | [academic](../modules/academic.md) | done | CRUD + seeded for Rekhta |
+| Programs (SSC, HSSC, MDCAT, etc.) — not hardcoded | [academic](../modules/academic.md) | done | CRUD + seeded for nexium |
 | Batches (Morning, Evening, Weekend) | [academic](../modules/academic.md) | done | CRUD per branch |
 | Subjects (institution-wide) | [academic](../modules/academic.md) | done | CRUD |
 | Academic sessions (2026, 2027…) | [academic](../modules/academic.md) | done | CRUD |

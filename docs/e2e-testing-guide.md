@@ -1,6 +1,6 @@
 # E2E Manual Testing Guide (Browser + DevTools MCP)
 
-Standing playbook for end-to-end manual testing of EIMS (Rekhta Academy demo). Use this with an agent or human tester. **Do not fix bugs during a run** — only record them.
+Standing playbook for end-to-end manual testing of EIMS (Nexium Academy demo). Use this with an agent or human tester. **Do not fix bugs during a run** — only record them.
 
 ## Related files
 
@@ -20,7 +20,7 @@ Standing playbook for end-to-end manual testing of EIMS (Rekhta Academy demo). U
 | Swagger (dev) | `http://localhost:3001/api/docs` |
 | Start | `npm run dev` (from monorepo root) |
 | Seed | `npm run db:seed:all` then `npm run db:seed:verify` |
-| Seed version | `rekhta-v1.1` |
+| Seed version | `nexium-v1.1` |
 
 ### MFA for local demos
 
@@ -31,18 +31,18 @@ Set both:
 
 ### Demo accounts
 
-Password for all: see [demo-seed.md](demo-seed.md) (`Rekhta@2026!`).
+Password for all: see [demo-seed.md](demo-seed.md) (`Nexium@2026!`).
 
 | Role | Email | Landing |
 |------|-------|---------|
-| Super Admin | `admin@rekhta.edu.pk` | `/dashboard` |
-| Branch Admin MAIN | `branchadmin@rekhta.edu.pk` | `/dashboard` |
-| Branch Admin LAHORE | `lahore.admin@rekhta.edu.pk` | `/dashboard` |
-| Teacher | `ahmed.teacher@rekhta.edu.pk` | `/dashboard` |
-| Accountant | `fees@rekhta.edu.pk` | `/dashboard` |
-| Receptionist | `reception@rekhta.edu.pk` | `/dashboard` |
-| Parent | `rashid.ahmad@rekhta.edu.pk` | `/portal/parent` |
-| Student | `ali.khan@rekhta.edu.pk` | `/portal/student` |
+| Super Admin | `admin@nexium.edu.pk` | `/dashboard` |
+| Branch Admin MAIN | `branchadmin@nexium.edu.pk` | `/dashboard` |
+| Branch Admin LAHORE | `lahore.admin@nexium.edu.pk` | `/dashboard` |
+| Teacher | `ahmed.teacher@nexium.edu.pk` | `/dashboard` |
+| Accountant | `fees@nexium.edu.pk` | `/dashboard` |
+| Receptionist | `reception@nexium.edu.pk` | `/dashboard` |
+| Parent | `rashid.ahmad@nexium.edu.pk` | `/portal/parent` |
+| Student | `ali.khan@nexium.edu.pk` | `/portal/student` |
 
 ## How to start a new run
 
@@ -113,7 +113,7 @@ Password for all: see [demo-seed.md](demo-seed.md) (`Rekhta@2026!`).
 |-------|-------------|
 | Students | ≥ 45 (demo ~49) |
 | Parent Rashid | Children: Ali Khan + Zainab Hussain |
-| Student Ali | `ali.khan@rekhta.edu.pk`, MDCAT Morning Batch A, MAIN |
+| Student Ali | `ali.khan@nexium.edu.pk`, MDCAT Morning Batch A, MAIN |
 | Branches | Islamabad MAIN + Lahore LAHORE |
 | Fees | PKR; sibling discount / late fee configured |
 | Notices | ≥ 5 |
@@ -127,7 +127,7 @@ Password for all: see [demo-seed.md](demo-seed.md) (`Rekhta@2026!`).
 | Run ID | 01 |
 | Date | 2026-07-11 |
 | Bug file | [e2e-bugs-01.md](e2e-bugs-01.md) |
-| Seed | **rekhta-v1** (verify **failed**; docs expect v1.1 — incomplete transactional data) |
+| Seed | **nexium-v1** (verify **failed**; docs expect v1.1 — incomplete transactional data) |
 | Base URL | http://localhost:3000 |
 | Cases marked | ~217 statuses updated in [e2e-test-cases.md](e2e-test-cases.md) |
 | Bugs logged | 21 (`BUG-01-001` … `BUG-01-021`) — 1 Critical, 6 High, 7 Medium, 4 Low, 3 Limitation |

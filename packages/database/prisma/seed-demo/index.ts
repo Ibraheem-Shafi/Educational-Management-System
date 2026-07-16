@@ -87,7 +87,7 @@ export async function runDemoSeed(
   console.log('');
   console.log('Demo dataset ready:');
   console.log(`  • ${ctx.studentIds.size} students across ${ctx.config.batches.length} batches`);
-  console.log(`  • Run npm run db:seed:auth for Supabase login accounts (password in rekhta.institution.json)`);
+  console.log(`  • Run npm run db:seed:auth for Supabase login accounts (password in nexium.institution.json)`);
 }
 
 export { loadDemoConfig, DEMO_SEED_VERSION };

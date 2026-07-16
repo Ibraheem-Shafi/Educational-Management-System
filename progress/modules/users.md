@@ -21,7 +21,7 @@
 
 ## Blockers
 
-- None for Rekhta MVP
+- None for nexium MVP
 
 ## Related docs
 

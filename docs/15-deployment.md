@@ -44,14 +44,14 @@ flowchart TB
 
 **Supabase region:** Choose closest to Pakistan — `ap-south-1` (Mumbai) or `ap-southeast-1` (Singapore).
 
-## First Deployment: Rekhta Academy
+## First Deployment: Nexium Academy
 
 ### Step 1 — Supabase Project
 
 1. Create new project at [supabase.com](https://supabase.com)
 2. Note: Project URL, anon key, service role key, database URL
 3. Enable Auth → Email provider
-4. Configure Auth → URL: `https://erp.rekhta.edu.pk` (or actual domain)
+4. Configure Auth → URL: `https://erp.nexium.edu.pk` (or actual domain)
 5. Enable MFA in Auth settings
 
 ### Step 2 — Storage Buckets
@@ -77,14 +77,14 @@ cp docs/templates/.env.api.example apps/api/.env
 # Run migrations
 pnpm db:migrate
 
-# Seed with Rekhta config
-pnpm db:seed -- --config docs/templates/rekhta.institution.json
+# Seed with nexium config
+pnpm db:seed -- --config docs/templates/nexium.institution.json
 ```
 
 ### Step 4 — Upload Logo
 
 ```bash
-# Upload Rekhta logo to Supabase Storage
+# Upload nexium logo to Supabase Storage
 # logos/default/logo.png
 # Update InstitutionSettings.logoUrl via seed or admin UI
 ```

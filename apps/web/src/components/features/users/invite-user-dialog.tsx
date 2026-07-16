@@ -164,7 +164,7 @@ export function InviteUserDialog({
               <input
                 type="email"
                 className={inviteFieldClassName}
-                placeholder="e.g., info@rekhta.com"
+                placeholder="e.g., info@nexium.edu.pk"
                 value={form.email}
                 onChange={(e) => update('email', e.target.value)}
                 required

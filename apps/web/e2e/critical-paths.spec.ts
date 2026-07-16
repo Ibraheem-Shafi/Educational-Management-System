@@ -18,7 +18,7 @@ test.describe('Critical paths (API-mocked)', () => {
     });
     await page.getByRole('button', { name: 'Invite User' }).click();
     await expect(page.getByRole('heading', { name: 'Invite User' })).toBeVisible();
-    await expect(page.getByPlaceholder('e.g., info@rekhta.com')).toBeVisible();
+    await expect(page.getByPlaceholder('e.g., info@nexium.edu.pk')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send Invite' })).toBeVisible();
   });
 

@@ -16,7 +16,7 @@ flowchart LR
     Docs[Generic documentation]
   end
   subgraph deployA [Deployment A]
-    Rekhta[Rekhta Academy]
+    nexium[Nexium Academy]
   end
   subgraph deployB [Deployment B]
     School[Future School]
@@ -33,18 +33,18 @@ flowchart LR
 | Branding | Config only (name, logo, address, contact) |
 | Code changes | Never fork per customer |
 
-## First Deployment: Rekhta Academy
+## First Deployment: Nexium Academy
 
-Rekhta Academy Pakistan is the **reference deployment** and drives initial feature development. The original client requirements live in [ERP-Requirements.docx](ERP-Requirements.docx).
+Nexium Academy Pakistan is the **reference deployment** and drives initial feature development. The original client requirements live in [ERP-Requirements.docx](ERP-Requirements.docx).
 
-Rekhta ships with the `coaching` institution profile, emphasizing:
+nexium ships with the `coaching` institution profile, emphasizing:
 
 - Dynamic programs (SSC, HSSC, MDCAT, ECAT, etc.)
 - Batches (Morning, Evening, Weekend)
 - Assessment series (FLP, Grand Test, Mock Test)
 - Multi-branch coaching center operations
 
-Rekhta-specific values (name, logo, address) live in configuration files — never in application source code.
+nexium-specific values (name, logo, address) live in configuration files — never in application source code.
 
 ## Institution Types
 

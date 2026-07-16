@@ -37,14 +37,14 @@ Executed via Chrome DevTools MCP against localhost with demo accounts. Many Fail
 | AUTH-001 | Login page loads | Public | Open `/login` | Brand, email, password, Sign in, Forgot password link | Pass |
 | AUTH-002 | Invalid credentials | Public | Submit wrong password | Error toast/message; stay on login | Pass |
 | AUTH-003 | Empty form validation | Public | Submit empty | Client validation; no crash | Skip |
-| AUTH-004 | Super Admin login redirect | SA | Login `admin@rekhta.edu.pk` | Land `/dashboard`; MFA skipped if flags set | Pass |
-| AUTH-005 | Branch Admin MAIN login | BA | Login `branchadmin@rekhta.edu.pk` | `/dashboard`; MAIN-scoped data | Skip |
-| AUTH-006 | Branch Admin LAHORE login | BA | Login `lahore.admin@rekhta.edu.pk` | `/dashboard`; LAHORE-scoped data | Pass |
-| AUTH-007 | Teacher login | T | Login `ahmed.teacher@rekhta.edu.pk` | `/dashboard`; teacher sidebar | Pass |
-| AUTH-008 | Accountant login | AC | Login `fees@rekhta.edu.pk` | `/dashboard`; fees-focused nav | Pass |
-| AUTH-009 | Receptionist login | R | Login `reception@rekhta.edu.pk` | `/dashboard`; receptionist nav | Skip |
-| AUTH-010 | Parent login → portal | P | Login `rashid.ahmad@rekhta.edu.pk` | `/portal/parent` | Pass |
-| AUTH-011 | Student login → portal | S | Login `ali.khan@rekhta.edu.pk` | `/portal/student` | Pass |
+| AUTH-004 | Super Admin login redirect | SA | Login `admin@nexium.edu.pk` | Land `/dashboard`; MFA skipped if flags set | Pass |
+| AUTH-005 | Branch Admin MAIN login | BA | Login `branchadmin@nexium.edu.pk` | `/dashboard`; MAIN-scoped data | Skip |
+| AUTH-006 | Branch Admin LAHORE login | BA | Login `lahore.admin@nexium.edu.pk` | `/dashboard`; LAHORE-scoped data | Pass |
+| AUTH-007 | Teacher login | T | Login `ahmed.teacher@nexium.edu.pk` | `/dashboard`; teacher sidebar | Pass |
+| AUTH-008 | Accountant login | AC | Login `fees@nexium.edu.pk` | `/dashboard`; fees-focused nav | Pass |
+| AUTH-009 | Receptionist login | R | Login `reception@nexium.edu.pk` | `/dashboard`; receptionist nav | Skip |
+| AUTH-010 | Parent login → portal | P | Login `rashid.ahmad@nexium.edu.pk` | `/portal/parent` | Pass |
+| AUTH-011 | Student login → portal | S | Login `ali.khan@nexium.edu.pk` | `/portal/student` | Pass |
 | AUTH-012 | Staff cannot stay on portal home wrongly | SA | After SA login open `/portal` | Redirect to staff dashboard or role-appropriate path | Skip |
 | AUTH-013 | Parent blocked from `/dashboard` | P | Login as parent; open `/dashboard` | Redirect to `/portal` (or parent portal) | Skip |
 | AUTH-014 | Student blocked from `/dashboard` | S | Login as student; open `/dashboard` | Redirect to portal | Pass |
@@ -321,7 +321,7 @@ Executed via Chrome DevTools MCP against localhost with demo accounts. Many Fail
 | ID | Title | Role | Steps | Expected | Run 01 |
 |----|-------|------|-------|----------|--------|
 | SET-001 | Settings page | SA | `/dashboard/settings` | Institution settings load | Pass |
-| SET-002 | Branding fields | SA | View name/colors/logo | Rekhta Academy values | Pass |
+| SET-002 | Branding fields | SA | View name/colors/logo | Nexium Academy values | Pass |
 | SET-003 | Feature flags visible | SA | parentPortal/studentPortal | Toggles present | Pass |
 | SET-004 | Fee settings | SA | Sibling discount / late fee | 10% / Rs 500 after 7 days | Fail |
 | SET-005 | Save settings | SA | Minor safe edit or cancel | No crash; save works if changed | Skip |

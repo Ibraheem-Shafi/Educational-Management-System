@@ -22,7 +22,7 @@ async function login() {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@rekhta.edu.pk', password: 'Rekhta@2026!' }),
+    body: JSON.stringify({ email: 'admin@nexium.edu.pk', password: 'Nexium@2026!' }),
   });
   const data = await res.json();
   if (!data.access_token) throw new Error(JSON.stringify(data));

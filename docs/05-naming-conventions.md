@@ -5,7 +5,7 @@ Consistent naming across the monorepo makes the codebase navigable and the copy-
 ## General Rules
 
 1. **English only** for code identifiers (variables, functions, files)
-2. **No institution names** in identifiers (no `rekhta`, `RekhtaAcademy`)
+2. **No institution names** in identifiers (no `acme`, `AcmeAcademy`)
 3. **No abbreviations** unless widely understood (`id`, `url`, `api`, `dto`)
 4. **Be descriptive** — `createStudentSchema` not `csSchema`
 
@@ -218,7 +218,7 @@ documents/{branchId}/{studentId}/b-form.pdf
 
 | Avoid | Use instead |
 |-------|-------------|
-| `RekhtaStudent` | `Student` |
+| `AcmeStudent` | `Student` |
 | `COACHING_BATCH` enum | `LookupStatus` with `code: 'active'` |
 | `getData()` | `getStudents()` |
 | `temp`, `tmp`, `data` | Descriptive names |

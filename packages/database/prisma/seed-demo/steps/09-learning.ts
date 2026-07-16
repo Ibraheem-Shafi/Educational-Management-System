@@ -13,8 +13,8 @@ export const DEMO_LEARNING_TITLES = [
 ] as const;
 
 export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
-  const adminId = ctx.userIds.get('admin@rekhta.edu.pk') ?? null;
-  const teacherId = ctx.userIds.get('ahmed.teacher@rekhta.edu.pk') ?? adminId;
+  const adminId = ctx.userIds.get('admin@nexium.edu.pk') ?? null;
+  const teacherId = ctx.userIds.get('ahmed.teacher@nexium.edu.pk') ?? adminId;
   const mainBranchId = ctx.branchMap.get('MAIN');
   if (!mainBranchId) return;
 

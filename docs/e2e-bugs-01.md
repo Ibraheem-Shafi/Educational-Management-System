@@ -3,7 +3,7 @@
 **Run ID:** 01  
 **Date:** 2026-07-11  
 **Environment:** `http://localhost:3000` (API `http://localhost:3001/api/v1`)  
-**Seed:** `rekhta-v1` (verify failed thresholds; docs expect `rekhta-v1.1`)  
+**Seed:** `nexium-v1` (verify failed thresholds; docs expect `nexium-v1.1`)  
 **Tester:** Agent (Chrome DevTools MCP + Browser MCP)  
 **Guide:** [e2e-testing-guide.md](e2e-testing-guide.md) · **Cases:** [e2e-test-cases.md](e2e-test-cases.md)
 
@@ -26,7 +26,7 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 ### BUG-01-001 — Staff Learning page crashes on load
 - Severity: Critical
 - Module / Route: Learning / `/dashboard/learning`
-- Role / Account: Super Admin (`admin@rekhta.edu.pk`)
+- Role / Account: Super Admin (`admin@nexium.edu.pk`)
 - Environment: localhost:3000, 2026-07-11
 - Steps to reproduce:
   1. Sign in as Super Admin.
@@ -58,8 +58,8 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 - Steps to reproduce:
   1. From repo root run `npm run db:seed:verify`.
   2. Open Fees, Assessments, Notices, Timetable, Documents as Super Admin.
-- Expected (per [demo-seed.md](demo-seed.md)): ≥60 fee invoices, ≥5 assessments, ≥5 notices, ≥500 attendance, timetable slots, documents; seed version `rekhta-v1.1`.
-- Actual: Verify reports `demoSeedVersion: rekhta-v1`, attendance **6**, assessments **0**, feeInvoices **0**, notices **0**. UI shows empty fees (Rs 0 / 0 invoices), no assessments, empty timetable, no documents. Students (49) and parents (48) are present.
+- Expected (per [demo-seed.md](demo-seed.md)): ≥60 fee invoices, ≥5 assessments, ≥5 notices, ≥500 attendance, timetable slots, documents; seed version `nexium-v1.1`.
+- Actual: Verify reports `demoSeedVersion: nexium-v1`, attendance **6**, assessments **0**, feeInvoices **0**, notices **0**. UI shows empty fees (Rs 0 / 0 invoices), no assessments, empty timetable, no documents. Students (49) and parents (48) are present.
 - Evidence: `npm run db:seed:verify` exit 1; Fees API `GET /fee-invoices?...` returns `total: 0`; Fees stats all zeros.
 - Related TC IDs: FEE-002, ASM-001, NTC-001, TIME-002, DOC-001, DASH-002, TECH-001
 
@@ -120,10 +120,10 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 ### BUG-01-008 — Lahore Branch Admin dashboard shows Islamabad MAIN metrics
 - Severity: High
 - Module / Route: Dashboard / `/dashboard`
-- Role / Account: Branch Admin LAHORE (`lahore.admin@rekhta.edu.pk`)
+- Role / Account: Branch Admin LAHORE (`lahore.admin@nexium.edu.pk`)
 - Environment: localhost:3000, 2026-07-11
 - Steps to reproduce:
-  1. Sign in as `lahore.admin@rekhta.edu.pk` / `Rekhta@2026!`.
+  1. Sign in as `lahore.admin@nexium.edu.pk` / `Nexium@2026!`.
   2. View dashboard KPIs and Branch Performance table.
   3. Open `/dashboard/students` and compare.
 - Expected: Lahore-scoped stats (~13 students); Branch Performance shows Lahore campus.
@@ -134,7 +134,7 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 ### BUG-01-009 — Quick Actions ignore role permissions
 - Severity: Medium
 - Module / Route: Dashboard Quick Actions
-- Role / Account: Teacher (`ahmed.teacher@rekhta.edu.pk`), Accountant (`fees@rekhta.edu.pk`)
+- Role / Account: Teacher (`ahmed.teacher@nexium.edu.pk`), Accountant (`fees@nexium.edu.pk`)
 - Environment: localhost:3000, 2026-07-11
 - Steps to reproduce:
   1. Sign in as Teacher or Accountant.
@@ -151,7 +151,7 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 - Environment: localhost:3000, 2026-07-11
 - Steps to reproduce:
   1. Open `/dashboard/users`.
-  2. Scan the table for `ali.khan@rekhta.edu.pk` and `rashid.ahmad@rekhta.edu.pk`.
+  2. Scan the table for `ali.khan@nexium.edu.pk` and `rashid.ahmad@nexium.edu.pk`.
 - Expected: Staff users page lists staff roles only; portal users managed elsewhere or clearly filtered.
 - Actual: Parent and Student appear with **STF-*** IDs under "Staff accounts and invitations".
 - Evidence: Users table snapshot.
@@ -172,7 +172,7 @@ Do not overwrite this file in later runs. Create `e2e-bugs-02.md` next.
 ### BUG-01-012 — Parent leave form: child selection does not stick; Submit stays disabled
 - Severity: High
 - Module / Route: Parent Leave / `/portal/parent/leave`
-- Role / Account: Parent (`rashid.ahmad@rekhta.edu.pk`)
+- Role / Account: Parent (`rashid.ahmad@nexium.edu.pk`)
 - Environment: localhost:3000, 2026-07-11
 - Steps to reproduce:
   1. Sign in as parent → Leave requests.

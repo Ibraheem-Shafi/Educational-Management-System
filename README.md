@@ -2,7 +2,7 @@
 
 A white-label ERP for schools, colleges, and coaching centers in Pakistan. Built as a copy-paste product: one codebase, separate deployment per institution, configuration-only rebranding.
 
-**First deployment:** Rekhta Academy Pakistan (coaching center profile).
+**First deployment:** Nexium Academy Pakistan (coaching center profile).
 
 ## Tech Stack
 
@@ -32,7 +32,7 @@ A white-label ERP for schools, colleges, and coaching centers in Pakistan. Built
 
 | # | Document | Description |
 |---|----------|-------------|
-| — | [ERP Requirements (client brief)](docs/ERP-Requirements.docx) | Original Rekhta Academy v1.0 scope |
+| — | [ERP Requirements (client brief)](docs/ERP-Requirements.docx) | Original Nexium Academy v1.0 scope |
 | 1 | [Product Vision](docs/01-product-vision.md) | White-label model, institution types, Pakistan context |
 | 2 | [System Architecture](docs/02-system-architecture.md) | Request flows, NestJS + Supabase split, branch isolation |
 | 3 | [Tech Stack](docs/03-tech-stack.md) | Library choices and rationale |
@@ -58,7 +58,7 @@ A white-label ERP for schools, colleges, and coaching centers in Pakistan. Built
 | [docs/templates/.env.web.example](docs/templates/.env.web.example) | Frontend environment variables |
 | [docs/templates/.env.api.example](docs/templates/.env.api.example) | Backend environment variables |
 | [docs/templates/institution-seed.example.json](docs/templates/institution-seed.example.json) | Blank institution config template |
-| [docs/templates/rekhta.institution.json](docs/templates/rekhta.institution.json) | Rekhta Academy reference config |
+| [docs/templates/nexium.institution.json](docs/templates/nexium.institution.json) | Nexium Academy reference config |
 
 ## Core Principles
 
@@ -84,8 +84,8 @@ cp apps/web/.env.local.example apps/web/.env.local
 # Run migrations (requires PostgreSQL)
 npm run db:migrate
 
-# Seed Rekhta Academy reference data
-npm run db:seed -- --config=docs/templates/rekhta.institution.json
+# Seed Nexium Academy reference data
+npm run db:seed -- --config=docs/templates/nexium.institution.json
 
 # Start API + Web (in separate terminals)
 npm run dev -w @eims/api

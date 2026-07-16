@@ -22,7 +22,7 @@ export async function seedAttendance(prisma: PrismaClient, ctx: DemoContext): Pr
     demoKey: (s.customFields as { _demoKey?: string })._demoKey ?? s.id,
   }));
 
-  const adminId = ctx.userIds.get('admin@rekhta.edu.pk') ?? null;
+  const adminId = ctx.userIds.get('admin@nexium.edu.pk') ?? null;
   const records = buildAttendanceRecords(mapped, ctx.statusIds.attendance, adminId);
 
   for (const chunk of chunkArray(records, 250)) {

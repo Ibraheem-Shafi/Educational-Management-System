@@ -4,7 +4,6 @@ import dynamic from 'next/dynamic';
 import { Suspense, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { apiClient } from '@/lib/api-client';
@@ -16,13 +15,14 @@ import { useAuth } from '@/providers/auth-provider';
 import type { AuthUser } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PasswordInput } from '@/components/ui/password-input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import {
-  FormFieldLabel,
-  modalFieldClassName,
-} from '@/components/features/users/invite-form-fields';
-import { cn } from '@/lib/utils';
+  AuthShell,
+  authFieldClassName,
+  authPrimaryButtonClassName,
+} from '@/components/auth/auth-shell';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 
 const MfaEnrollLogin = dynamic(
   () => import('@/components/auth/mfa-enroll-login').then((m) => ({ default: m.MfaEnrollLogin })),
@@ -30,12 +30,6 @@ const MfaEnrollLogin = dynamic(
 );
 
 type LoginStep = 'credentials' | 'mfa-enroll' | 'mfa-verify';
-
-const primaryButtonClassName = cn(
-  'h-10 w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
-  'text-sm font-medium leading-5 tracking-[-0.006em] text-white',
-  'hover:bg-[var(--midnight-blue-950,#01366C)] hover:opacity-90',
-);
 
 export default function LoginPage() {
   return (
@@ -70,7 +64,6 @@ function LoginPageContent() {
   };
 
   useEffect(() => {
-    // Stay on login with the portal-disabled message instead of bouncing back into the portal.
     if (portalDisabled) return;
     if (authLoading || !session?.access_token || !user || step !== 'credentials') return;
 
@@ -196,93 +189,85 @@ function LoginPageContent() {
 
   const description =
     step === 'mfa-enroll'
-      ? 'Set up two-factor authentication'
+      ? 'Set up two-factor authentication to continue'
       : step === 'mfa-verify'
-        ? 'Enter your authenticator code'
-        : 'Sign in to your account';
+        ? 'Enter the 6-digit code from your authenticator app'
+        : `Sign in to ${name}`;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-weak-50,#F6F8FA)] p-4 font-[family-name:var(--font-inter)]">
-      <Card className="w-full max-w-md rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white shadow-none">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
-            <GraduationCap className="h-6 w-6 text-[var(--midnight-blue-950,#01366C)]" />
-          </div>
-          <CardTitle className="font-[family-name:var(--font-inter)] text-[var(--text-main-900,#0A0D14)]">
-            {name}
-          </CardTitle>
-          <CardDescription className="font-[family-name:var(--font-inter)] text-[var(--text-sub-500,#525866)]">
-            {description}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {errorMessage && (
-            <div
-              role="alert"
-              className="mb-4 rounded-[10px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-sm leading-5 text-[#991B1B]"
+    <AuthShell
+      title={step === 'credentials' ? 'Welcome back' : step === 'mfa-enroll' ? 'Secure your account' : 'Verify it’s you'}
+      description={description}
+      footer={
+        step === 'credentials' ? (
+          <p className="text-center text-sm text-[#5B6578]">
+            <Link
+              href="/forgot-password"
+              className="font-medium text-[#5B2FE0] transition hover:text-[#3B1FA8]"
             >
-              {errorMessage}
-            </div>
-          )}
-          {step === 'mfa-enroll' ? (
-            <MfaEnrollLogin onEnrolled={handleEnrolled} />
-          ) : step === 'mfa-verify' ? (
-            <form onSubmit={handleMfaVerify} className="space-y-4">
-              <Input
-                placeholder="6-digit code"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                maxLength={6}
-                required
-                className={modalFieldClassName}
-              />
-              <Button type="submit" className={primaryButtonClassName} disabled={loading}>
-                {loading ? 'Verifying...' : 'Verify'}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <FormFieldLabel required>Email</FormFieldLabel>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="admin@institution.pk"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className={modalFieldClassName}
-                />
-              </div>
-              <div>
-                <FormFieldLabel required>Password</FormFieldLabel>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className={modalFieldClassName}
-                />
-              </div>
-              <Button type="submit" className={primaryButtonClassName} disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign in'}
-              </Button>
-            </form>
-          )}
-          {step === 'credentials' && (
-            <p className="mt-4 text-center text-sm">
-              <Button
-                variant="link"
-                asChild
-                className="font-[family-name:var(--font-inter)] text-[var(--midnight-blue-950,#01366C)]"
-              >
-                <Link href="/forgot-password">Forgot password?</Link>
-              </Button>
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              Forgot password?
+            </Link>
+          </p>
+        ) : null
+      }
+    >
+      {errorMessage && (
+        <div
+          role="alert"
+          className="mb-5 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-3 text-sm leading-5 text-[#991B1B]"
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      {step === 'mfa-enroll' ? (
+        <MfaEnrollLogin onEnrolled={handleEnrolled} />
+      ) : step === 'mfa-verify' ? (
+        <form onSubmit={handleMfaVerify} className="space-y-5">
+          <div>
+            <FormFieldLabel required>Authenticator code</FormFieldLabel>
+            <Input
+              placeholder="6-digit code"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value)}
+              maxLength={6}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
+            {loading ? 'Verifying…' : 'Verify'}
+          </Button>
+        </form>
+      ) : (
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <FormFieldLabel required>Email</FormFieldLabel>
+            <Input
+              id="email"
+              type="email"
+              placeholder="admin@institution.pk"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <div>
+            <FormFieldLabel required>Password</FormFieldLabel>
+            <PasswordInput
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
+            {loading ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

@@ -10,7 +10,7 @@
 
 | Feature | DB | API | Web | Tests | Status | Notes |
 |---------|----|-----|-----|-------|--------|-------|
-| Fee types (configurable) | done | done | done | — | done | Seeded for Rekhta |
+| Fee types (configurable) | done | done | done | — | done | Seeded for nexium |
 | Create invoice | done | done | done | — | done | `/dashboard/fees` with discount, fine, due date |
 | Record payment | done | done | done | — | done | PATCH /fee-invoices/:id/pay |
 | Discounts / scholarships | done | done | done | — | done | discount field on create |

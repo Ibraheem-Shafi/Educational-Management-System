@@ -269,9 +269,9 @@ If a customer needs custom behavior, use **feature flags** in `InstitutionSettin
 | Migration fails | Check `DATABASE_URL`; ensure Supabase project is active |
 | Invitation email not sent | Configure Supabase Auth email templates or SMTP |
 
-## Reference: Rekhta Academy
+## Reference: Nexium Academy
 
-The first deployment uses [rekhta.institution.json](templates/rekhta.institution.json). Use it as a reference for field values and structure — replace all Rekhta-specific data with the new customer's information.
+The first deployment uses [nexium.institution.json](templates/nexium.institution.json). Use it as a reference for field values and structure — replace all nexium-specific data with the new customer's information.
 
 ## Related Documents
 

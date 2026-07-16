@@ -386,7 +386,7 @@ Three equal boxes for Page 2 — show the product adapts.
 | Extra | Instruction |
 |-------|-------------|
 | **Urdu sub-headline** | Under English hero: e.g. *"والدین کو آپ کی بہترین تشہیر بنائیں"* — verify translation with native speaker before print |
-| **Testimonial** | Placeholder: *"[Institution Name] — [City]"* + 2 lines of praise; replace with Rekhta Academy quote only if approved |
+| **Testimonial** | Placeholder: *"[Institution Name] — [City]"* + 2 lines of praise; replace with Nexium Academy quote only if approved |
 | **Social crop** | 1080×1080: hero headline + one stat + Nexium logo + CTA |
 | **Back cover (print)** | Contact block only — minimal, elegant |
 
@@ -428,7 +428,7 @@ ibraheem45622@gmail.com
 | Illustrative stats | Always asterisk + footnote (see §5) |
 | AI features | Shipped in product; SMS/WhatsApp require Twilio configuration |
 | Mobile apps | Say **"mobile-ready parent portal"** — native apps are roadmap, not current deliverable |
-| Reference client | "Rekhta Academy" only if explicitly approved for marketing |
+| Reference client | "Nexium Academy" only if explicitly approved for marketing |
 | Pricing | No PKR amounts unless sales inserts approved pricing sheet |
 | Uptime / SLA | Do not promise specific uptime percentages without legal approval |
 

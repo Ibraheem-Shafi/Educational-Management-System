@@ -33,17 +33,17 @@ npm run dev
 
 Open **http://localhost:3000** and sign in with a role-specific account from [demo-seed.md](demo-seed.md).
 
-**Password for all demo accounts:** `Rekhta@2026!`
+**Password for all demo accounts:** `Nexium@2026!`
 
 | Role | Demo email | Lands on |
 |------|------------|----------|
-| Super Admin | admin@rekhta.edu.pk | `/dashboard` |
-| Branch Admin | branchadmin@rekhta.edu.pk | `/dashboard` |
-| Teacher | ahmed.teacher@rekhta.edu.pk | `/dashboard` |
-| Accountant | fees@rekhta.edu.pk | `/dashboard` |
-| Receptionist | reception@rekhta.edu.pk | `/dashboard` |
-| Parent | rashid.ahmad@rekhta.edu.pk | `/portal/parent` |
-| Student | ali.khan@rekhta.edu.pk | `/portal/student` |
+| Super Admin | admin@nexium.edu.pk | `/dashboard` |
+| Branch Admin | branchadmin@nexium.edu.pk | `/dashboard` |
+| Teacher | ahmed.teacher@nexium.edu.pk | `/dashboard` |
+| Accountant | fees@nexium.edu.pk | `/dashboard` |
+| Receptionist | reception@nexium.edu.pk | `/dashboard` |
+| Parent | rashid.ahmad@nexium.edu.pk | `/portal/parent` |
+| Student | ali.khan@nexium.edu.pk | `/portal/student` |
 
 ### Per-page template
 

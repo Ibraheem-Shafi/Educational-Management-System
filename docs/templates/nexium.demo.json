@@ -1,5 +1,5 @@
 {
-  "version": "rekhta-v1.1",
+  "version": "nexium-v1.1",
   "institution": {
     "siblingDiscountPercent": 10,
     "lateFeeAmount": 500,
@@ -7,7 +7,7 @@
   },
   "accounts": [
     {
-      "email": "admin@rekhta.edu.pk",
+      "email": "admin@nexium.edu.pk",
       "fullName": "Syed Kamran Shah",
       "role": "super_admin",
       "phone": "+923001234567",
@@ -15,7 +15,7 @@
       "cnic": "61101-1234567-1"
     },
     {
-      "email": "branchadmin@rekhta.edu.pk",
+      "email": "branchadmin@nexium.edu.pk",
       "fullName": "Aisha Malik",
       "role": "branch_admin",
       "branchCode": "MAIN",
@@ -24,7 +24,7 @@
       "cnic": "61101-2345678-2"
     },
     {
-      "email": "lahore.admin@rekhta.edu.pk",
+      "email": "lahore.admin@nexium.edu.pk",
       "fullName": "Usman Tariq",
       "role": "branch_admin",
       "branchCode": "LAHORE",
@@ -33,7 +33,7 @@
       "cnic": "61101-3456789-3"
     },
     {
-      "email": "ahmed.teacher@rekhta.edu.pk",
+      "email": "ahmed.teacher@nexium.edu.pk",
       "fullName": "Dr. Ahmed Hassan",
       "role": "teacher",
       "branchCode": "MAIN",
@@ -42,7 +42,7 @@
       "cnic": "61101-4567890-4"
     },
     {
-      "email": "fees@rekhta.edu.pk",
+      "email": "fees@nexium.edu.pk",
       "fullName": "Sadia Bano",
       "role": "accountant",
       "branchCode": "MAIN",
@@ -51,7 +51,7 @@
       "cnic": "61101-5678901-5"
     },
     {
-      "email": "reception@rekhta.edu.pk",
+      "email": "reception@nexium.edu.pk",
       "fullName": "Hina Batool",
       "role": "receptionist",
       "branchCode": "MAIN",
@@ -60,7 +60,7 @@
       "cnic": "61101-6789012-6"
     },
     {
-      "email": "rashid.ahmad@rekhta.edu.pk",
+      "email": "rashid.ahmad@nexium.edu.pk",
       "fullName": "Rashid Ahmad Khan",
       "role": "parent",
       "phone": "+923004445566",
@@ -68,7 +68,7 @@
       "cnic": "35202-7654321-9"
     },
     {
-      "email": "ali.khan@rekhta.edu.pk",
+      "email": "ali.khan@nexium.edu.pk",
       "fullName": "Muhammad Ali Khan",
       "role": "student",
       "phone": "+923001112233",
@@ -167,7 +167,7 @@
       "dob": "2007-03-15",
       "cnic": "35202-1234567-1",
       "phone": "+923001112233",
-      "email": "ali.khan@rekhta.edu.pk",
+      "email": "ali.khan@nexium.edu.pk",
       "address": "House 12, Street 4, G-9/2",
       "city": "Islamabad",
       "status": "active",
@@ -999,7 +999,7 @@
       "demoKey": "rashid-ahmad-khan",
       "fullName": "Rashid Ahmad Khan",
       "phone": "+923004445566",
-      "email": "rashid.ahmad@rekhta.edu.pk",
+      "email": "rashid.ahmad@nexium.edu.pk",
       "cnic": "35202-7654321-9",
       "address": "Islamabad"
     },
@@ -1748,7 +1748,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 1,
       "startTime": "08:00",
       "endTime": "09:30",
@@ -1758,7 +1758,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 1,
       "startTime": "09:45",
       "endTime": "11:15",
@@ -1768,7 +1768,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 2,
       "startTime": "08:00",
       "endTime": "09:30",
@@ -1778,7 +1778,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 2,
       "startTime": "09:45",
       "endTime": "11:15",
@@ -1788,7 +1788,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 3,
       "startTime": "08:00",
       "endTime": "09:30",
@@ -1798,7 +1798,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 3,
       "startTime": "09:45",
       "endTime": "11:15",
@@ -1808,7 +1808,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 4,
       "startTime": "08:00",
       "endTime": "09:30",
@@ -1818,7 +1818,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 4,
       "startTime": "09:45",
       "endTime": "11:15",
@@ -1828,7 +1828,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 5,
       "startTime": "08:00",
       "endTime": "11:00",
@@ -1838,7 +1838,7 @@
     {
       "batchCode": "MDCAT-MORNING-A",
       "branchCode": "MAIN",
-      "teacherEmail": "ahmed.teacher@rekhta.edu.pk",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
       "dayOfWeek": 6,
       "startTime": "09:00",
       "endTime": "12:00",
@@ -1860,7 +1860,7 @@
       "branchCode": "MAIN",
       "studentDemoKey": null,
       "category": "prospectus",
-      "title": "Rekhta Academy Prospectus — MDCAT Program",
+      "title": "Nexium Academy Prospectus — MDCAT Program",
       "storagePath": "institution-assets/prospectus/mdcat-2026.pdf",
       "mimeType": "application/pdf",
       "sizeBytes": 1048576
@@ -1879,27 +1879,27 @@
     {
       "channel": "sms",
       "recipient": "+923004445566",
-      "body": "Rekhta Academy: Fee reminder — June challan due 10-Jun. Pay at campus or bank. Ignore if paid.",
+      "body": "Nexium Academy: Fee reminder — June challan due 10-Jun. Pay at campus or bank. Ignore if paid.",
       "status": "sent"
     },
     {
       "channel": "whatsapp",
       "recipient": "+923004445566",
       "subject": "PTM Reminder",
-      "body": "Assalam o Alaikum Mr Rashid Ahmad, Parent-Teacher meeting on Saturday 10 AM. — Rekhta Academy",
+      "body": "Assalam o Alaikum Mr Rashid Ahmad, Parent-Teacher meeting on Saturday 10 AM. — Nexium Academy",
       "status": "sent"
     },
     {
       "channel": "sms",
       "recipient": "+923001112233",
-      "body": "Rekhta Academy: FLP-2 result published. Login to student portal to view marks.",
+      "body": "Nexium Academy: FLP-2 result published. Login to student portal to view marks.",
       "status": "sent"
     },
     {
       "channel": "whatsapp",
       "recipient": "+923453334455",
       "subject": "Lahore Campus",
-      "body": "FLP-3 on Friday 8 AM at Gulberg campus. — Rekhta Academy Lahore",
+      "body": "FLP-3 on Friday 8 AM at Gulberg campus. — Nexium Academy Lahore",
       "status": "queued"
     },
     {

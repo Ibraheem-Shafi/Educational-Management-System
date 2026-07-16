@@ -7,7 +7,7 @@ export function loadDemoConfig(configPath?: string): DemoConfig {
     ? path.isAbsolute(configPath)
       ? configPath
       : path.resolve(process.cwd(), configPath)
-    : path.resolve(__dirname, '../../../../docs/templates/rekhta.demo.json');
+    : path.resolve(__dirname, '../../../../docs/templates/nexium.demo.json');
 
   const raw = fs.readFileSync(resolved, 'utf-8');
   return JSON.parse(raw) as DemoConfig;

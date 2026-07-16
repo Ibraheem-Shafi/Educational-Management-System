@@ -55,7 +55,7 @@ function loadConfig(): SeedConfig {
   const configArg = process.argv.find((a) => a.startsWith('--config='));
   const configPath = configArg
     ? configArg.replace('--config=', '')
-    : process.env.SEED_CONFIG_PATH || '../../../docs/templates/rekhta.institution.json';
+    : process.env.SEED_CONFIG_PATH || '../../../docs/templates/nexium.institution.json';
 
   const resolved = path.isAbsolute(configPath)
     ? configPath

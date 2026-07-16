@@ -2,24 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useInstitution } from '@/providers/institution-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  FormFieldLabel,
-  modalFieldClassName,
-} from '@/components/features/users/invite-form-fields';
-import { cn } from '@/lib/utils';
-
-const primaryButtonClassName = cn(
-  'h-10 w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
-  'text-sm font-medium leading-5 tracking-[-0.006em] text-white',
-  'hover:bg-[var(--midnight-blue-950,#01366C)] hover:opacity-90',
-);
+  AuthShell,
+  authFieldClassName,
+  authPrimaryButtonClassName,
+} from '@/components/auth/auth-shell';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 
 export default function ForgotPasswordPage() {
   const { name } = useInstitution();
@@ -44,53 +37,40 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-weak-50,#F6F8FA)] p-4 font-[family-name:var(--font-inter)]">
-      <Card className="w-full max-w-md rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white shadow-none">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
-            <GraduationCap className="h-6 w-6 text-[var(--midnight-blue-950,#01366C)]" />
+    <AuthShell
+      title="Reset password"
+      description={`Enter the email linked to your ${name} account and we’ll send a reset link.`}
+      footer={
+        <p className="text-center text-sm text-[#5B6578]">
+          <Link href="/login" className="font-medium text-[#5B2FE0] transition hover:text-[#3B1FA8]">
+            Back to sign in
+          </Link>
+        </p>
+      }
+    >
+      {sent ? (
+        <p className="rounded-xl border border-[#E6E8EF] bg-[#F8F9FC] px-4 py-3 text-sm leading-6 text-[#5B6578]">
+          If an account exists for <span className="font-medium text-[#0A0D14]">{email}</span>, you
+          will receive reset instructions shortly.
+        </p>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <FormFieldLabel required>Email</FormFieldLabel>
+            <Input
+              type="email"
+              placeholder="admin@institution.pk"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
           </div>
-          <CardTitle className="font-[family-name:var(--font-inter)] text-[var(--text-main-900,#0A0D14)]">
-            {name}
-          </CardTitle>
-          <CardDescription className="font-[family-name:var(--font-inter)] text-[var(--text-sub-500,#525866)]">
-            Reset your password
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sent ? (
-            <p className="text-center text-sm text-[var(--text-sub-500,#525866)]">
-              If an account exists for {email}, you will receive reset instructions shortly.
-            </p>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <FormFieldLabel required>Email</FormFieldLabel>
-                <Input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className={modalFieldClassName}
-                />
-              </div>
-              <Button type="submit" className={primaryButtonClassName} disabled={loading}>
-                {loading ? 'Sending...' : 'Send reset link'}
-              </Button>
-            </form>
-          )}
-          <p className="mt-4 text-center text-sm">
-            <Button
-              variant="link"
-              asChild
-              className="font-[family-name:var(--font-inter)] text-[var(--midnight-blue-950,#01366C)]"
-            >
-              <Link href="/login">Back to sign in</Link>
-            </Button>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+          <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
+            {loading ? 'Sending…' : 'Send reset link'}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

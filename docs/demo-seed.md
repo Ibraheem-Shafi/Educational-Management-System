@@ -1,10 +1,11 @@
-# Rekhta Academy — Demo Seed Reference
+# Nexium Academy — Demo Seed Reference
 
 Single reference for database seeding, demo logins, and what data is created for client presentations.
 
-**Institution:** Rekhta Academy Pakistan (Pakistani coaching center)  
-**Demo version:** `rekhta-v1.1`  
-**Config files:** [`templates/rekhta.institution.json`](templates/rekhta.institution.json) (foundation) · [`templates/rekhta.demo.json`](templates/rekhta.demo.json) (transactional data)
+**Institution:** Nexium Academy Pakistan (Pakistani coaching center)  
+**Demo version:** `nexium-v1.1`  
+**Config files:** [`templates/nexium.institution.json`](templates/nexium.institution.json) (foundation) · [`templates/nexium.demo.json`](templates/nexium.demo.json) (transactional data)  
+**Logo:** `apps/web/public/logo.png` — temporary asset until a new Nexium logo is provided (filename stays the same).
 
 ---
 
@@ -34,25 +35,25 @@ Prisma seed scripts load `apps/api/.env` automatically via `dotenv-cli`.
 
 ## Demo login accounts
 
-**Password for all accounts:** `Rekhta@2026!`
+**Password for all accounts:** `Nexium@2026!`
 
-Defined in `rekhta.institution.json` → `demo.password` and synced to Supabase by `npm run db:seed:auth`.
+Defined in `nexium.institution.json` → `demo.password` and synced to Supabase by `npm run db:seed:auth`.
 
 | Email | Password | Full name | Role | Branch | Where to log in |
 |-------|----------|-----------|------|--------|-----------------|
-| admin@rekhta.edu.pk | Rekhta@2026! | Syed Kamran Shah | Super Admin | All | `/dashboard` |
-| branchadmin@rekhta.edu.pk | Rekhta@2026! | Aisha Malik | Branch Admin | Islamabad (MAIN) | `/dashboard` |
-| lahore.admin@rekhta.edu.pk | Rekhta@2026! | Usman Tariq | Branch Admin | Lahore (LAHORE) | `/dashboard` |
-| ahmed.teacher@rekhta.edu.pk | Rekhta@2026! | Dr. Ahmed Hassan | Teacher | MAIN | `/dashboard` |
-| fees@rekhta.edu.pk | Rekhta@2026! | Sadia Bano | Accountant | MAIN | `/dashboard` |
-| reception@rekhta.edu.pk | Rekhta@2026! | Hina Batool | Receptionist | MAIN | `/dashboard` |
-| rashid.ahmad@rekhta.edu.pk | Rekhta@2026! | Rashid Ahmad Khan | Parent | — | `/portal/parent` |
-| ali.khan@rekhta.edu.pk | Rekhta@2026! | Muhammad Ali Khan | Student | — | `/portal/student` |
+| admin@nexium.edu.pk | Nexium@2026! | Syed Kamran Shah | Super Admin | All | `/dashboard` |
+| branchadmin@nexium.edu.pk | Nexium@2026! | Aisha Malik | Branch Admin | Islamabad (MAIN) | `/dashboard` |
+| lahore.admin@nexium.edu.pk | Nexium@2026! | Usman Tariq | Branch Admin | Lahore (LAHORE) | `/dashboard` |
+| ahmed.teacher@nexium.edu.pk | Nexium@2026! | Dr. Ahmed Hassan | Teacher | MAIN | `/dashboard` |
+| fees@nexium.edu.pk | Nexium@2026! | Sadia Bano | Accountant | MAIN | `/dashboard` |
+| reception@nexium.edu.pk | Nexium@2026! | Hina Batool | Receptionist | MAIN | `/dashboard` |
+| rashid.ahmad@nexium.edu.pk | Nexium@2026! | Rashid Ahmad Khan | Parent | — | `/portal/parent` |
+| ali.khan@nexium.edu.pk | Nexium@2026! | Muhammad Ali Khan | Student | — | `/portal/student` |
 
 ### Portal notes
 
-- **Parent** (`rashid.ahmad@rekhta.edu.pk`) is linked to **Ali Khan** and **Zainab Hussain** (sibling discount demo).
-- **Student** (`ali.khan@rekhta.edu.pk`) must match the student record email in the database.
+- **Parent** (`rashid.ahmad@nexium.edu.pk`) is linked to **Ali Khan** and **Zainab Hussain** (sibling discount demo).
+- **Student** (`ali.khan@nexium.edu.pk`) must match the student record email in the database.
 - Staff accounts use the main login page; parent/student use the same login and are routed to their portal by role.
 - **Learning:** demo seed creates published notes, materials, syllabus, resources, and homework (with due dates) for the MAIN campus first batch. Browse under **Learning** in `/dashboard`, `/portal/student/learning`, and `/portal/parent/learning`.
 
@@ -69,7 +70,7 @@ Alternatively, disable MFA in the Supabase project settings, or complete TOTP en
 
 ### Security reminder
 
-Change the demo password (or delete demo Supabase users) before any production go-live. Do not use `Rekhta@2026!` in production.
+Change the demo password (or delete demo Supabase users) before any production go-live. Do not use `Nexium@2026!` in production.
 
 ---
 
@@ -95,9 +96,9 @@ npm run db:seed:auth
 
 ## What gets seeded
 
-### Phase 1 — Foundation (`seed.ts` + `rekhta.institution.json`)
+### Phase 1 — Foundation (`seed.ts` + `nexium.institution.json`)
 
-- Institution settings (Rekhta branding, PKR, Asia/Karachi)
+- Institution settings (nexium branding, PKR, Asia/Karachi)
 - Roles & permissions (7 roles)
 - Branches: **Islamabad Main (MAIN)**, **Lahore Gulberg (LAHORE)**
 - Lookup statuses (student, attendance, parent relationship, fee)
@@ -109,7 +110,7 @@ npm run db:seed:auth
 - Form fields: previous school, board, emergency contact
 - Super Admin invitation record (superseded once `db:seed:auth` runs)
 
-### Phase 2 — Demo data (`rekhta.demo.json`)
+### Phase 2 — Demo data (`nexium.demo.json`)
 
 | Data | Count / detail |
 |------|----------------|
@@ -128,7 +129,7 @@ npm run db:seed:auth
 
 **Fee settings:** 10% sibling discount, Rs 500 late fee after 7 days.
 
-**Featured student for demos:** Muhammad Ali Khan — `ali.khan@rekhta.edu.pk`, MDCAT Morning Batch A, Islamabad.
+**Featured student for demos:** Muhammad Ali Khan — `ali.khan@nexium.edu.pk`, MDCAT Morning Batch A, Islamabad.
 
 ### Phase 3 — Auth (`seed-auth.ts`)
 
@@ -153,7 +154,7 @@ npm run db:seed:auth
 | notices | 5 |
 | users | 8 |
 
-Plus `terminology._demoSeedVersion` = `rekhta-v1.1` on institution settings.
+Plus `terminology._demoSeedVersion` = `nexium-v1.1` on institution settings.
 
 ---
 
@@ -161,14 +162,14 @@ Plus `terminology._demoSeedVersion` = `rekhta-v1.1` on institution settings.
 
 | Module | Sample login |
 |--------|----------------|
-| Dashboard, branches, academic | `admin@rekhta.edu.pk` or `branchadmin@rekhta.edu.pk` |
-| Students, parents, attendance | `ahmed.teacher@rekhta.edu.pk` |
-| Fees, reports | `fees@rekhta.edu.pk` |
-| Users, communications | `reception@rekhta.edu.pk` |
-| Lahore campus data | `lahore.admin@rekhta.edu.pk` |
-| Learning (publish notes / homework) | `admin@rekhta.edu.pk` or `ahmed.teacher@rekhta.edu.pk` |
-| Parent portal (+ Learning for children) | `rashid.ahmad@rekhta.edu.pk` |
-| Student portal (+ Learning / due soon) | `ali.khan@rekhta.edu.pk` |
+| Dashboard, branches, academic | `admin@nexium.edu.pk` or `branchadmin@nexium.edu.pk` |
+| Students, parents, attendance | `ahmed.teacher@nexium.edu.pk` |
+| Fees, reports | `fees@nexium.edu.pk` |
+| Users, communications | `reception@nexium.edu.pk` |
+| Lahore campus data | `lahore.admin@nexium.edu.pk` |
+| Learning (publish notes / homework) | `admin@nexium.edu.pk` or `ahmed.teacher@nexium.edu.pk` |
+| Parent portal (+ Learning for children) | `rashid.ahmad@nexium.edu.pk` |
+| Student portal (+ Learning / due soon) | `ali.khan@nexium.edu.pk` |
 
 AI attendance and AI insights are intentionally empty/stubbed for demo.
 

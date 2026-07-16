@@ -48,7 +48,7 @@ export async function seedUsers(prisma: PrismaClient, ctx: DemoContext): Promise
   }
 
   await prisma.invitation.updateMany({
-    where: { email: 'admin@rekhta.edu.pk', acceptedAt: null },
+    where: { email: 'admin@nexium.edu.pk', acceptedAt: null },
     data: { acceptedAt: new Date() },
   });
 }
