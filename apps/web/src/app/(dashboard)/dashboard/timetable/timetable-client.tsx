@@ -2,16 +2,33 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarDays, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/page-header';
-import { PageTabs } from '@/components/layout/page-tabs';
-import { filterSelectClass } from '@/components/layout/filter-bar';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { Tabs } from '@/components/ui/tabs';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import type { TimetableStatsResponse } from '@eims/types';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -31,9 +48,11 @@ interface Slot {
 
 export default function TimetablePage() {
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const branchId = user?.branchId ?? '';
+  const canManage = can(PERMISSIONS.TIMETABLE_MANAGE);
 
   const [view, setView] = useState<'batch' | 'teacher' | 'room'>('batch');
   const [filterBatchId, setFilterBatchId] = useState('');
@@ -44,18 +63,24 @@ export default function TimetablePage() {
   const [batchId, setBatchId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [teacherId, setTeacherId] = useState('');
-  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [dayOfWeek, setDayOfWeek] = useState('1');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
   const [room, setRoom] = useState('');
 
   const { data: branches } = useQuery({
-    queryKey: ['branches'],
+    queryKey: queryKeys.branches,
     queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
     enabled: !!token,
   });
 
   const effectiveBranchId = branchId || branches?.data[0]?.id || '';
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.timetableStats,
+    queryFn: () => apiClient<TimetableStatsResponse>('/timetable/stats', { token }),
+    enabled: !!token,
+  });
 
   const queryParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -105,6 +130,18 @@ export default function TimetablePage() {
     enabled: !!token,
   });
 
+  const batchFilterOptions = [
+    { value: '', label: 'All batches' },
+    ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+  ];
+
+  const teacherFilterOptions = [
+    { value: '', label: 'All teachers' },
+    ...(teachers?.data.map((t) => ({ value: t.id, label: t.fullName })) ?? []),
+  ];
+
+  const dayOptions = DAYS.map((d, i) => ({ value: String(i + 1), label: d }));
+
   const createMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiClient('/timetable', { method: 'POST', token, body: JSON.stringify(body) }),
@@ -112,7 +149,12 @@ export default function TimetablePage() {
       toast.success('Slot added');
       queryClient.invalidateQueries({ queryKey: ['timetable'] });
       queryClient.invalidateQueries({ queryKey: ['timetable-conflicts'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.timetableStats });
       setShowForm(false);
+      setBatchId('');
+      setSubjectId('');
+      setTeacherId('');
+      setRoom('');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -122,6 +164,7 @@ export default function TimetablePage() {
     onSuccess: () => {
       toast.success('Slot removed');
       queryClient.invalidateQueries({ queryKey: ['timetable'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.timetableStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -140,214 +183,225 @@ export default function TimetablePage() {
   }, [slots?.data]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
+        icon={CalendarDays}
         title="Timetable"
         description="Weekly class schedules"
         actions={
-          user?.permissions.includes('timetable.manage') ? (
-            <Button onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add slot'}</Button>
+          canManage ? (
+            <button type="button" onClick={() => setShowForm(true)} className={pageHeaderActionClassName}>
+              <PageHeaderActionIcon />
+              Add slot
+            </button>
           ) : undefined
         }
       />
 
-      <PageTabs
+      <MainStatsSection
+        isLoading={statsLoading}
+        stats={[
+          {
+            label: 'Slots per week',
+            value: stats?.slotsPerWeek.total ?? 0,
+            changePercent: stats?.slotsPerWeek.changePercent,
+          },
+          {
+            label: 'Rooms used',
+            value: stats?.roomsUsed.total ?? 0,
+            changePercent: stats?.roomsUsed.changePercent,
+          },
+          {
+            label: 'Teachers scheduled',
+            value: stats?.teachersScheduled.total ?? 0,
+            changePercent: stats?.teachersScheduled.changePercent,
+          },
+          {
+            label: 'Batches scheduled',
+            value: stats?.batchesScheduled.total ?? 0,
+            changePercent: stats?.batchesScheduled.changePercent,
+          },
+        ]}
+      />
+
+      <Tabs
+        aria-label="Timetable views"
         tabs={[
           { id: 'batch', label: 'By batch' },
           { id: 'teacher', label: 'By teacher' },
           { id: 'room', label: 'By room' },
         ]}
-        activeId={view}
-        onChange={(id) => setView(id as typeof view)}
+        value={view}
+        onValueChange={(id) => setView(id as typeof view)}
       />
 
-      <Card>
-        <CardContent className="flex flex-wrap gap-3 pt-6">
-          {view === 'batch' && (
-            <select
-              className={filterSelectClass}
-              value={filterBatchId}
-              onChange={(e) => setFilterBatchId(e.target.value)}
-            >
-              <option value="">All batches</option>
-              {batches?.data.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {view === 'teacher' && (
-            <select
-              className={filterSelectClass}
-              value={filterTeacherId}
-              onChange={(e) => setFilterTeacherId(e.target.value)}
-            >
-              <option value="">All teachers</option>
-              {teachers?.data.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.fullName}
-                </option>
-              ))}
-            </select>
-          )}
-          {view === 'room' && (
-            <Input
-              placeholder="Room name"
-              value={filterRoom}
-              onChange={(e) => setFilterRoom(e.target.value)}
-              className="max-w-xs"
-            />
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-3">
+        {view === 'batch' && (
+          <SelectDropdown
+            aria-label="Filter by batch"
+            placeholder="All batches"
+            value={filterBatchId}
+            onValueChange={setFilterBatchId}
+            options={batchFilterOptions}
+          />
+        )}
+        {view === 'teacher' && (
+          <SelectDropdown
+            aria-label="Filter by teacher"
+            placeholder="All teachers"
+            value={filterTeacherId}
+            onValueChange={setFilterTeacherId}
+            options={teacherFilterOptions}
+          />
+        )}
+        {view === 'room' && (
+          <Input
+            placeholder="Room name"
+            value={filterRoom}
+            onChange={(e) => setFilterRoom(e.target.value)}
+            className="max-w-xs"
+          />
+        )}
+      </div>
 
       {(conflicts?.conflicts.length ?? 0) > 0 && (
-        <Card className="border-amber-500/50">
-          <CardHeader>
-            <CardTitle className="text-amber-600">Schedule conflicts</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
+        <ContentPanel title="Schedule conflicts" className="border-amber-500/50">
+          <div className="space-y-1 px-5 py-4 text-sm text-amber-700">
             {conflicts?.conflicts.map((c, i) => (
               <p key={i}>
                 {c.type}: {c.message}
               </p>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </ContentPanel>
       )}
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>New timetable slot</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-4 sm:grid-cols-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate({
-                  branchId: effectiveBranchId,
-                  batchId,
-                  subjectId,
-                  dayOfWeek,
-                  startTime,
-                  endTime,
-                  ...(teacherId ? { teacherId } : {}),
-                  ...(room ? { room } : {}),
-                });
-              }}
-            >
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={batchId}
-                onChange={(e) => setBatchId(e.target.value)}
-                required
-              >
-                <option value="">Batch</option>
-                {batches?.data.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={subjectId}
-                onChange={(e) => setSubjectId(e.target.value)}
-                required
-              >
-                <option value="">Subject</option>
-                {subjects?.data.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={teacherId}
-                onChange={(e) => setTeacherId(e.target.value)}
-              >
-                <option value="">Teacher (optional)</option>
-                {teachers?.data.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="flex h-10 rounded-md border border-border bg-background px-3 text-sm"
-                value={dayOfWeek}
-                onChange={(e) => setDayOfWeek(Number(e.target.value))}
-              >
-                {DAYS.map((d, i) => (
-                  <option key={d} value={i + 1}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-              <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
-              <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
-              <Input placeholder="Room" value={room} onChange={(e) => setRoom(e.target.value)} />
-              <Button type="submit" disabled={createMutation.isPending} className="sm:col-span-2 w-fit">
-                Save slot
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+      {isLoading && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl bg-[var(--neutral-50)]" />
+          ))}
+        </div>
       )}
-
-      {isLoading && <ListLoadingSkeleton />}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {DAYS.map((dayLabel, idx) => {
-          const daySlots = grouped.get(idx + 1) ?? [];
-          return (
-            <Card key={dayLabel}>
-              <CardHeader>
-                <CardTitle>{dayLabel}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {daySlots.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No classes</p>
-                )}
-                <div className="space-y-2">
+        {!isLoading &&
+          DAYS.map((dayLabel, idx) => {
+            const daySlots = grouped.get(idx + 1) ?? [];
+            return (
+              <ContentPanel key={dayLabel} title={dayLabel}>
+                <div className="space-y-2 px-5 py-4">
+                  {daySlots.length === 0 && (
+                    <p className="text-sm text-[var(--text-sub-500)]">No classes</p>
+                  )}
                   {daySlots.map((slot) => (
                     <div
                       key={slot.id}
-                      className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-start sm:justify-between"
+                      className="flex items-start justify-between gap-3 rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] p-3 text-sm"
                     >
                       <div>
-                        <p className="font-medium">
+                        <p className="font-medium text-[var(--text-main-900)]">
                           {slot.startTime}–{slot.endTime} · {slot.subject?.name ?? '—'}
                         </p>
-                        <p className="text-muted-foreground">
+                        <p className="text-[var(--text-sub-500)]">
                           {slot.batch?.name ?? '—'}
                           {slot.teacher ? ` · ${slot.teacher.fullName}` : ''}
                           {slot.room ? ` · ${slot.room}` : ''}
                         </p>
                       </div>
-                      {user?.permissions.includes('timetable.manage') && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            if (confirm('Remove this slot?')) deleteMutation.mutate(slot.id);
-                          }}
-                        >
-                          Remove
-                        </Button>
+                      {canManage && (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Remove',
+                              onClick: () => {
+                                if (confirm('Remove this slot?')) deleteMutation.mutate(slot.id);
+                              },
+                            },
+                          ]}
+                        />
                       )}
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+              </ContentPanel>
+            );
+          })}
       </div>
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent>
+          <div className="flex items-start justify-between gap-3 px-5 pt-5">
+            <div>
+              <DialogTitle>New timetable slot</DialogTitle>
+              <DialogDescription>Add a class to the weekly schedule.</DialogDescription>
+            </div>
+            <button type="button" onClick={() => setShowForm(false)} className="text-[var(--text-sub-500)]">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <form
+            className="grid gap-4 px-5 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createMutation.mutate({
+                branchId: effectiveBranchId,
+                batchId,
+                subjectId,
+                dayOfWeek: Number(dayOfWeek),
+                startTime,
+                endTime,
+                ...(teacherId ? { teacherId } : {}),
+                ...(room ? { room } : {}),
+              });
+            }}
+          >
+            <SelectDropdown
+              aria-label="Batch"
+              placeholder="Select batch"
+              value={batchId}
+              onValueChange={setBatchId}
+              options={[{ value: '', label: 'Select batch' }, ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? [])]}
+              fullWidth
+            />
+            <SelectDropdown
+              aria-label="Subject"
+              placeholder="Select subject"
+              value={subjectId}
+              onValueChange={setSubjectId}
+              options={[{ value: '', label: 'Select subject' }, ...(subjects?.data.map((s) => ({ value: s.id, label: s.name })) ?? [])]}
+              fullWidth
+            />
+            <SelectDropdown
+              aria-label="Teacher"
+              placeholder="Teacher (optional)"
+              value={teacherId}
+              onValueChange={setTeacherId}
+              options={[{ value: '', label: 'Teacher (optional)' }, ...(teachers?.data.map((t) => ({ value: t.id, label: t.fullName })) ?? [])]}
+              fullWidth
+            />
+            <SelectDropdown
+              aria-label="Day of week"
+              placeholder="Day"
+              value={dayOfWeek}
+              onValueChange={setDayOfWeek}
+              options={dayOptions}
+              fullWidth
+            />
+            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
+            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
+            <Input placeholder="Room" value={room} onChange={(e) => setRoom(e.target.value)} className="sm:col-span-2" />
+            <DialogFooter className="sm:col-span-2">
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || !batchId || !subjectId}>
+                Save slot
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

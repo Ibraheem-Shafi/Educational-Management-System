@@ -2,15 +2,26 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
+import { BarChart3, Download } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { downloadCsv } from '@/lib/download-csv';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
-import { FilterBar, filterSelectClass } from '@/components/layout/filter-bar';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
+import type { AnalyticsDashboardKpisResponse } from '@eims/types';
+import { cn } from '@/lib/utils';
+
+const thClass =
+  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+const tdClass =
+  'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 function defaultDateRange() {
   const to = new Date();
@@ -33,7 +44,7 @@ export default function AnalyticsPage() {
   const [assessmentId, setAssessmentId] = useState('');
 
   const { data: branches } = useQuery({
-    queryKey: ['branches'],
+    queryKey: queryKeys.branches,
     queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
     enabled: !!token,
   });
@@ -41,7 +52,7 @@ export default function AnalyticsPage() {
   const effectiveBranchId = user?.branchId || branches?.data[0]?.id || '';
 
   const { data: batches } = useQuery({
-    queryKey: ['batches', effectiveBranchId],
+    queryKey: queryKeys.batches(effectiveBranchId),
     queryFn: () =>
       apiClient<{ data: { id: string; name: string }[] }>(
         `/batches?branchId=${effectiveBranchId}`,
@@ -60,7 +71,7 @@ export default function AnalyticsPage() {
     enabled: !!token,
   });
 
-  const { data: performance } = useQuery({
+  const { data: performance, isLoading: performanceLoading } = useQuery({
     queryKey: ['analytics-performance', batchId],
     queryFn: () =>
       apiClient<{
@@ -69,17 +80,13 @@ export default function AnalyticsPage() {
     enabled: !!token,
   });
 
-  const { data: kpis } = useQuery({
-    queryKey: ['analytics-dashboard'],
-    queryFn: () => apiClient<{
-      assessmentsLast30Days: number;
-      attendanceRateLast30Days: number;
-      averageAssessmentPercentage: number | null;
-    }>('/analytics/dashboard', { token }),
+  const { data: kpis, isLoading: kpisLoading } = useQuery({
+    queryKey: queryKeys.analyticsDashboard,
+    queryFn: () => apiClient<AnalyticsDashboardKpisResponse>('/analytics/dashboard', { token }),
     enabled: !!token,
   });
 
-  const { data: trends } = useQuery({
+  const { data: trends, isLoading: trendsLoading } = useQuery({
     queryKey: ['analytics-trends', from, to],
     queryFn: () =>
       apiClient<{ trends: Array<{ date: string; rate: number; total: number }> }>(
@@ -89,7 +96,7 @@ export default function AnalyticsPage() {
     enabled: !!token,
   });
 
-  const { data: weak } = useQuery({
+  const { data: weak, isLoading: weakLoading } = useQuery({
     queryKey: ['analytics-weak', threshold],
     queryFn: () =>
       apiClient<{
@@ -98,7 +105,7 @@ export default function AnalyticsPage() {
     enabled: !!token,
   });
 
-  const { data: rankings } = useQuery({
+  const { data: rankings, isLoading: rankingsLoading } = useQuery({
     queryKey: ['analytics-rankings', assessmentId],
     queryFn: () =>
       apiClient<{
@@ -123,72 +130,75 @@ export default function AnalyticsPage() {
     ]),
   );
 
-  const maxRate = Math.max(...(trends?.trends.map((t) => t.rate) ?? [100]), 1);
+  const trendChartData = (trends?.trends ?? []).map((t) => ({
+    label: t.date.slice(5),
+    value: t.rate,
+  }));
+
+  const batchOptions = [
+    { value: '', label: 'All batches' },
+    ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+  ];
+
+  const assessmentOptions = [
+    { value: '', label: 'All recent assessments' },
+    ...(assessments?.data.map((a) => ({ value: a.id, label: a.name })) ?? []),
+  ];
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Analytics" description="Performance and attendance insights" />
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={BarChart3}
+        title="Analytics"
+        description="Performance and attendance insights"
+      />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Avg assessment % (30d)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{kpis?.averageAssessmentPercentage ?? '—'}%</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Attendance rate (30d)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{kpis?.attendanceRateLast30Days ?? 0}%</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">Assessments (30d)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{kpis?.assessmentsLast30Days ?? 0}</p>
-          </CardContent>
-        </Card>
+      <MainStatsSection
+        isLoading={kpisLoading}
+        stats={[
+          {
+            label: 'Avg assessment % (30d)',
+            value: kpis?.averageAssessmentPercentage.value != null
+              ? `${kpis.averageAssessmentPercentage.value}%`
+              : '—',
+            changePercent: kpis?.averageAssessmentPercentage.changePercent,
+          },
+          {
+            label: 'Attendance rate (30d)',
+            value: `${kpis?.attendanceRateLast30Days.value ?? 0}%`,
+            changePercent: kpis?.attendanceRateLast30Days.changePercent,
+          },
+          {
+            label: 'Assessments (30d)',
+            value: kpis?.assessmentsLast30Days.value ?? 0,
+            changePercent: kpis?.assessmentsLast30Days.changePercent,
+          },
+          {
+            label: 'Attendance records (30d)',
+            value: kpis?.attendanceRecordsLast30Days ?? 0,
+          },
+        ]}
+      />
+
+      <div className="space-y-4">
+        <FilterBar className="items-center">
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-auto" />
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-auto" />
+        </FilterBar>
+        <TrendAreaChart
+          title="Attendance trends"
+          subtitle={`${from} – ${to}`}
+          data={trendChartData}
+          isLoading={trendsLoading}
+          valueFormatter={(v) => `${v}%`}
+          gradientId="analyticsAttendanceTrend"
+        />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Attendance trends</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            {trends?.trends.map((t) => (
-              <div key={t.date} className="flex items-center gap-3 text-sm">
-                <span className="hidden w-24 shrink-0 text-muted-foreground sm:inline">{t.date}</span>
-                <div className="h-3 flex-1 rounded-full bg-muted">
-                  <div
-                    className="h-3 rounded-full bg-[var(--institution-primary)]"
-                    style={{ width: `${(t.rate / maxRate) * 100}%` }}
-                  />
-                </div>
-                <span className="w-16 text-right">{t.rate}%</span>
-              </div>
-            ))}
-            {trends?.trends.length === 0 && (
-              <p className="text-muted-foreground">No attendance data in range</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle>Batch performance comparison</CardTitle>
+        <ContentPanel
+          title="Batch performance comparison"
+          actions={
             <Button
               size="sm"
               variant="outline"
@@ -204,83 +214,116 @@ export default function AnalyticsPage() {
               <Download className="mr-2 h-4 w-4" />
               Export CSV
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <select
-              className={filterSelectClass}
+          }
+        >
+          <div className="space-y-4 px-5 pb-5 pt-4">
+            <SelectDropdown
+              aria-label="Filter by batch"
+              placeholder="All batches"
               value={batchId}
-              onChange={(e) => setBatchId(e.target.value)}
-            >
-              <option value="">All batches</option>
-              {batches?.data.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            <div className="divide-y divide-border">
-              {performanceRows.slice(0, 10).map((s, i) => (
-                <div key={i} className="flex justify-between py-2 text-sm">
-                  <span>{s.fullName}</span>
-                  <span>{s.overallPercentage}%</span>
-                </div>
-              ))}
-              {performance?.students.length === 0 && (
-                <p className="text-muted-foreground">No assessment data</p>
-              )}
+              onValueChange={setBatchId}
+              options={batchOptions}
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[320px] border-separate border-spacing-0">
+                <thead>
+                  <tr>
+                    <th className={thClass}>Student</th>
+                    <th className={cn(thClass, 'text-right')}>Overall %</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {performanceLoading &&
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td colSpan={2} className={tdClass}>
+                          <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                        </td>
+                      </tr>
+                    ))}
+                  {!performanceLoading && performanceRows.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                        No assessment data
+                      </td>
+                    </tr>
+                  )}
+                  {!performanceLoading &&
+                    performanceRows.slice(0, 10).map((s, i) => (
+                      <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                        <td className={tdClass}>{s.fullName}</td>
+                        <td className={cn(tdClass, 'text-right')}>{s.overallPercentage}%</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </ContentPanel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Weak subject alerts</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <ContentPanel title="Weak subject alerts">
+          <div className="space-y-4 px-5 pb-5 pt-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm">Below</span>
+              <span className="text-sm text-[var(--text-sub-500)]">Below</span>
               <Input
                 type="number"
                 className="w-20"
                 value={threshold}
                 onChange={(e) => setThreshold(e.target.value)}
               />
-              <span className="text-sm">%</span>
+              <span className="text-sm text-[var(--text-sub-500)]">%</span>
             </div>
-            <div className="divide-y divide-border">
-              {weak?.alerts.map((a, i) => (
-                <div key={i} className="flex justify-between py-2 text-sm">
-                  <span>
-                    {a.fullName} · {a.subjectName}
-                  </span>
-                  <span className="text-red-600">{a.averagePercentage}%</span>
-                </div>
-              ))}
-              {weak?.alerts.length === 0 && (
-                <p className="text-muted-foreground">No alerts at this threshold</p>
-              )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[320px] border-separate border-spacing-0">
+                <thead>
+                  <tr>
+                    <th className={thClass}>Student</th>
+                    <th className={thClass}>Subject</th>
+                    <th className={cn(thClass, 'text-right')}>Avg %</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {weakLoading &&
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <tr key={i}>
+                        <td colSpan={3} className={tdClass}>
+                          <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                        </td>
+                      </tr>
+                    ))}
+                  {!weakLoading && (weak?.alerts.length ?? 0) === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                        No alerts at this threshold
+                      </td>
+                    </tr>
+                  )}
+                  {!weakLoading &&
+                    weak?.alerts.map((a, i) => (
+                      <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                        <td className={tdClass}>{a.fullName}</td>
+                        <td className={tdClass}>{a.subjectName}</td>
+                        <td className={cn(tdClass, 'text-right text-red-600')}>{a.averagePercentage}%</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </ContentPanel>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Top rankings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <FilterBar>
-              <select
-                className={filterSelectClass}
+        <ContentPanel
+          title="Top rankings"
+          className="lg:col-span-2"
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <SelectDropdown
+                aria-label="Filter by assessment"
+                placeholder="All recent assessments"
                 value={assessmentId}
-                onChange={(e) => setAssessmentId(e.target.value)}
-              >
-                <option value="">All recent assessments</option>
-                {assessments?.data.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setAssessmentId}
+                options={assessmentOptions}
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -296,28 +339,52 @@ export default function AnalyticsPage() {
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </Button>
-            </FilterBar>
-
-            {rankings?.rankings.map((block) => (
-              <div key={block.assessment.id ?? block.assessment.name}>
-                <p className="mb-2 font-medium">{block.assessment.name}</p>
-                <div className="divide-y divide-border">
-                  {block.topStudents.slice(0, 5).map((s, i) => (
-                    <div key={i} className="flex justify-between py-1 text-sm">
-                      <span>
-                        #{s.rank} {s.fullName}
-                      </span>
-                      <span>{s.percentage ?? '—'}%</span>
-                    </div>
-                  ))}
-                </div>
+            </div>
+          }
+        >
+          <div className="space-y-6 px-5 pb-5 pt-4">
+            {rankingsLoading && (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-16 animate-pulse rounded bg-[var(--neutral-50)]" />
+                ))}
               </div>
-            ))}
-            {rankings?.rankings.length === 0 && (
-              <p className="text-muted-foreground">No ranked assessments yet</p>
             )}
-          </CardContent>
-        </Card>
+            {!rankingsLoading && (rankings?.rankings.length ?? 0) === 0 && (
+              <p className="py-4 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                No ranked assessments yet
+              </p>
+            )}
+            {!rankingsLoading &&
+              rankings?.rankings.map((block) => (
+                <div key={block.assessment.id ?? block.assessment.name}>
+                  <p className="mb-3 text-sm font-medium text-[var(--text-main-900)]">
+                    {block.assessment.name}
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[320px] border-separate border-spacing-0">
+                      <thead>
+                        <tr>
+                          <th className={thClass}>Rank</th>
+                          <th className={thClass}>Student</th>
+                          <th className={cn(thClass, 'text-right')}>Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="[&>tr:last-child>td]:border-b-0">
+                        {block.topStudents.slice(0, 5).map((s, i) => (
+                          <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                            <td className={tdClass}>#{s.rank}</td>
+                            <td className={tdClass}>{s.fullName}</td>
+                            <td className={cn(tdClass, 'text-right')}>{s.percentage ?? '—'}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </ContentPanel>
       </div>
     </div>
   );

@@ -15,6 +15,12 @@ import type { ListAuditLogsQuery } from '@eims/shared';
 export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}
 
+  @Get('stats')
+  @Permissions('audit.read')
+  getStats() {
+    return this.auditLogsService.getStats();
+  }
+
   @Get()
   @Permissions('audit.read')
   findAll(@Query(createZodPipe(listAuditLogsQuerySchema)) query: ListAuditLogsQuery) {

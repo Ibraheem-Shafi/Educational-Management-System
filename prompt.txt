@@ -284,7 +284,7 @@ Define how to measure each optimization:
 - `GET /students?limit=5`
 - `GET /attendance/sheet?...` (with a real batchId from demo seed)
 
-Use demo login: `admin@rekhta.edu.pk` / `Rekhta@2026!` (see `docs/demo-seed.md`). Ensure `SKIP_ADMIN_MFA=1` in `apps/api/.env` for local testing.
+Use demo login: `admin@nexium.edu.pk` / `Nexium@2026!` (see `docs/demo-seed.md`). Ensure `SKIP_ADMIN_MFA=1` in `apps/api/.env` for local testing.
 
 ### 7. Out of scope (unless explicitly requested)
 

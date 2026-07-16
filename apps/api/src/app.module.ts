@@ -25,6 +25,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { AiAttendanceModule } from './modules/ai-attendance/ai-attendance.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
 import { AiInsightsModule } from './modules/ai-insights/ai-insights.module';
+import { LearningModule } from './modules/learning/learning.module';
 import { SmsModule } from './common/sms/sms.module';
 import { EmailModule } from './common/email/email.module';
 
@@ -58,6 +59,7 @@ import { EmailModule } from './common/email/email.module';
     AiAttendanceModule,
     CommunicationsModule,
     AiInsightsModule,
+    LearningModule,
   ],
 })
 export class AppModule {}

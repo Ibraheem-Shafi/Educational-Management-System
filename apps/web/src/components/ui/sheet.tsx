@@ -38,10 +38,17 @@ const sheetSideClasses: Record<NonNullable<SheetContentProps['side']>, string> =
     'inset-x-0 bottom-0 border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
 };
 
+function isDropdownLayerTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    !!target.closest('[data-dropdown-menu], [data-dropdown-layer], #dropdown-click-shield')
+  );
+}
+
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, ...props }, ref) => (
+>(({ side = 'right', className, children, onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <DialogPrimitive.Content
@@ -51,6 +58,18 @@ const SheetContent = React.forwardRef<
         sheetSideClasses[side],
         className,
       )}
+      onPointerDownOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onPointerDownOutside?.(event);
+      }}
+      onInteractOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onInteractOutside?.(event);
+      }}
+      onFocusOutside={(event) => {
+        if (isDropdownLayerTarget(event.target)) event.preventDefault();
+        onFocusOutside?.(event);
+      }}
       {...props}
     >
       {children}

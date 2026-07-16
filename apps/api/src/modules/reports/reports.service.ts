@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const OVERVIEW_CACHE_TTL_MS = 45_000;
 
@@ -27,6 +27,15 @@ export class ReportsService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+
+    const sixtyDaysAgo = new Date(today);
+    sixtyDaysAgo.setUTCDate(sixtyDaysAgo.getUTCDate() - 60);
+
+    const weekAgo = new Date(today);
+    weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+
     const parentWhere = branchId
       ? {
           deletedAt: null,
@@ -34,12 +43,38 @@ export class ReportsService {
         }
       : { deletedAt: null };
 
-    const [studentCount, attendanceToday, parentCount, userCount, feeRow] = await Promise.all([
+    const parentWherePrevious = branchId
+      ? {
+          deletedAt: null,
+          createdAt: { lte: thirtyDaysAgo },
+          studentParents: { some: { student: { branchId, deletedAt: null } } },
+        }
+      : { deletedAt: null, createdAt: { lte: thirtyDaysAgo } };
+
+    const [
+      studentCount,
+      studentCountPrevious,
+      attendanceToday,
+      attendanceWeekAgo,
+      parentCount,
+      parentCountPrevious,
+      userCount,
+      feeRow,
+      feesCollectedLast30,
+      feesCollectedPrevious30,
+    ] = await Promise.all([
       this.prisma.student.count({ where: { ...branchFilter, deletedAt: null } }),
+      this.prisma.student.count({
+        where: { ...branchFilter, deletedAt: null, createdAt: { lte: thirtyDaysAgo } },
+      }),
       this.prisma.attendanceRecord.count({
         where: { ...branchFilter, date: today, entityType: 'student' },
       }),
+      this.prisma.attendanceRecord.count({
+        where: { ...branchFilter, date: weekAgo, entityType: 'student' },
+      }),
       this.prisma.parent.count({ where: parentWhere }),
+      this.prisma.parent.count({ where: parentWherePrevious }),
       this.prisma.user.count({ where: { ...branchFilter, deletedAt: null, isActive: true } }),
       branchId
         ? this.prisma.$queryRaw<
@@ -73,6 +108,36 @@ export class ReportsService {
               COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NOT NULL), 0) AS collected_amount
             FROM "FeeInvoice"
           `,
+      branchId
+        ? this.prisma.$queryRaw<Array<{ total: unknown }>>`
+            SELECT COALESCE(SUM("netAmount"), 0) AS total
+            FROM "FeeInvoice"
+            WHERE "branchId" = ${branchId}
+              AND "paidAt" IS NOT NULL
+              AND "paidAt" >= ${thirtyDaysAgo}
+          `
+        : this.prisma.$queryRaw<Array<{ total: unknown }>>`
+            SELECT COALESCE(SUM("netAmount"), 0) AS total
+            FROM "FeeInvoice"
+            WHERE "paidAt" IS NOT NULL
+              AND "paidAt" >= ${thirtyDaysAgo}
+          `,
+      branchId
+        ? this.prisma.$queryRaw<Array<{ total: unknown }>>`
+            SELECT COALESCE(SUM("netAmount"), 0) AS total
+            FROM "FeeInvoice"
+            WHERE "branchId" = ${branchId}
+              AND "paidAt" IS NOT NULL
+              AND "paidAt" >= ${sixtyDaysAgo}
+              AND "paidAt" < ${thirtyDaysAgo}
+          `
+        : this.prisma.$queryRaw<Array<{ total: unknown }>>`
+            SELECT COALESCE(SUM("netAmount"), 0) AS total
+            FROM "FeeInvoice"
+            WHERE "paidAt" IS NOT NULL
+              AND "paidAt" >= ${sixtyDaysAgo}
+              AND "paidAt" < ${thirtyDaysAgo}
+          `,
     ]);
 
     const fees = feeRow[0] ?? {
@@ -82,17 +147,31 @@ export class ReportsService {
       collected_amount: 0,
     };
 
+    const collectedLast30 = Number(feesCollectedLast30[0]?.total ?? 0);
+    const collectedPrevious30 = Number(feesCollectedPrevious30[0]?.total ?? 0);
+
     return {
       branchId,
-      students: { total: studentCount },
+      students: {
+        total: studentCount,
+        changePercent: computeChangePercent(studentCount, studentCountPrevious),
+      },
       fees: {
         pendingCount: Number(fees.pending_count),
         paidCount: Number(fees.paid_count),
         pendingAmount: Number(fees.pending_amount ?? 0),
         collectedAmount: Number(fees.collected_amount ?? 0),
+        collectedLast30Days: collectedLast30,
+        changePercent: computeChangePercent(collectedLast30, collectedPrevious30),
       },
-      attendanceMarkedToday: attendanceToday,
-      parents: parentCount,
+      attendanceMarkedToday: {
+        count: attendanceToday,
+        changePercent: computeChangePercent(attendanceToday, attendanceWeekAgo),
+      },
+      parents: {
+        total: parentCount,
+        changePercent: computeChangePercent(parentCount, parentCountPrevious),
+      },
       staffUsers: userCount,
     };
   }

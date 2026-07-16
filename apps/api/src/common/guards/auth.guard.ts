@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { requiresMfaPolicy } from '@eims/shared';
+import { requiresMfaPolicy, isSuperAdmin } from '@eims/shared';
 import { PrismaService } from '../../prisma/prisma.module';
 import { IS_PUBLIC_KEY, SKIP_MFA_KEY } from '../decorators/auth.decorators';
 import { getJwtAal } from '../utils/jwt.util';
@@ -49,6 +49,12 @@ export class AuthGuard implements CanActivate {
     const cached = this.authCache.getBySupabaseUserId(verified.supabaseUserId);
     if (cached) {
       authUser = cached;
+      // Super Admin is never blocked by a stale inactive cache entry.
+      if (!authUser.isActive && isSuperAdmin(authUser.roles)) {
+        authUser = { ...authUser, isActive: true };
+      } else if (!authUser.isActive) {
+        throw new UnauthorizedException('Account disabled');
+      }
     } else {
       const appUser = await this.prisma.user.findUnique({
         where: { supabaseUserId: verified.supabaseUserId },
@@ -74,9 +80,23 @@ export class AuthGuard implements CanActivate {
         },
       });
 
-      if (!appUser?.isActive) throw new UnauthorizedException('Account disabled');
+      if (!appUser) throw new UnauthorizedException('User account not found');
 
       const roles = appUser.userRoles.map((ur) => ur.role.code);
+      const superAdmin = isSuperAdmin(roles);
+
+      if (!appUser.isActive && !superAdmin) {
+        throw new UnauthorizedException('Account disabled');
+      }
+
+      // Heal Super Admin if somehow marked inactive — owner must always be able to sign in.
+      if (superAdmin && !appUser.isActive) {
+        await this.prisma.user.update({
+          where: { id: appUser.id },
+          data: { isActive: true, deletedAt: null },
+        });
+      }
+
       const permissionSet = new Set<string>();
       for (const ur of appUser.userRoles) {
         for (const rp of ur.role.rolePermissions) {
@@ -92,7 +112,7 @@ export class AuthGuard implements CanActivate {
         branchId: appUser.branchId,
         roles,
         permissions: Array.from(permissionSet),
-        isActive: appUser.isActive,
+        isActive: superAdmin ? true : appUser.isActive,
       };
 
       this.authCache.setBySupabaseUserId(verified.supabaseUserId, authUser);

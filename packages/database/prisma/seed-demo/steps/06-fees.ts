@@ -2,7 +2,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import type { DemoContext } from '../types';
 
 export async function seedFees(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
-  const accountantId = ctx.userIds.get('fees@rekhta.edu.pk') ?? null;
+  const accountantId = ctx.userIds.get('fees@nexium.edu.pk') ?? null;
 
   for (const structure of ctx.config.feeStructures) {
     const branchId = ctx.branchMap.get(structure.branchCode)!;

@@ -3,13 +3,18 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { useInstitution } from '@/providers/institution-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PasswordInput } from '@/components/ui/password-input';
+import {
+  AuthShell,
+  authFieldClassName,
+  authPrimaryButtonClassName,
+} from '@/components/auth/auth-shell';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 
 export function AcceptInviteForm() {
   const router = useRouter();
@@ -42,66 +47,71 @@ export function AcceptInviteForm() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <p className="text-muted-foreground">Invalid invitation link.</p>
-      </div>
+      <AuthShell title="Invalid invitation" description="This invitation link is missing or incomplete.">
+        <p className="text-sm leading-6 text-[#5B6578]">Ask your administrator for a new invite link.</p>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--institution-primary)]/10">
-            <GraduationCap className="h-6 w-6 text-[var(--institution-primary)]" />
-          </div>
-          <CardTitle>Join {name}</CardTitle>
-          <CardDescription>Complete your account setup</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <p className="text-center text-muted-foreground">Validating invitation...</p>}
-          {error && (
-            <p className="text-center text-red-600">
-              This invitation is invalid or has expired.
+    <AuthShell
+      title={`Join ${name}`}
+      description="Create your password to activate the account linked to this invitation."
+    >
+      {isLoading && (
+        <p className="text-sm text-[#5B6578]">Validating invitation…</p>
+      )}
+      {error && (
+        <p className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-3 text-sm text-[#991B1B]">
+          This invitation is invalid or has expired.
+        </p>
+      )}
+      {invite && (
+        <form
+          className="space-y-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            acceptMutation.mutate();
+          }}
+        >
+          <div className="rounded-xl border border-[#E6E8EF] bg-[#F8F9FC] px-4 py-3 text-sm">
+            <p>
+              <span className="text-[#5B6578]">Email:</span>{' '}
+              <span className="font-medium text-[#0A0D14]">{invite.email}</span>
             </p>
-          )}
-          {invite && (
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                acceptMutation.mutate();
-              }}
-            >
-              <div className="rounded-md bg-muted p-3 text-sm">
-                <p>
-                  <span className="text-muted-foreground">Email:</span> {invite.email}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Role:</span> {invite.role?.name ?? '—'}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Full name</label>
-                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Password</label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  minLength={8}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={acceptMutation.isPending}>
-                {acceptMutation.isPending ? 'Creating account...' : 'Activate account'}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+            <p className="mt-1">
+              <span className="text-[#5B6578]">Role:</span>{' '}
+              <span className="font-medium text-[#0A0D14]">{invite.role?.name ?? '—'}</span>
+            </p>
+          </div>
+          <div>
+            <FormFieldLabel required>Full name</FormFieldLabel>
+            <Input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <div>
+            <FormFieldLabel required>Password</FormFieldLabel>
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <Button
+            type="submit"
+            className={authPrimaryButtonClassName}
+            disabled={acceptMutation.isPending}
+          >
+            {acceptMutation.isPending ? 'Creating account…' : 'Activate account'}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

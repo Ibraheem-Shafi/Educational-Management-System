@@ -26,6 +26,12 @@ export class StudentsController {
     return this.studentsService.findAll(query, branchId);
   }
 
+  @Get('stats')
+  @Permissions('students.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.studentsService.getStats(branchId);
+  }
+
   @Get(':id/subjects')
   @Permissions('students.read')
   listSubjects(@Param('id') id: string, @BranchId() branchId: string | null) {

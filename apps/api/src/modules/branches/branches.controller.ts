@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchesService } from './branches.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -6,9 +6,9 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createBranchSchema, updateBranchSchema } from '@eims/shared';
+import { createBranchSchema, listBranchesQuerySchema, updateBranchSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateBranchInput, UpdateBranchInput } from '@eims/shared';
+import type { CreateBranchInput, ListBranchesQuery, UpdateBranchInput } from '@eims/shared';
 
 @ApiTags('branches')
 @ApiBearerAuth()
@@ -17,10 +17,19 @@ import type { CreateBranchInput, UpdateBranchInput } from '@eims/shared';
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 
+  @Get('stats')
+  @Permissions('branches.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.branchesService.getStats(branchId);
+  }
+
   @Get()
   @Permissions('branches.read')
-  findAll(@BranchId() branchId: string | null) {
-    return this.branchesService.findAll(branchId);
+  findAll(
+    @Query(createZodPipe(listBranchesQuerySchema)) query: ListBranchesQuery,
+    @BranchId() branchId: string | null,
+  ) {
+    return this.branchesService.findAll(query, branchId);
   }
 
   @Get(':id')

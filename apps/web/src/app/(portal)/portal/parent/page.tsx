@@ -1,160 +1,53 @@
 'use client';
 
+import Link from 'next/link';
+import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronRight, LayoutDashboard } from 'lucide-react';
+import { formatCurrency } from '@eims/shared';
+import type { LearningResourceResponse, PortalParentStatsResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { formatCurrency } from '@eims/shared';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
+import {
+  PORTAL_PARENT_KEY,
+  attendanceRatePercents,
+  type ParentAiSummary,
+  type ParentPortalData,
+} from '@/lib/portal-types';
+import { usePortalChildId } from '@/lib/portal-child-context';
+import { formatLearningDueDate } from '@/lib/portal-learning';
 import { useNoticesRealtime } from '@/hooks/use-notices-realtime';
+import { PageHeader } from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
+import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
+import { UserAvatar } from '@/components/layout/user-avatar';
 
-const PORTAL_PARENT_KEYS = ['portal-parent'] as const;
-
-const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-interface ChildData {
-  student: { fullName: string };
-  relationshipCode: string;
-  attendance?: Array<{ date: string; status?: { label: string } | null }>;
-  assessments: Array<{ assessment: string | null; grade: string | null; percentage: number | null }>;
-  fees: {
-    outstanding: number;
-    recent: Array<{ feeType?: { name: string }; netAmount: number; status?: { label: string } }>;
-  };
-  timetable?: Array<{
-    dayOfWeek: number;
-    startTime: string;
-    endTime: string;
-    room: string | null;
-    subjectName: string | null;
-  }>;
-}
-
-interface ParentPortal {
-  parent: { fullName: string } | null;
-  message?: string;
-  notices?: Array<{ title: string; body: string; publishedAt: string | null }>;
-  children: Array<ChildData>;
-}
-
-interface ParentAiSummary {
-  children: Array<{
-    student: { fullName: string };
-    narrative: string;
-    overallPercentage: number | null;
-    recommendations: Array<{ subject: string; tip: string }>;
-  }>;
-}
-
-function ChildCard({
-  child,
-  aiChild,
-}: {
-  child: ChildData;
-  aiChild?: ParentAiSummary['children'][number];
-}) {
+export default function ParentPortalHomePage() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {child.student.fullName}{' '}
-          <span className="text-sm font-normal text-muted-foreground">({child.relationshipCode})</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {aiChild && (
-          <div className="rounded-md border border-border bg-muted/30 p-3">
-            <p className="mb-1 text-sm font-medium">AI performance summary</p>
-            <p className="text-sm text-muted-foreground">{aiChild.narrative}</p>
-            {aiChild.overallPercentage !== null && (
-              <p className="mt-2 text-sm font-medium">Overall: {aiChild.overallPercentage}%</p>
-            )}
-            {aiChild.recommendations.length > 0 && (
-              <ul className="mt-2 space-y-1 text-sm">
-                {aiChild.recommendations.map((r, i) => (
-                    <li key={i} className="break-words">
-                    <span className="font-medium">{r.subject}:</span> {r.tip}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        <div>
-          <p className="mb-2 text-sm font-medium">Recent attendance</p>
-          {(child.attendance?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">No records yet</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {child.attendance?.map((a, i) => (
-                    <li key={i} className="break-words">
-                  {a.date} — {a.status?.label ?? '—'}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div>
-          <p className="mb-2 text-sm font-medium">Recent assessments</p>
-          {child.assessments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No records yet</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {child.assessments.map((a, i) => (
-                    <li key={i} className="break-words">
-                  {a.assessment ?? 'Test'} — {a.grade ?? '—'}{' '}
-                  {a.percentage != null ? `(${a.percentage}%)` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div>
-          <p className="mb-2 text-sm font-medium">Class timetable</p>
-          {(child.timetable?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">No timetable published</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {child.timetable?.map((slot, i) => (
-                    <li key={i} className="break-words">
-                  {DAY_NAMES[slot.dayOfWeek] ?? slot.dayOfWeek} {slot.startTime}–{slot.endTime} ·{' '}
-                  {slot.subjectName ?? '—'}
-                  {slot.room ? ` · ${slot.room}` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div>
-          <p className="mb-2 text-sm font-medium">
-            Fees · Outstanding {formatCurrency(child.fees.outstanding)}
-          </p>
-          {child.fees.recent.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No invoices</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {child.fees.recent.map((f, i) => (
-                    <li key={i} className="break-words">
-                  {f.feeType?.name ?? 'Fee'} — {formatCurrency(f.netAmount)} ({f.status?.label})
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <Suspense fallback={<PortalPageSkeleton />}>
+      <ParentPortalHomeContent />
+    </Suspense>
   );
 }
 
-export default function ParentPortalPage() {
+function ParentPortalHomeContent() {
   const { session } = useAuth();
   const token = session?.access_token;
 
-  useNoticesRealtime(PORTAL_PARENT_KEYS);
+  useNoticesRealtime(PORTAL_PARENT_KEY);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.portalParentStats,
+    queryFn: () => apiClient<PortalParentStatsResponse>('/portal/parent/stats', { token }),
+    enabled: !!token,
+  });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['portal-parent'],
-    queryFn: () => apiClient<ParentPortal>('/portal/parent', { token }),
+    queryKey: PORTAL_PARENT_KEY,
+    queryFn: () => apiClient<ParentPortalData>('/portal/parent', { token }),
     enabled: !!token,
   });
 
@@ -164,47 +57,198 @@ export default function ParentPortalPage() {
     enabled: !!token,
   });
 
-  if (isLoading) return <PortalPageSkeleton />;
+  const children = data?.children ?? [];
+  const { childId, childHref } = usePortalChildId(children);
+  const selectedChild = children.find((c) => c.student.id === childId);
+
+  const { data: dueSoon } = useQuery({
+    queryKey: queryKeys.portalParentLearningDueSoon(childId ?? ''),
+    queryFn: () =>
+      apiClient<{ data: LearningResourceResponse[] }>(
+        `/portal/parent/learning/due-soon?studentId=${encodeURIComponent(childId!)}`,
+        { token },
+      ),
+    enabled: !!token && !!childId,
+  });
+
+  if (isLoading && !data) return <PortalPageSkeleton />;
   if (error) return <p className="text-red-600">Unable to load portal.</p>;
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Parent portal</h1>
-        <p className="text-muted-foreground">
-          Welcome{data?.parent ? `, ${data.parent.fullName}` : ''}
-        </p>
-      </div>
+  const allAttendance = children.flatMap((c) => c.attendance ?? []);
+  const rates = attendanceRatePercents(allAttendance);
+  const notices = data?.notices?.slice(0, 3) ?? [];
+  const dueSoonItems = dueSoon?.data?.slice(0, 3) ?? [];
+  const selectedChildName = selectedChild?.student.fullName;
 
-      {data?.notices && data.notices.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Announcements</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {data.notices.map((n) => (
-              <div key={n.title}>
-                <p className="font-medium">{n.title}</p>
-                <p className="text-sm text-muted-foreground">{n.body}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+  return (
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Parent portal"
+        description={data?.parent ? `Welcome, ${data.parent.fullName}` : 'Welcome'}
+      />
 
       {data?.message && (
-        <Card>
-          <CardContent className="py-6 text-center text-muted-foreground">{data.message}</CardContent>
-        </Card>
+        <ContentPanel>
+          <p className="px-5 py-6 text-center text-sm text-[var(--text-sub-500)]">{data.message}</p>
+        </ContentPanel>
       )}
 
-      {data?.children.map((child) => (
-        <ChildCard
-          key={child.student.fullName}
-          child={child}
-          aiChild={aiSummary?.children.find((c) => c.student.fullName === child.student.fullName)}
+      {(statsLoading || stats) && (
+        <MainStatsSection
+          isLoading={statsLoading && !stats}
+          stats={[
+            {
+              label: 'Children',
+              value: String(stats?.childrenCount.total ?? 0),
+              changePercent: stats?.childrenCount.changePercent,
+            },
+            {
+              label: 'Avg attendance',
+              value: `${stats?.aggregateAttendance.total ?? 0}%`,
+              changePercent: stats?.aggregateAttendance.changePercent,
+            },
+            {
+              label: 'Total outstanding',
+              value: formatCurrency(stats?.totalOutstanding.total ?? 0),
+              changePercent: stats?.totalOutstanding.changePercent,
+            },
+            {
+              label: 'Recent notices',
+              value: String(stats?.recentNotices.total ?? 0),
+              changePercent: stats?.recentNotices.changePercent,
+            },
+          ]}
         />
-      ))}
+      )}
+
+      {children.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <MetricDonutCard
+            title="Children attendance"
+            subtitle="Combined last 30 days"
+            segments={[
+              { label: 'Present', rate: rates.present, color: '#38C793' },
+              { label: 'Absent', rate: rates.absent, color: '#EF4444' },
+              { label: 'Late', rate: rates.late, color: '#F59E0B' },
+            ]}
+          />
+
+          <ContentPanel
+            title="Announcements"
+            actions={
+              <Link
+                href="/portal/parent/notices"
+                className="text-sm font-medium text-[var(--institution-primary)] hover:underline"
+              >
+                View all
+              </Link>
+            }
+          >
+            {notices.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-[var(--text-sub-500)]">No announcements yet</p>
+            ) : (
+              <ul className="divide-y divide-stroke-soft-200">
+                {notices.map((n) => (
+                  <li key={n.title} className="px-5 py-4">
+                    <p className="text-sm font-medium text-text-main-900">{n.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-[var(--text-sub-500)]">{n.body}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ContentPanel>
+        </div>
+      )}
+
+      {childId && (
+        <ContentPanel
+          title={selectedChildName ? `Due soon · ${selectedChildName}` : 'Due soon'}
+          actions={
+            <Link
+              href={childHref('/portal/parent/learning')}
+              className="text-sm font-medium text-[var(--institution-primary)] hover:underline"
+            >
+              View learning
+            </Link>
+          }
+        >
+          {dueSoonItems.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-[var(--text-sub-500)]">No homework due soon</p>
+          ) : (
+            <ul className="divide-y divide-stroke-soft-200">
+              {dueSoonItems.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    href={`/portal/parent/learning/${item.id}?childId=${encodeURIComponent(childId)}`}
+                    className="block px-5 py-4 transition-colors hover:bg-neutral-50"
+                  >
+                    <p className="text-sm font-medium text-text-main-900">{item.title}</p>
+                    <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                      {item.subject?.name ? `${item.subject.name} · ` : ''}
+                      Due {formatLearningDueDate(item.dueAt)}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </ContentPanel>
+      )}
+
+      <ContentPanel
+        title={`My children (${children.length})`}
+        actions={
+          <Link
+            href="/portal/parent/children"
+            className="text-sm font-medium text-[var(--institution-primary)] hover:underline"
+          >
+            View all
+          </Link>
+        }
+      >
+        {children.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-[var(--text-sub-500)]">No linked children</p>
+        ) : (
+          <ul className="divide-y divide-stroke-soft-200">
+            {children.map((child) => {
+              const aiChild = aiSummary?.children.find(
+                (c) => c.student.fullName === child.student.fullName,
+              );
+              const childRates = attendanceRatePercents(child.attendance);
+              const id = child.student.id;
+              return (
+                <li key={id}>
+                  <Link
+                    href={childHref('/portal/parent/attendance', id)}
+                    className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-neutral-50"
+                  >
+                    <UserAvatar name={child.student.fullName} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-text-main-900">
+                          {child.student.fullName}
+                        </p>
+                        <span className="text-xs text-[var(--text-sub-500)]">
+                          ({child.relationshipCode})
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                        Attendance {childRates.present}% · Outstanding{' '}
+                        {formatCurrency(child.fees.outstanding)}
+                        {aiChild?.overallPercentage != null
+                          ? ` · Overall ${aiChild.overallPercentage}%`
+                          : ''}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </ContentPanel>
     </div>
   );
 }

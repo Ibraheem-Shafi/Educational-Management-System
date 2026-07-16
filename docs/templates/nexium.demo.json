@@ -1,0 +1,1915 @@
+{
+  "version": "nexium-v1.1",
+  "institution": {
+    "siblingDiscountPercent": 10,
+    "lateFeeAmount": 500,
+    "lateFeeDaysAfterDue": 7
+  },
+  "accounts": [
+    {
+      "email": "admin@nexium.edu.pk",
+      "fullName": "Syed Kamran Shah",
+      "role": "super_admin",
+      "phone": "+923001234567",
+      "gender": "male",
+      "cnic": "61101-1234567-1"
+    },
+    {
+      "email": "branchadmin@nexium.edu.pk",
+      "fullName": "Aisha Malik",
+      "role": "branch_admin",
+      "branchCode": "MAIN",
+      "phone": "+923112345678",
+      "gender": "female",
+      "cnic": "61101-2345678-2"
+    },
+    {
+      "email": "lahore.admin@nexium.edu.pk",
+      "fullName": "Usman Tariq",
+      "role": "branch_admin",
+      "branchCode": "LAHORE",
+      "phone": "+923211234567",
+      "gender": "male",
+      "cnic": "61101-3456789-3"
+    },
+    {
+      "email": "ahmed.teacher@nexium.edu.pk",
+      "fullName": "Dr. Ahmed Hassan",
+      "role": "teacher",
+      "branchCode": "MAIN",
+      "phone": "+923331234567",
+      "gender": "male",
+      "cnic": "61101-4567890-4"
+    },
+    {
+      "email": "fees@nexium.edu.pk",
+      "fullName": "Sadia Bano",
+      "role": "accountant",
+      "branchCode": "MAIN",
+      "phone": "+923441234567",
+      "gender": "female",
+      "cnic": "61101-5678901-5"
+    },
+    {
+      "email": "reception@nexium.edu.pk",
+      "fullName": "Hina Batool",
+      "role": "receptionist",
+      "branchCode": "MAIN",
+      "phone": "+923551234567",
+      "gender": "female",
+      "cnic": "61101-6789012-6"
+    },
+    {
+      "email": "rashid.ahmad@nexium.edu.pk",
+      "fullName": "Rashid Ahmad Khan",
+      "role": "parent",
+      "phone": "+923004445566",
+      "gender": "male",
+      "cnic": "35202-7654321-9"
+    },
+    {
+      "email": "ali.khan@nexium.edu.pk",
+      "fullName": "Muhammad Ali Khan",
+      "role": "student",
+      "phone": "+923001112233",
+      "gender": "male",
+      "cnic": "35202-1234567-1"
+    }
+  ],
+  "batches": [
+    {
+      "code": "MDCAT-MORNING-A",
+      "name": "MDCAT Morning Batch A",
+      "branchCode": "MAIN",
+      "programCode": "MDCAT",
+      "scheduleType": "morning",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "BIO",
+        "ENG"
+      ]
+    },
+    {
+      "code": "MDCAT-EVENING-B",
+      "name": "MDCAT Evening Batch B",
+      "branchCode": "MAIN",
+      "programCode": "MDCAT",
+      "scheduleType": "evening",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "BIO",
+        "MATH"
+      ]
+    },
+    {
+      "code": "HSSC-PRE-MED",
+      "name": "HSSC Pre-Medical",
+      "branchCode": "MAIN",
+      "programCode": "HSSC",
+      "scheduleType": "morning",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "BIO",
+        "MATH",
+        "ENG"
+      ]
+    },
+    {
+      "code": "SSC-MATRIC",
+      "name": "SSC Matric Science",
+      "branchCode": "MAIN",
+      "programCode": "SSC",
+      "scheduleType": "morning",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "BIO",
+        "MATH",
+        "ENG"
+      ]
+    },
+    {
+      "code": "MDCAT-LAHORE",
+      "name": "MDCAT Lahore Morning",
+      "branchCode": "LAHORE",
+      "programCode": "MDCAT",
+      "scheduleType": "morning",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "BIO",
+        "ENG"
+      ]
+    },
+    {
+      "code": "ECAT-LAHORE",
+      "name": "ECAT Engineering Lahore",
+      "branchCode": "LAHORE",
+      "programCode": "ECAT",
+      "scheduleType": "evening",
+      "subjects": [
+        "PHY",
+        "CHEM",
+        "MATH",
+        "ENG"
+      ]
+    }
+  ],
+  "students": [
+    {
+      "demoKey": "ali-khan",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Muhammad Ali Khan",
+      "gender": "male",
+      "dob": "2007-03-15",
+      "cnic": "35202-1234567-1",
+      "phone": "+923001112233",
+      "email": "ali.khan@nexium.edu.pk",
+      "address": "House 12, Street 4, G-9/2",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Islamabad Model College",
+        "board": "Federal",
+        "emergency_contact": "+923009998877"
+      }
+    },
+    {
+      "demoKey": "ayesha-malik",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Ayesha Malik",
+      "gender": "female",
+      "dob": "2007-08-22",
+      "cnic": "35202-2345678-2",
+      "phone": "+923112223344",
+      "address": "Flat 3B, Naval Anchorage, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "F.G. College for Women",
+        "board": "Federal",
+        "emergency_contact": "+923117778899"
+      }
+    },
+    {
+      "demoKey": "hassan-raza",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Hassan Raza",
+      "gender": "male",
+      "dob": "2006-11-05",
+      "cnic": "35202-3456789-3",
+      "phone": "+923331234567",
+      "address": "Mohallah Jinnah Park, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Fauji Foundation College",
+        "board": "Federal",
+        "emergency_contact": "+923339876543"
+      }
+    },
+    {
+      "demoKey": "fatima-zahra",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Fatima Zahra",
+      "gender": "female",
+      "dob": "2007-01-18",
+      "cnic": "35202-4567890-4",
+      "phone": "+923451112222",
+      "address": "Sector I-8/3, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Roots Millennium School",
+        "board": "Federal",
+        "emergency_contact": "+923453334444"
+      }
+    },
+    {
+      "demoKey": "usman-sheikh",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Usman Sheikh",
+      "gender": "male",
+      "dob": "2006-06-30",
+      "cnic": "35202-5678901-5",
+      "phone": "+923001998877",
+      "address": "Bahria Town Phase 4, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Beaconhouse School",
+        "board": "Federal",
+        "emergency_contact": "+923001112244"
+      }
+    },
+    {
+      "demoKey": "sana-javed",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Sana Javed",
+      "gender": "female",
+      "dob": "2007-04-12",
+      "cnic": "35202-6789012-6",
+      "phone": "+923211223344",
+      "address": "F-10 Markaz, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "City School Islamabad",
+        "board": "Federal",
+        "emergency_contact": "+923214445566"
+      }
+    },
+    {
+      "demoKey": "bilal-ahmed",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Bilal Ahmed",
+      "gender": "male",
+      "dob": "2006-09-25",
+      "cnic": "35202-7890123-7",
+      "phone": "+923441556677",
+      "address": "Satellite Town, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Army Public School",
+        "board": "Federal",
+        "emergency_contact": "+923447778899"
+      }
+    },
+    {
+      "demoKey": "maryam-noor",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Maryam Noor",
+      "gender": "female",
+      "dob": "2007-02-08",
+      "cnic": "35202-8901234-8",
+      "phone": "+923051667788",
+      "address": "G-11/1, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab College Islamabad",
+        "board": "Federal",
+        "emergency_contact": "+923058889900"
+      }
+    },
+    {
+      "demoKey": "hamza-iqbal",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Hamza Iqbal",
+      "gender": "male",
+      "dob": "2006-12-14",
+      "cnic": "35202-9012345-9",
+      "phone": "+923171234567",
+      "address": "PWD Housing Society, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Islamabad College for Boys",
+        "board": "Federal",
+        "emergency_contact": "+923179876543"
+      }
+    },
+    {
+      "demoKey": "zainab-hussain",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Zainab Hussain",
+      "gender": "female",
+      "dob": "2007-07-03",
+      "cnic": "35202-0123456-0",
+      "phone": "+923181112233",
+      "address": "E-11/2, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "OPF Girls College",
+        "board": "Federal",
+        "emergency_contact": "+923184445566"
+      }
+    },
+    {
+      "demoKey": "omar-farooq",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Omar Farooq",
+      "gender": "male",
+      "dob": "2006-05-20",
+      "cnic": "35202-1357924-1",
+      "phone": "+923191223344",
+      "address": "Chaklala Scheme 3, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "inactive",
+      "customFields": {
+        "previous_school": "F.G. Science College",
+        "board": "Federal",
+        "emergency_contact": "+923195556677"
+      }
+    },
+    {
+      "demoKey": "hira-batool",
+      "batchCode": "MDCAT-MORNING-A",
+      "fullName": "Hira Batool",
+      "gender": "female",
+      "dob": "2007-10-11",
+      "cnic": "35202-2468135-2",
+      "phone": "+923201334455",
+      "address": "DHA Phase 2, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Roots Ivy International",
+        "board": "Federal",
+        "emergency_contact": "+923207778899"
+      }
+    },
+    {
+      "demoKey": "saad-mahmood",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Saad Mahmood",
+      "gender": "male",
+      "dob": "2006-08-09",
+      "cnic": "35202-3579246-3",
+      "phone": "+923211445566",
+      "address": "G-10/4, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab College",
+        "board": "Federal",
+        "emergency_contact": "+923218889900"
+      }
+    },
+    {
+      "demoKey": "rabia-khan",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Rabia Khan",
+      "gender": "female",
+      "dob": "2007-05-17",
+      "cnic": "35202-4681357-4",
+      "phone": "+923221556677",
+      "address": "I-9/1, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "F.G. Girls College",
+        "board": "Federal",
+        "emergency_contact": "+923229990011"
+      }
+    },
+    {
+      "demoKey": "fahad-ali",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Fahad Ali",
+      "gender": "male",
+      "dob": "2006-03-28",
+      "cnic": "35202-5792468-5",
+      "phone": "+923231667788",
+      "address": "Saddar, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Sir Syed College",
+        "board": "Federal",
+        "emergency_contact": "+923239991122"
+      }
+    },
+    {
+      "demoKey": "amna-tariq",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Amna Tariq",
+      "gender": "female",
+      "dob": "2007-11-02",
+      "cnic": "35202-6803579-6",
+      "phone": "+923241778899",
+      "address": "F-7/1, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Beaconhouse Margalla",
+        "board": "Federal",
+        "emergency_contact": "+923248889900"
+      }
+    },
+    {
+      "demoKey": "waqas-butt",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Waqas Butt",
+      "gender": "male",
+      "dob": "2006-07-14",
+      "cnic": "35202-7914680-7",
+      "phone": "+923251889900",
+      "address": "Westridge, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Fauji Foundation",
+        "board": "Federal",
+        "emergency_contact": "+923257778899"
+      }
+    },
+    {
+      "demoKey": "khadija-saleem",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Khadija Saleem",
+      "gender": "female",
+      "dob": "2007-04-25",
+      "cnic": "35202-8025791-8",
+      "phone": "+923261990011",
+      "address": "G-13/1, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Islamabad College for Girls",
+        "board": "Federal",
+        "emergency_contact": "+923268889900"
+      }
+    },
+    {
+      "demoKey": "arslan-haider",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Arslan Haider",
+      "gender": "male",
+      "dob": "2006-10-08",
+      "cnic": "35202-9136802-9",
+      "phone": "+923271001122",
+      "address": "Murree Road, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "suspended",
+      "customFields": {
+        "previous_school": "APS Rawalpindi",
+        "board": "Federal",
+        "emergency_contact": "+923277778899"
+      }
+    },
+    {
+      "demoKey": "noor-fatima",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Noor Fatima",
+      "gender": "female",
+      "dob": "2007-06-19",
+      "cnic": "35202-0247913-0",
+      "phone": "+923281112233",
+      "address": "E-7, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "City School",
+        "board": "Federal",
+        "emergency_contact": "+923289990011"
+      }
+    },
+    {
+      "demoKey": "shahzaib-qureshi",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Shahzaib Qureshi",
+      "gender": "male",
+      "dob": "2006-02-01",
+      "cnic": "35202-1358024-1",
+      "phone": "+923291223344",
+      "address": "Committee Chowk, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab College RWP",
+        "board": "Federal",
+        "emergency_contact": "+923299991122"
+      }
+    },
+    {
+      "demoKey": "laiba-sheikh",
+      "batchCode": "MDCAT-EVENING-B",
+      "fullName": "Laiba Sheikh",
+      "gender": "female",
+      "dob": "2007-09-30",
+      "cnic": "35202-2469135-2",
+      "phone": "+923301334455",
+      "address": "Bahria Town Phase 7, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Roots School",
+        "board": "Federal",
+        "emergency_contact": "+923308889900"
+      }
+    },
+    {
+      "demoKey": "danish-ahmed",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Danish Ahmed",
+      "gender": "male",
+      "dob": "2008-01-12",
+      "cnic": "35202-3579135-3",
+      "phone": "+923311445566",
+      "address": "G-6/2, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "IMCB G-6/3",
+        "board": "Federal",
+        "emergency_contact": "+923318889900"
+      }
+    },
+    {
+      "demoKey": "mehwish-iqbal",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Mehwish Iqbal",
+      "gender": "female",
+      "dob": "2008-04-06",
+      "cnic": "35202-4680246-4",
+      "phone": "+923321556677",
+      "address": "I-10/4, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "IMCG I-10/2",
+        "board": "Federal",
+        "emergency_contact": "+923329990011"
+      }
+    },
+    {
+      "demoKey": "talha-munir",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Talha Munir",
+      "gender": "male",
+      "dob": "2008-07-21",
+      "cnic": "35202-5791357-5",
+      "phone": "+923331667788",
+      "address": "Satellite Town, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "F.G. Boys College",
+        "board": "Federal",
+        "emergency_contact": "+923339991122"
+      }
+    },
+    {
+      "demoKey": "hafsa-rizvi",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Hafsa Rizvi",
+      "gender": "female",
+      "dob": "2008-10-15",
+      "cnic": "35202-6802468-6",
+      "phone": "+923341778899",
+      "address": "F-11/3, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "OPF College",
+        "board": "Federal",
+        "emergency_contact": "+923348889900"
+      }
+    },
+    {
+      "demoKey": "adeel-naseem",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Adeel Naseem",
+      "gender": "male",
+      "dob": "2008-03-09",
+      "cnic": "35202-7913579-7",
+      "phone": "+923351889900",
+      "address": "Adyala Road, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Sir Syed Science College",
+        "board": "Federal",
+        "emergency_contact": "+923357778899"
+      }
+    },
+    {
+      "demoKey": "sadia-bano",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Sadia Bano",
+      "gender": "female",
+      "dob": "2008-12-02",
+      "cnic": "35202-8024680-8",
+      "phone": "+923361990011",
+      "address": "G-8/1, Islamabad",
+      "city": "Islamabad",
+      "status": "graduated",
+      "customFields": {
+        "previous_school": "IMCG G-8/4",
+        "board": "Federal",
+        "emergency_contact": "+923368889900"
+      }
+    },
+    {
+      "demoKey": "imran-siddiqui",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Imran Siddiqui",
+      "gender": "male",
+      "dob": "2008-05-27",
+      "cnic": "35202-9135791-9",
+      "phone": "+923371001122",
+      "address": "Tench Bhata, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Fauji Foundation College",
+        "board": "Federal",
+        "emergency_contact": "+923377778899"
+      }
+    },
+    {
+      "demoKey": "nimra-ashraf",
+      "batchCode": "HSSC-PRE-MED",
+      "fullName": "Nimra Ashraf",
+      "gender": "female",
+      "dob": "2008-08-18",
+      "cnic": "35202-0246802-0",
+      "phone": "+923381112233",
+      "address": "E-9, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Beaconhouse E-9",
+        "board": "Federal",
+        "emergency_contact": "+923389990011"
+      }
+    },
+    {
+      "demoKey": "abdullah-khan",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Abdullah Khan",
+      "gender": "male",
+      "dob": "2010-02-14",
+      "cnic": "35202-1122112-1",
+      "phone": "+923391223344",
+      "address": "G-7/3, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "IMCB G-7",
+        "board": "Federal",
+        "emergency_contact": "+923399991122"
+      }
+    },
+    {
+      "demoKey": "mahnoor-ali",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Mahnoor Ali",
+      "gender": "female",
+      "dob": "2010-06-08",
+      "cnic": "35202-2233223-2",
+      "phone": "+923401334455",
+      "address": "F-6/2, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "City School F-6",
+        "board": "Federal",
+        "emergency_contact": "+923408889900"
+      }
+    },
+    {
+      "demoKey": "huzaifa-malik",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Huzaifa Malik",
+      "gender": "male",
+      "dob": "2010-09-19",
+      "cnic": "35202-3344334-3",
+      "phone": "+923411445566",
+      "address": "Peshawar Road, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "active",
+      "customFields": {
+        "previous_school": "APS Chaklala",
+        "board": "Federal",
+        "emergency_contact": "+923418889900"
+      }
+    },
+    {
+      "demoKey": "iqra-shahid",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Iqra Shahid",
+      "gender": "female",
+      "dob": "2010-11-25",
+      "cnic": "35202-4455445-4",
+      "phone": "+923421556677",
+      "address": "G-15, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Roots G-15",
+        "board": "Federal",
+        "emergency_contact": "+923429990011"
+      }
+    },
+    {
+      "demoKey": "rayyan-hassan",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Rayyan Hassan",
+      "gender": "male",
+      "dob": "2010-04-03",
+      "cnic": "35202-5566556-5",
+      "phone": "+923431667788",
+      "address": "Gulzar-e-Quaid, Rawalpindi",
+      "city": "Rawalpindi",
+      "status": "dropped",
+      "customFields": {
+        "previous_school": "F.G. Secondary School",
+        "board": "Federal",
+        "emergency_contact": "+923439991122"
+      }
+    },
+    {
+      "demoKey": "anaya-qadir",
+      "batchCode": "SSC-MATRIC",
+      "fullName": "Anaya Qadir",
+      "gender": "female",
+      "dob": "2010-07-30",
+      "cnic": "35202-6677667-6",
+      "phone": "+923441778899",
+      "address": "DHA Phase 1, Islamabad",
+      "city": "Islamabad",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Learning Alliance",
+        "board": "Federal",
+        "emergency_contact": "+923448889900"
+      }
+    },
+    {
+      "demoKey": "ahmed-hassan",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Ahmed Hassan",
+      "gender": "male",
+      "dob": "2007-03-01",
+      "cnic": "35201-1111222-1",
+      "phone": "+923451889900",
+      "address": "Gulberg III, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Government College Lahore",
+        "board": "Punjab",
+        "emergency_contact": "+923457778899"
+      }
+    },
+    {
+      "demoKey": "sara-ahmed",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Sara Ahmed",
+      "gender": "female",
+      "dob": "2007-06-12",
+      "cnic": "35201-2222333-2",
+      "phone": "+923461990011",
+      "address": "Johar Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "LACAS Johar Town",
+        "board": "Punjab",
+        "emergency_contact": "+923468889900"
+      }
+    },
+    {
+      "demoKey": "umar-farooq",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Umar Farooq",
+      "gender": "male",
+      "dob": "2006-11-20",
+      "cnic": "35201-3333444-3",
+      "phone": "+923471001122",
+      "address": "Model Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab College Lahore",
+        "board": "Punjab",
+        "emergency_contact": "+923477778899"
+      }
+    },
+    {
+      "demoKey": "hina-batool",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Hina Batool",
+      "gender": "female",
+      "dob": "2007-08-05",
+      "cnic": "35201-4444555-4",
+      "phone": "+923481112233",
+      "address": "DHA Phase 5, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Beaconhouse DHA",
+        "board": "Punjab",
+        "emergency_contact": "+923489990011"
+      }
+    },
+    {
+      "demoKey": "zeeshan-ali",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Zeeshan Ali",
+      "gender": "male",
+      "dob": "2006-04-18",
+      "cnic": "35201-5555666-5",
+      "phone": "+923491223344",
+      "address": "Faisal Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "KIPS Lahore",
+        "board": "Punjab",
+        "emergency_contact": "+923499991122"
+      }
+    },
+    {
+      "demoKey": "amina-bibi",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Amina Bibi",
+      "gender": "female",
+      "dob": "2007-01-29",
+      "cnic": "35201-6666777-6",
+      "phone": "+923501334455",
+      "address": "Garden Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "UET College Lahore",
+        "board": "Punjab",
+        "emergency_contact": "+923508889900"
+      }
+    },
+    {
+      "demoKey": "faisal-mehmood",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Faisal Mehmood",
+      "gender": "male",
+      "dob": "2006-09-07",
+      "cnic": "35201-7777888-7",
+      "phone": "+923511445566",
+      "address": "Allama Iqbal Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Superior College",
+        "board": "Punjab",
+        "emergency_contact": "+923518889900"
+      }
+    },
+    {
+      "demoKey": "rabia-noor",
+      "batchCode": "MDCAT-LAHORE",
+      "fullName": "Rabia Noor",
+      "gender": "female",
+      "dob": "2007-12-15",
+      "cnic": "35201-8888999-8",
+      "phone": "+923521556677",
+      "address": "Bahria Town Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab Group of Colleges",
+        "board": "Punjab",
+        "emergency_contact": "+923529990011"
+      }
+    },
+    {
+      "demoKey": "hamza-akram",
+      "batchCode": "ECAT-LAHORE",
+      "fullName": "Hamza Akram",
+      "gender": "male",
+      "dob": "2007-05-11",
+      "cnic": "35201-1010101-9",
+      "phone": "+923531667788",
+      "address": "Wapda Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "FAST Prep Lahore",
+        "board": "Punjab",
+        "emergency_contact": "+923539991122"
+      }
+    },
+    {
+      "demoKey": "mariam-saleem",
+      "batchCode": "ECAT-LAHORE",
+      "fullName": "Mariam Saleem",
+      "gender": "female",
+      "dob": "2007-10-22",
+      "cnic": "35201-3030303-0",
+      "phone": "+923541778899",
+      "address": "Cantt, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "LGS Cantt",
+        "board": "Punjab",
+        "emergency_contact": "+923548889900"
+      }
+    },
+    {
+      "demoKey": "bilal-hussain",
+      "batchCode": "ECAT-LAHORE",
+      "fullName": "Bilal Hussain",
+      "gender": "male",
+      "dob": "2006-07-04",
+      "cnic": "35201-5050505-1",
+      "phone": "+923551889900",
+      "address": "Township, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "UET Prep Academy",
+        "board": "Punjab",
+        "emergency_contact": "+923557778899"
+      }
+    },
+    {
+      "demoKey": "nida-khan",
+      "batchCode": "ECAT-LAHORE",
+      "fullName": "Nida Khan",
+      "gender": "female",
+      "dob": "2007-02-16",
+      "cnic": "35201-7070707-2",
+      "phone": "+923561990011",
+      "address": "Valencia Town, Lahore",
+      "city": "Lahore",
+      "status": "active",
+      "customFields": {
+        "previous_school": "Punjab College Township",
+        "board": "Punjab",
+        "emergency_contact": "+923568889900"
+      }
+    },
+    {
+      "demoKey": "saqlain-raza",
+      "batchCode": "ECAT-LAHORE",
+      "fullName": "Saqlain Raza",
+      "gender": "male",
+      "dob": "2006-12-28",
+      "cnic": "35201-9090909-3",
+      "phone": "+923571001122",
+      "address": "Shadman, Lahore",
+      "city": "Lahore",
+      "status": "transferred",
+      "customFields": {
+        "previous_school": "KIPS Engineering",
+        "board": "Punjab",
+        "emergency_contact": "+923577778899"
+      }
+    }
+  ],
+  "parents": [
+    {
+      "demoKey": "rashid-ahmad-khan",
+      "fullName": "Rashid Ahmad Khan",
+      "phone": "+923004445566",
+      "email": "rashid.ahmad@nexium.edu.pk",
+      "cnic": "35202-7654321-9",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "tariq-malik",
+      "fullName": "Tariq Malik",
+      "phone": "+923115556677",
+      "cnic": "35202-8765432-1",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "imran-raza",
+      "fullName": "Imran Raza",
+      "phone": "+923338765432",
+      "cnic": "35202-9876543-2",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "nadia-zahra",
+      "fullName": "Nadia Zahra",
+      "phone": "+923452223333",
+      "cnic": "35202-1122334-5",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "khalid-sheikh",
+      "fullName": "Khalid Sheikh",
+      "phone": "+923002233445",
+      "cnic": "35202-2233445-6",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "asif-javed",
+      "fullName": "Asif Javed",
+      "phone": "+923213334455",
+      "cnic": "35202-3344556-7",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "javed-ahmed",
+      "fullName": "Javed Ahmed",
+      "phone": "+923443334455",
+      "cnic": "35202-4455667-8",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "shahid-noor",
+      "fullName": "Shahid Noor",
+      "phone": "+923052223344",
+      "cnic": "35202-5566778-9",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "iqbal-hussain",
+      "fullName": "Iqbal Hussain",
+      "phone": "+923173334455",
+      "cnic": "35202-6677889-0",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "farooq-mahmood",
+      "fullName": "Farooq Mahmood",
+      "phone": "+923193334455",
+      "cnic": "35202-7788990-1",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "batool-bibi",
+      "fullName": "Batool Bibi",
+      "phone": "+923203334455",
+      "cnic": "35202-8899001-2",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "mahmood-ul-hassan",
+      "fullName": "Mahmood ul Hassan",
+      "phone": "+923213334455",
+      "cnic": "35202-9900112-3",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "naeem-khan",
+      "fullName": "Naeem Khan",
+      "phone": "+923223334455",
+      "cnic": "35202-1011121-4",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "ali-akbar",
+      "fullName": "Ali Akbar",
+      "phone": "+923233334455",
+      "cnic": "35202-2122232-5",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "tariq-mehmood",
+      "fullName": "Tariq Mehmood",
+      "phone": "+923243334455",
+      "cnic": "35202-3233343-6",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "nadeem-butt",
+      "fullName": "Nadeem Butt",
+      "phone": "+923253334455",
+      "cnic": "35202-4344454-7",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "saleem-akhtar",
+      "fullName": "Saleem Akhtar",
+      "phone": "+923263334455",
+      "cnic": "35202-5455565-8",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "haider-ali",
+      "fullName": "Haider Ali",
+      "phone": "+923273334455",
+      "cnic": "35202-6566676-9",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "sadia-fatima",
+      "fullName": "Sadia Fatima",
+      "phone": "+923283334455",
+      "cnic": "35202-7677787-0",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "qureshi-sahab",
+      "fullName": "Qureshi Sahab",
+      "phone": "+923293334455",
+      "cnic": "35202-8788898-1",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "sheikh-nadeem",
+      "fullName": "Sheikh Nadeem",
+      "phone": "+923303334455",
+      "cnic": "35202-9899909-2",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "ahmed-raza",
+      "fullName": "Ahmed Raza",
+      "phone": "+923313334455",
+      "cnic": "35202-1212121-3",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "iqbal-shah",
+      "fullName": "Iqbal Shah",
+      "phone": "+923323334455",
+      "cnic": "35202-2323232-4",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "munir-hussain",
+      "fullName": "Munir Hussain",
+      "phone": "+923333334455",
+      "cnic": "35202-3434343-5",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "rizvi-sahab",
+      "fullName": "Rizvi Sahab",
+      "phone": "+923343334455",
+      "cnic": "35202-4545454-6",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "naseem-akram",
+      "fullName": "Naseem Akram",
+      "phone": "+923353334455",
+      "cnic": "35202-5656565-7",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "bano-sahiba",
+      "fullName": "Bano Sahiba",
+      "phone": "+923363334455",
+      "cnic": "35202-6767676-8",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "siddiqui-sahib",
+      "fullName": "Siddiqui Sahib",
+      "phone": "+923373334455",
+      "cnic": "35202-7878787-9",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "ashraf-ali",
+      "fullName": "Ashraf Ali",
+      "phone": "+923383334455",
+      "cnic": "35202-8989898-0",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "khan-sahib",
+      "fullName": "Khan Sahib",
+      "phone": "+923393334455",
+      "cnic": "35202-9090909-1",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "ali-raza",
+      "fullName": "Ali Raza",
+      "phone": "+923403334455",
+      "cnic": "35202-9191919-2",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "malik-sahab",
+      "fullName": "Malik Sahab",
+      "phone": "+923413334455",
+      "cnic": "35202-9292929-3",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "shahid-mehmood",
+      "fullName": "Shahid Mehmood",
+      "phone": "+923423334455",
+      "cnic": "35202-9393939-4",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "hassan-mehmood",
+      "fullName": "Hassan Mehmood",
+      "phone": "+923433334455",
+      "cnic": "35202-9494949-5",
+      "address": "Rawalpindi"
+    },
+    {
+      "demoKey": "qadir-hussain",
+      "fullName": "Qadir Hussain",
+      "phone": "+923443334455",
+      "cnic": "35202-9595959-6",
+      "address": "Islamabad"
+    },
+    {
+      "demoKey": "hassan-tariq",
+      "fullName": "Hassan Tariq",
+      "phone": "+923453334455",
+      "cnic": "35201-3333444-1",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "ahmed-rauf",
+      "fullName": "Ahmed Rauf",
+      "phone": "+923463334455",
+      "cnic": "35201-4444555-2",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "farooq-ali",
+      "fullName": "Farooq Ali",
+      "phone": "+923473334455",
+      "cnic": "35201-5555666-3",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "batool-shah",
+      "fullName": "Batool Shah",
+      "phone": "+923483334455",
+      "cnic": "35201-6666777-4",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "ali-imran",
+      "fullName": "Ali Imran",
+      "phone": "+923493334455",
+      "cnic": "35201-7777888-5",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "bibi-jan",
+      "fullName": "Bibi Jan",
+      "phone": "+923503334455",
+      "cnic": "35201-8888999-6",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "mehmood-ul-hassan",
+      "fullName": "Mehmood ul Hassan",
+      "phone": "+923513334455",
+      "cnic": "35201-9999000-7",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "noor-ul-ain",
+      "fullName": "Noor ul Ain",
+      "phone": "+923523334455",
+      "cnic": "35201-0000111-8",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "akram-sheikh",
+      "fullName": "Akram Sheikh",
+      "phone": "+923533334455",
+      "cnic": "35201-2020202-9",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "saleem-raza",
+      "fullName": "Saleem Raza",
+      "phone": "+923543334455",
+      "cnic": "35201-4040404-0",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "hussain-ali",
+      "fullName": "Hussain Ali",
+      "phone": "+923553334455",
+      "cnic": "35201-6060606-1",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "khan-sahib-lahore",
+      "fullName": "Khan Sahib",
+      "phone": "+923563334455",
+      "cnic": "35201-8080808-2",
+      "address": "Lahore"
+    },
+    {
+      "demoKey": "raza-mehmood",
+      "fullName": "Raza Mehmood",
+      "phone": "+923573334455",
+      "cnic": "35201-0101010-3",
+      "address": "Lahore"
+    }
+  ],
+  "links": [
+    {
+      "studentDemoKey": "ali-khan",
+      "parentDemoKey": "rashid-ahmad-khan",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "ayesha-malik",
+      "parentDemoKey": "tariq-malik",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "hassan-raza",
+      "parentDemoKey": "imran-raza",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "fatima-zahra",
+      "parentDemoKey": "nadia-zahra",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "usman-sheikh",
+      "parentDemoKey": "khalid-sheikh",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "sana-javed",
+      "parentDemoKey": "asif-javed",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "bilal-ahmed",
+      "parentDemoKey": "javed-ahmed",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "maryam-noor",
+      "parentDemoKey": "shahid-noor",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "hamza-iqbal",
+      "parentDemoKey": "iqbal-hussain",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "zainab-hussain",
+      "parentDemoKey": "rashid-ahmad-khan",
+      "relationship": "guardian"
+    },
+    {
+      "studentDemoKey": "omar-farooq",
+      "parentDemoKey": "farooq-mahmood",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "hira-batool",
+      "parentDemoKey": "batool-bibi",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "saad-mahmood",
+      "parentDemoKey": "mahmood-ul-hassan",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "rabia-khan",
+      "parentDemoKey": "naeem-khan",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "fahad-ali",
+      "parentDemoKey": "ali-akbar",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "amna-tariq",
+      "parentDemoKey": "tariq-mehmood",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "waqas-butt",
+      "parentDemoKey": "nadeem-butt",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "khadija-saleem",
+      "parentDemoKey": "saleem-akhtar",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "arslan-haider",
+      "parentDemoKey": "haider-ali",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "noor-fatima",
+      "parentDemoKey": "sadia-fatima",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "shahzaib-qureshi",
+      "parentDemoKey": "qureshi-sahab",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "laiba-sheikh",
+      "parentDemoKey": "sheikh-nadeem",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "danish-ahmed",
+      "parentDemoKey": "ahmed-raza",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "mehwish-iqbal",
+      "parentDemoKey": "iqbal-shah",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "talha-munir",
+      "parentDemoKey": "munir-hussain",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "hafsa-rizvi",
+      "parentDemoKey": "rizvi-sahab",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "adeel-naseem",
+      "parentDemoKey": "naseem-akram",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "sadia-bano",
+      "parentDemoKey": "bano-sahiba",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "imran-siddiqui",
+      "parentDemoKey": "siddiqui-sahib",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "nimra-ashraf",
+      "parentDemoKey": "ashraf-ali",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "abdullah-khan",
+      "parentDemoKey": "khan-sahib",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "mahnoor-ali",
+      "parentDemoKey": "ali-raza",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "huzaifa-malik",
+      "parentDemoKey": "malik-sahab",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "iqra-shahid",
+      "parentDemoKey": "shahid-mehmood",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "rayyan-hassan",
+      "parentDemoKey": "hassan-mehmood",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "anaya-qadir",
+      "parentDemoKey": "qadir-hussain",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "ahmed-hassan",
+      "parentDemoKey": "hassan-tariq",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "sara-ahmed",
+      "parentDemoKey": "ahmed-rauf",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "umar-farooq",
+      "parentDemoKey": "farooq-ali",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "hina-batool",
+      "parentDemoKey": "batool-shah",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "zeeshan-ali",
+      "parentDemoKey": "ali-imran",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "amina-bibi",
+      "parentDemoKey": "bibi-jan",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "faisal-mehmood",
+      "parentDemoKey": "mehmood-ul-hassan",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "rabia-noor",
+      "parentDemoKey": "noor-ul-ain",
+      "relationship": "mother"
+    },
+    {
+      "studentDemoKey": "hamza-akram",
+      "parentDemoKey": "akram-sheikh",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "mariam-saleem",
+      "parentDemoKey": "saleem-raza",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "bilal-hussain",
+      "parentDemoKey": "hussain-ali",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "nida-khan",
+      "parentDemoKey": "khan-sahib-lahore",
+      "relationship": "father"
+    },
+    {
+      "studentDemoKey": "saqlain-raza",
+      "parentDemoKey": "raza-mehmood",
+      "relationship": "father"
+    }
+  ],
+  "assessments": [
+    {
+      "demoKey": "weekly-test-physics-chemistry",
+      "branchCode": "MAIN",
+      "name": "Weekly Test — Physics & Chemistry",
+      "typeCode": "weekly_test",
+      "seriesCode": null,
+      "totalMarks": 50,
+      "daysAgo": 14,
+      "batchCode": "MDCAT-MORNING-A",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "monthly-test-full-syllabus",
+      "branchCode": "MAIN",
+      "name": "Monthly Test — Full Syllabus",
+      "typeCode": "monthly_test",
+      "seriesCode": null,
+      "totalMarks": 100,
+      "daysAgo": 28,
+      "batchCode": "MDCAT-MORNING-A",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "flp-1-full-length-paper",
+      "branchCode": "MAIN",
+      "name": "FLP-1 Full Length Paper",
+      "typeCode": "flp",
+      "seriesCode": "flp_1",
+      "totalMarks": 180,
+      "daysAgo": 21,
+      "batchCode": "MDCAT-MORNING-A",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "flp-2-full-length-paper",
+      "branchCode": "MAIN",
+      "name": "FLP-2 Full Length Paper",
+      "typeCode": "flp",
+      "seriesCode": "flp_2",
+      "totalMarks": 180,
+      "daysAgo": 7,
+      "batchCode": "MDCAT-MORNING-A",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "grand-test-mdcat-pattern",
+      "branchCode": "MAIN",
+      "name": "Grand Test — MDCAT Pattern",
+      "typeCode": "grand_test",
+      "seriesCode": null,
+      "totalMarks": 200,
+      "daysAgo": 3,
+      "batchCode": "MDCAT-MORNING-A",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    }
+  ],
+  "feeStructures": [
+    {
+      "feeTypeCode": "monthly",
+      "branchCode": "MAIN",
+      "programCode": "MDCAT",
+      "amount": 25000,
+      "dueDayOfMonth": 10
+    },
+    {
+      "feeTypeCode": "monthly",
+      "branchCode": "MAIN",
+      "programCode": "HSSC",
+      "amount": 18000,
+      "dueDayOfMonth": 10
+    },
+    {
+      "feeTypeCode": "monthly",
+      "branchCode": "MAIN",
+      "programCode": "SSC",
+      "amount": 12000,
+      "dueDayOfMonth": 10
+    },
+    {
+      "feeTypeCode": "admission",
+      "branchCode": "MAIN",
+      "programCode": "MDCAT",
+      "amount": 5000,
+      "dueDayOfMonth": null
+    },
+    {
+      "feeTypeCode": "test",
+      "branchCode": "MAIN",
+      "programCode": "MDCAT",
+      "amount": 2000,
+      "dueDayOfMonth": null
+    }
+  ],
+  "notices": [
+    {
+      "branchCode": "MAIN",
+      "title": "MDCAT Registration Deadline — PMC",
+      "body": "All MDCAT batch students must complete PMC registration by 15 July 2026. Bring original CNIC/B-Form and fee challan to the front desk. For queries contact reception at +92-51-XXXXXXX.",
+      "audience": "students",
+      "published": true,
+      "daysAgo": 2
+    },
+    {
+      "branchCode": "MAIN",
+      "title": "Ramadan Timings Update",
+      "body": "During Ramadan, evening batches will start at 4:00 PM instead of 5:00 PM. Morning batches remain unchanged. JazakAllah for your cooperation.",
+      "audience": "all",
+      "published": true,
+      "daysAgo": 5
+    },
+    {
+      "branchCode": "MAIN",
+      "title": "Parent-Teacher Meeting — HSSC Batch",
+      "body": "A parent-teacher meeting is scheduled for Saturday 10:00 AM at Main Campus hall. Please confirm attendance with reception.",
+      "audience": "parents",
+      "published": true,
+      "daysAgo": 7
+    },
+    {
+      "branchCode": "MAIN",
+      "title": "Fee Challan — June 2026",
+      "body": "June monthly fee challans have been generated. Due date: 10th of this month. Pay via bank transfer or at the accounts office. Sibling discount (10%) applied automatically where applicable.",
+      "audience": "parents",
+      "published": true,
+      "daysAgo": 1
+    },
+    {
+      "branchCode": "LAHORE",
+      "title": "Lahore Campus — FLP-3 Schedule",
+      "body": "FLP-3 for Lahore MDCAT batch will be held on Friday 8:00 AM at Gulberg campus. Reporting time 7:30 AM. Bring admit card and stationery.",
+      "audience": "students",
+      "published": true,
+      "daysAgo": 3
+    },
+    {
+      "branchCode": "MAIN",
+      "title": "Staff Meeting — Draft",
+      "body": "Internal staff meeting agenda for next week. Not yet published.",
+      "audience": "staff",
+      "published": false,
+      "daysAgo": 0
+    }
+  ],
+  "timetable": [
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 1,
+      "startTime": "08:00",
+      "endTime": "09:30",
+      "subjectCode": "PHY",
+      "room": "Hall A"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 1,
+      "startTime": "09:45",
+      "endTime": "11:15",
+      "subjectCode": "CHEM",
+      "room": "Lab 1"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 2,
+      "startTime": "08:00",
+      "endTime": "09:30",
+      "subjectCode": "BIO",
+      "room": "Hall B"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 2,
+      "startTime": "09:45",
+      "endTime": "11:15",
+      "subjectCode": "ENG",
+      "room": "Hall A"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 3,
+      "startTime": "08:00",
+      "endTime": "09:30",
+      "subjectCode": "PHY",
+      "room": "Hall A"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 3,
+      "startTime": "09:45",
+      "endTime": "11:15",
+      "subjectCode": "CHEM",
+      "room": "Lab 1"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 4,
+      "startTime": "08:00",
+      "endTime": "09:30",
+      "subjectCode": "BIO",
+      "room": "Hall B"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 4,
+      "startTime": "09:45",
+      "endTime": "11:15",
+      "subjectCode": "MATH",
+      "room": "Hall C"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 5,
+      "startTime": "08:00",
+      "endTime": "11:00",
+      "subjectCode": "PHY",
+      "room": "Hall A"
+    },
+    {
+      "batchCode": "MDCAT-MORNING-A",
+      "branchCode": "MAIN",
+      "teacherEmail": "ahmed.teacher@nexium.edu.pk",
+      "dayOfWeek": 6,
+      "startTime": "09:00",
+      "endTime": "12:00",
+      "subjectCode": "CHEM",
+      "room": "Lab 1"
+    }
+  ],
+  "documents": [
+    {
+      "branchCode": "MAIN",
+      "studentDemoKey": null,
+      "category": "policy",
+      "title": "Fee & Refund Policy 2026",
+      "storagePath": "institution-assets/policies/fee-policy-2026.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 245760
+    },
+    {
+      "branchCode": "MAIN",
+      "studentDemoKey": null,
+      "category": "prospectus",
+      "title": "Nexium Academy Prospectus — MDCAT Program",
+      "storagePath": "institution-assets/prospectus/mdcat-2026.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 1048576
+    },
+    {
+      "branchCode": "MAIN",
+      "studentDemoKey": "ali-khan",
+      "category": "admission",
+      "title": "Admission Form — Muhammad Ali Khan",
+      "storagePath": "student-documents/demo/ali-khan-admission.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 98304
+    }
+  ],
+  "communications": [
+    {
+      "channel": "sms",
+      "recipient": "+923004445566",
+      "body": "Nexium Academy: Fee reminder — June challan due 10-Jun. Pay at campus or bank. Ignore if paid.",
+      "status": "sent"
+    },
+    {
+      "channel": "whatsapp",
+      "recipient": "+923004445566",
+      "subject": "PTM Reminder",
+      "body": "Assalam o Alaikum Mr Rashid Ahmad, Parent-Teacher meeting on Saturday 10 AM. — Nexium Academy",
+      "status": "sent"
+    },
+    {
+      "channel": "sms",
+      "recipient": "+923001112233",
+      "body": "Nexium Academy: FLP-2 result published. Login to student portal to view marks.",
+      "status": "sent"
+    },
+    {
+      "channel": "whatsapp",
+      "recipient": "+923453334455",
+      "subject": "Lahore Campus",
+      "body": "FLP-3 on Friday 8 AM at Gulberg campus. — Nexium Academy Lahore",
+      "status": "queued"
+    },
+    {
+      "channel": "sms",
+      "recipient": "+923112223344",
+      "body": "Attendance alert: Ayesha Malik marked absent on 25-Jun. Contact reception if incorrect.",
+      "status": "failed",
+      "metadata": {
+        "error": "Twilio not configured"
+      }
+    }
+  ]
+}

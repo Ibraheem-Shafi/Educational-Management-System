@@ -10,6 +10,7 @@ import { seedAssessments } from './steps/05-assessments';
 import { seedFees } from './steps/06-fees';
 import { seedNoticesTimetableDocs } from './steps/07-notices-timetable-docs';
 import { seedCommsAndAudit } from './steps/08-comms-audit';
+import { seedLearning } from './steps/09-learning';
 import { DEMO_SEED_VERSION, type RunDemoSeedOptions } from './types';
 
 async function getDemoSeedVersion(prisma: PrismaClient): Promise<string | null> {
@@ -78,13 +79,15 @@ export async function runDemoSeed(
   await seedNoticesTimetableDocs(prisma, ctx);
   console.log('  → communications & audit');
   await seedCommsAndAudit(prisma, ctx);
+  console.log('  → learning content');
+  await seedLearning(prisma, ctx);
 
   await setDemoSeedVersion(prisma, config.version, config.institution);
 
   console.log('');
   console.log('Demo dataset ready:');
   console.log(`  • ${ctx.studentIds.size} students across ${ctx.config.batches.length} batches`);
-  console.log(`  • Run npm run db:seed:auth for Supabase login accounts (password in rekhta.institution.json)`);
+  console.log(`  • Run npm run db:seed:auth for Supabase login accounts (password in nexium.institution.json)`);
 }
 
 export { loadDemoConfig, DEMO_SEED_VERSION };

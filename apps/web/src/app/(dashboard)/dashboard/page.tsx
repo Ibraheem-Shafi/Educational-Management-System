@@ -1,203 +1,244 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { LayoutDashboard } from 'lucide-react';
+import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { useInstitution } from '@/providers/institution-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { formatCurrency } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LinkButton } from '@/components/ui/link-button';
-import { ListRowLink } from '@/components/layout/list-row-link';
+import type {
+  DashboardBranchPerformanceResponse,
+  DashboardMonthlyRevenueResponse,
+  DashboardRecentActivitiesResponse,
+  DashboardStatsResponse,
+  DashboardTodayAttendanceResponse,
+  FeesStatsResponse,
+} from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { PageHeader } from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { DashboardPageSkeleton } from '@/components/layout/dashboard-page-skeleton';
+import { TodayAttendanceCard } from '@/components/dashboard/today-attendance-card';
+import { MonthlyRevenueCard } from '@/components/dashboard/monthly-revenue-card';
+import { BranchPerformanceCard } from '@/components/dashboard/branch-performance-card';
+import { RecentActivitiesCard } from '@/components/dashboard/recent-activities-card';
+import { QuickActionsCard } from '@/components/dashboard/quick-actions-card';
 
-interface Overview {
-  students: { total: number };
-  fees: { pendingAmount: number; collectedAmount: number; pendingCount: number };
-  attendanceMarkedToday: number;
-  parents: number;
-  staffUsers: number;
-}
-
-interface AnalyticsKpis {
-  averageAssessmentPercentage: number | null;
-  attendanceRateLast30Days: number;
-  assessmentsLast30Days: number;
-}
-
-interface StudentRow {
-  id: string;
-  fullName: string;
+function formatStatValue(value: number): string {
+  return value.toLocaleString('en-US');
 }
 
 export default function DashboardPage() {
   const { session, user } = useAuth();
+  const { settings } = useInstitution();
+  const { can } = usePermissions();
   const token = session?.access_token;
+  const currency = settings?.currency ?? 'PKR';
 
-  const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: queryKeys.reportsOverview,
-    queryFn: () => apiClient<Overview>('/reports/overview', { token }),
-    enabled: !!token && user?.permissions.includes('reports.view'),
+  const canManageBranches = can(PERMISSIONS.BRANCHES_MANAGE);
+  const canReadBranches = can(PERMISSIONS.BRANCHES_READ);
+  const canReadStudents = can(PERMISSIONS.STUDENTS_READ);
+  const canManageUsers = can(PERMISSIONS.USERS_MANAGE);
+  const canReadAcademic = can(PERMISSIONS.ACADEMIC_READ);
+  const canReadAttendance = can(PERMISSIONS.ATTENDANCE_READ);
+  const canReadFees = can(PERMISSIONS.FEES_READ);
+  const canReadAllActivities = can(PERMISSIONS.DASHBOARD_ACTIVITIES_READ_ALL);
+  const canReadBranchActivities = can(PERMISSIONS.DASHBOARD_ACTIVITIES_READ_BRANCH);
+  const showRecentActivities = canReadAllActivities || canReadBranchActivities;
+
+  const showOrgStats =
+    canManageBranches || canReadStudents || canManageUsers || canReadAcademic;
+  const showFeesStats = canReadFees && !canManageBranches && !canReadStudents && !canManageUsers;
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.dashboardStats,
+    queryFn: () => apiClient<DashboardStatsResponse>('/dashboard/stats', { token }),
+    enabled: !!token && showOrgStats,
   });
 
-  const { data: students, isLoading: studentsLoading } = useQuery({
-    queryKey: queryKeys.studentsRecent,
-    queryFn: () => apiClient<PaginatedResponse<StudentRow>>('/students?limit=5', { token }),
-    enabled: !!token,
+  const { data: feesStats, isLoading: feesStatsLoading } = useQuery({
+    queryKey: queryKeys.feesStats,
+    queryFn: () => apiClient<FeesStatsResponse>('/fees/stats', { token }),
+    enabled: !!token && showFeesStats,
   });
 
-  const { data: analytics, isLoading: analyticsLoading } = useQuery({
-    queryKey: queryKeys.analyticsDashboard,
-    queryFn: () => apiClient<AnalyticsKpis>('/analytics/dashboard', { token }),
-    enabled: !!token && user?.permissions.includes('analytics.read'),
+  const { data: todayAttendance, isLoading: todayAttendanceLoading } = useQuery({
+    queryKey: queryKeys.dashboardTodayAttendance,
+    queryFn: () =>
+      apiClient<DashboardTodayAttendanceResponse>('/dashboard/today-attendance', { token }),
+    enabled: !!token && canReadAttendance,
   });
 
-  const canViewOverview = !!token && user?.permissions.includes('reports.view');
-  const canViewAnalytics = !!token && user?.permissions.includes('analytics.read');
-  const showOverviewSkeleton = canViewOverview && overviewLoading;
-  const showAnalyticsSkeleton = canViewAnalytics && analyticsLoading;
-  const showStudentsSkeleton = !!token && studentsLoading;
+  const { data: monthlyRevenue, isLoading: monthlyRevenueLoading } = useQuery({
+    queryKey: queryKeys.dashboardMonthlyRevenue,
+    queryFn: () =>
+      apiClient<DashboardMonthlyRevenueResponse>('/dashboard/monthly-revenue', { token }),
+    enabled: !!token && canReadFees,
+  });
 
-  if (!user) {
-    return <DashboardPageSkeleton />;
-  }
+  const { data: branchPerformance, isLoading: branchPerformanceLoading } = useQuery({
+    queryKey: queryKeys.dashboardBranchPerformance,
+    queryFn: () =>
+      apiClient<DashboardBranchPerformanceResponse>('/dashboard/branch-performance', { token }),
+    enabled: !!token && canReadBranches,
+  });
+
+  const { data: recentActivities, isLoading: recentActivitiesLoading } = useQuery({
+    queryKey: queryKeys.dashboardRecentActivities,
+    queryFn: () =>
+      apiClient<DashboardRecentActivitiesResponse>('/dashboard/recent-activities', { token }),
+    enabled: !!token && showRecentActivities,
+  });
+
+  const showStatsSkeleton = !!token && (statsLoading || (showFeesStats && feesStatsLoading));
+  const showChartsSkeleton =
+    !!token && ((canReadAttendance && todayAttendanceLoading) || (canReadFees && monthlyRevenueLoading));
+  const showBranchPerformanceSkeleton = !!token && canReadBranches && branchPerformanceLoading;
+  const showRecentActivitiesSkeleton = !!token && showRecentActivities && recentActivitiesLoading;
+
+  const welcomeName = user?.fullName?.trim() || 'there';
+
+  const orgStatCards = [
+    ...(canManageBranches && stats?.totalBranches
+      ? [
+          {
+            label: 'Total Branches',
+            value: formatStatValue(stats.totalBranches.total),
+            changePercent: stats.totalBranches.changePercent,
+          },
+        ]
+      : []),
+    ...(canReadStudents && stats?.totalStudents
+      ? [
+          {
+            label: 'Total Students',
+            value: formatStatValue(stats.totalStudents.total),
+            changePercent: stats.totalStudents.changePercent,
+          },
+        ]
+      : []),
+    ...(canManageUsers && stats?.teachersAndStaff
+      ? [
+          {
+            label: 'Teachers & Staff',
+            value: formatStatValue(stats.teachersAndStaff.total),
+            changePercent: stats.teachersAndStaff.changePercent,
+          },
+        ]
+      : []),
+    ...((canReadAcademic || canReadStudents) && stats?.totalClasses
+      ? [
+          {
+            label: 'Total Classes',
+            value: formatStatValue(stats.totalClasses.total),
+            changePercent: stats.totalClasses.changePercent,
+          },
+        ]
+      : []),
+  ];
+
+  const feeStatCards =
+    canReadFees && feesStats
+      ? [
+          {
+            label: 'Outstanding',
+            value: formatCurrency(feesStats.outstandingAmount.total),
+            changePercent: feesStats.outstandingAmount.changePercent,
+          },
+          {
+            label: 'Collected (30d)',
+            value: formatCurrency(feesStats.collectedLast30Days.total),
+            changePercent: feesStats.collectedLast30Days.changePercent,
+          },
+          {
+            label: 'Overdue Invoices',
+            value: formatStatValue(feesStats.overdueCount.total),
+            changePercent: feesStats.overdueCount.changePercent,
+          },
+          {
+            label: 'Invoices Issued',
+            value: formatStatValue(feesStats.invoicesIssued.total),
+            changePercent: feesStats.invoicesIssued.changePercent,
+          },
+        ]
+      : [];
+
+  const primaryStats = showFeesStats ? feeStatCards : orgStatCards;
+  const showFeesAsPrimary = showFeesStats && feeStatCards.length > 0;
+  const showOrgAsPrimary = !showFeesAsPrimary && orgStatCards.length > 0;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Dashboard" description={`Welcome back, ${user.fullName}`} />
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Dashboard"
+        description={user ? `Welcome back, ${welcomeName}` : undefined}
+      />
 
-      {showOverviewSkeleton && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  <span className="inline-block h-4 w-24 animate-pulse rounded bg-muted" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <span className="inline-block h-8 w-16 animate-pulse rounded bg-muted" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {!user ? (
+        <DashboardPageSkeleton hideHeader section="full" />
+      ) : (
+        <>
+          {showStatsSkeleton && <MainStatsSection isLoading stats={[]} />}
 
-      {overview && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">Students</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{overview.students.total}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">Fees collected</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{formatCurrency(overview.fees.collectedAmount)}</p>
-              <p className="text-xs text-muted-foreground">
-                {formatCurrency(overview.fees.pendingAmount)} pending ({overview.fees.pendingCount})
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">Attendance today</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{overview.attendanceMarkedToday}</p>
-              <p className="text-xs text-muted-foreground">records marked</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">Parents</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{overview.parents}</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {showAnalyticsSkeleton && (
-        <div className="grid gap-4 md:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <span className="inline-block h-4 w-32 animate-pulse rounded bg-muted" />
-              </CardHeader>
-              <CardContent>
-                <span className="inline-block h-8 w-12 animate-pulse rounded bg-muted" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {analytics && (
-        <div>
-          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Performance (30 days)</h2>
-            <LinkButton href="/dashboard/analytics">Full analytics</LinkButton>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Avg assessment %</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{analytics.averageAssessmentPercentage ?? '—'}%</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Attendance rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{analytics.attendanceRateLast30Days}%</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">Assessments held</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{analytics.assessmentsLast30Days}</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent students</CardTitle>
-          <LinkButton href="/dashboard/students">View all</LinkButton>
-        </CardHeader>
-        <CardContent>
-          {showStudentsSkeleton ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <span key={i} className="block h-10 w-full animate-pulse rounded bg-muted" />
-              ))}
-            </div>
-          ) : (
-          <div className="divide-y divide-border">
-            {students?.data.map((s) => (
-              <ListRowLink key={s.id} href={`/dashboard/students/${s.id}`}>
-                <p className="font-medium">{s.fullName}</p>
-              </ListRowLink>
-            ))}
-          </div>
+          {(showOrgAsPrimary || showFeesAsPrimary) && primaryStats.length > 0 && (
+            <MainStatsSection stats={primaryStats} />
           )}
-        </CardContent>
-      </Card>
+
+          {(canReadAttendance || canReadFees) && (
+            <div
+              className={
+                canReadAttendance && canReadFees
+                  ? 'grid gap-4 lg:grid-cols-2'
+                  : 'grid gap-4'
+              }
+            >
+              {canReadAttendance && (
+                <TodayAttendanceCard
+                  data={todayAttendance}
+                  isLoading={showChartsSkeleton}
+                  showStaffRings={canManageUsers}
+                />
+              )}
+              {canReadFees && (
+                <MonthlyRevenueCard
+                  data={monthlyRevenue}
+                  isLoading={showChartsSkeleton}
+                  currency={currency}
+                />
+              )}
+            </div>
+          )}
+
+          {canReadBranches && (
+            <BranchPerformanceCard
+              data={branchPerformance}
+              isLoading={showBranchPerformanceSkeleton}
+              showViewAll={canManageBranches}
+            />
+          )}
+
+          <div
+            className={
+              showRecentActivities ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'
+            }
+          >
+            {showRecentActivities && (
+              <RecentActivitiesCard
+                data={recentActivities}
+                isLoading={showRecentActivitiesSkeleton}
+                scopeLabel={
+                  canReadAllActivities
+                    ? 'Live feed across all branches'
+                    : 'Live feed for your branch'
+                }
+              />
+            )}
+            <QuickActionsCard isLoading={false} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

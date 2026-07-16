@@ -13,11 +13,13 @@ test.describe('Critical paths (API-mocked)', () => {
 
   test('users page shows invite form', async ({ page }) => {
     await page.goto('/dashboard/users');
-    await expect(page.getByRole('button', { name: 'Invite user' })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole('button', { name: 'Invite user' }).click();
-    await expect(page.getByText('Send invitation')).toBeVisible();
-    await expect(page.getByPlaceholder('Email')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create invitation' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Invite User' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: 'Invite User' }).click();
+    await expect(page.getByRole('heading', { name: 'Invite User' })).toBeVisible();
+    await expect(page.getByPlaceholder('e.g., info@nexium.edu.pk')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send Invite' })).toBeVisible();
   });
 
   test('admit student page shows admission form', async ({ page }) => {
@@ -27,12 +29,12 @@ test.describe('Critical paths (API-mocked)', () => {
     await expect(page.locator('select').filter({ hasText: 'Select status' })).toBeVisible();
   });
 
-  test('attendance page shows batch sheet controls', async ({ page }) => {
+  test('attendance page shows monthly grid', async ({ page }) => {
     await page.goto('/dashboard/attendance');
     await expect(page.getByRole('heading', { name: 'Attendance' })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Select batch & date')).toBeVisible();
-    await page.getByLabel('Batch').selectOption('batch-1');
-    await expect(page.getByRole('button', { name: 'Save attendance' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('View and manage all attendance records')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Student' })).toBeVisible();
+    await expect(page.getByText('Ali Khan')).toBeVisible({ timeout: 10_000 });
   });
 
   test('fees page shows new invoice form', async ({ page }) => {

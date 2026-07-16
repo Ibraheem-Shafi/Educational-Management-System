@@ -31,7 +31,7 @@ flowchart TB
 ```typescript
 interface InstitutionSettings {
   id: string;                    // Always "default" — one row per deployment
-  name: string;                  // "Rekhta Academy Pakistan"
+  name: string;                  // "Nexium Academy Pakistan"
   logoUrl: string | null;        // Supabase Storage URL
   faviconUrl: string | null;
   primaryColor: string;          // "#1e40af" — hex
@@ -67,7 +67,7 @@ Env vars provide fallback values before DB seed runs and for SSR metadata.
 
 ## Institution Type Profiles
 
-### coaching (default for Rekhta)
+### coaching (default for nexium)
 
 ```json
 {
@@ -235,8 +235,8 @@ return <h1>{name}</h1>;
 ### Do Not
 
 ```typescript
-const INSTITUTION_NAME = 'Rekhta Academy Pakistan'; // NEVER
-if (settings.name === 'Rekhta') { /* special logic */ } // NEVER
+const INSTITUTION_NAME = 'Nexium Academy Pakistan'; // NEVER
+if (settings.name === 'nexium') { /* special logic */ } // NEVER
 ```
 
 ## Template Files
@@ -244,7 +244,7 @@ if (settings.name === 'Rekhta') { /* special logic */ } // NEVER
 | File | Purpose |
 |------|---------|
 | [templates/institution-seed.example.json](templates/institution-seed.example.json) | Blank template for new customers |
-| [templates/rekhta.institution.json](templates/rekhta.institution.json) | Rekhta Academy reference config |
+| [templates/nexium.institution.json](templates/nexium.institution.json) | Nexium Academy reference config |
 
 ## Related Documents
 

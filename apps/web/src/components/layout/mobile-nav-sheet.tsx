@@ -1,6 +1,7 @@
 'use client';
 
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { SidebarExpandedProvider } from './sidebar-context';
 import { SidebarNav } from './sidebar-nav';
 
 export function MobileNavSheet({
@@ -12,9 +13,11 @@ export function MobileNavSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-64 p-0">
+      <SheetContent side="left" className="w-[min(100vw,272px)] border-stroke-soft-200 bg-neutral-0 p-0">
         <SheetTitle className="sr-only">Navigation menu</SheetTitle>
-        <SidebarNav onNavigate={() => onOpenChange(false)} />
+        <SidebarExpandedProvider>
+          <SidebarNav onNavigate={() => onOpenChange(false)} />
+        </SidebarExpandedProvider>
       </SheetContent>
     </Sheet>
   );

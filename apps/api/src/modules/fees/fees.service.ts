@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser, PaginatedResponse } from '@eims/types';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import type { AuthUser, FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
 import type {
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
@@ -18,12 +20,121 @@ import type {
   UpdateFeeTypeInput,
 } from '@eims/shared';
 
+const STATS_CACHE_TTL_MS = 45_000;
+
 @Injectable()
 export class FeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(branchId: string | null): Promise<FeesStatsResponse> {
+    const cacheKey = `fees:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<FeesStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const thirtyAgo = thirtyDaysAgo();
+
+    const [pendingStatus, paidStatus, overdueStatus] = await Promise.all([
+      this.prisma.lookupStatus.findFirst({ where: { code: 'pending', category: { code: 'fee_status' } } }),
+      this.prisma.lookupStatus.findFirst({ where: { code: 'paid', category: { code: 'fee_status' } } }),
+      this.prisma.lookupStatus.findFirst({ where: { code: 'overdue', category: { code: 'fee_status' } } }),
+    ]);
+
+    const unpaidIds = [pendingStatus?.id, overdueStatus?.id].filter((id): id is string => !!id);
+
+    const [
+      outstandingAgg,
+      prevOutstandingAgg,
+      collectedAgg,
+      prevCollectedAgg,
+      overdueCount,
+      prevOverdueCount,
+      invoiceCount,
+      prevInvoiceCount,
+    ] = await Promise.all([
+      this.prisma.feeInvoice.aggregate({
+        where: { ...branchFilter, paidAt: null },
+        _sum: { netAmount: true },
+      }),
+      this.prisma.feeInvoice.aggregate({
+        where: { ...branchFilter, paidAt: null, createdAt: { lte: thirtyAgo } },
+        _sum: { netAmount: true },
+      }),
+      this.prisma.feeInvoice.aggregate({
+        where: { ...branchFilter, paidAt: { gte: thirtyAgo } },
+        _sum: { netAmount: true },
+      }),
+      this.prisma.feeInvoice.aggregate({
+        where: {
+          ...branchFilter,
+          paidAt: { gte: new Date(thirtyAgo.getTime() - 30 * 86400000), lt: thirtyAgo },
+        },
+        _sum: { netAmount: true },
+      }),
+      unpaidIds.length
+        ? this.prisma.feeInvoice.count({ where: { ...branchFilter, statusId: { in: unpaidIds } } })
+        : Promise.resolve(0),
+      unpaidIds.length
+        ? this.prisma.feeInvoice.count({
+            where: { ...branchFilter, statusId: { in: unpaidIds }, createdAt: { lte: thirtyAgo } },
+          })
+        : Promise.resolve(0),
+      this.prisma.feeInvoice.count({ where: branchFilter }),
+      this.prisma.feeInvoice.count({ where: { ...branchFilter, createdAt: { lte: thirtyAgo } } }),
+    ]);
+
+    const outstanding = Number(outstandingAgg._sum.netAmount ?? 0);
+    const prevOutstanding = Number(prevOutstandingAgg._sum.netAmount ?? 0);
+    const collected = Number(collectedAgg._sum.netAmount ?? 0);
+    const prevCollected = Number(prevCollectedAgg._sum.netAmount ?? 0);
+
+    const result: FeesStatsResponse = {
+      outstandingAmount: countWithTrend(outstanding, prevOutstanding),
+      collectedLast30Days: countWithTrend(collected, prevCollected),
+      overdueCount: countWithTrend(overdueCount, prevOverdueCount),
+      invoicesIssued: countWithTrend(invoiceCount, prevInvoiceCount),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
+
+  async getRevenueTrend(branchId: string | null): Promise<FeesRevenueTrendResponse> {
+    const cacheKey = `fees:revenue-trend:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<FeesRevenueTrendResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const now = new Date();
+    const points: Array<{ label: string; value: number }> = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0, 23, 59, 59));
+      const agg = await this.prisma.feeInvoice.aggregate({
+        where: { ...branchFilter, paidAt: { gte: monthStart, lte: monthEnd } },
+        _sum: { netAmount: true },
+      });
+      points.push({
+        label: monthStart.toLocaleDateString('en-US', { month: 'short' }),
+        value: Number(agg._sum.netAmount ?? 0),
+      });
+    }
+
+    const current = points[points.length - 1]?.value ?? 0;
+    const previous = points[points.length - 2]?.value ?? 0;
+    const result: FeesRevenueTrendResponse = {
+      points,
+      changePercent: countWithTrend(current, previous).changePercent,
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async listTypes() {
     const types = await this.prisma.feeType.findMany({

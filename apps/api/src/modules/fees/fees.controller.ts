@@ -49,6 +49,18 @@ import type {
 export class FeesController {
   constructor(private readonly feesService: FeesService) {}
 
+  @Get('fees/stats')
+  @Permissions('fees.read')
+  getStats(@BranchId() branchId: string | null) {
+    return this.feesService.getStats(branchId);
+  }
+
+  @Get('fees/revenue-trend')
+  @Permissions('fees.read')
+  getRevenueTrend(@BranchId() branchId: string | null) {
+    return this.feesService.getRevenueTrend(branchId);
+  }
+
   @Get('fee-types')
   @Permissions('fees.read')
   listTypes() {

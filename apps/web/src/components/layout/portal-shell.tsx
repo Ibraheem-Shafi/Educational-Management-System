@@ -1,34 +1,161 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { GraduationCap, LogOut, Home, UserRound, BookOpen } from 'lucide-react';
+import {
+  Home,
+  BookOpen,
+  ClipboardCheck,
+  Wallet,
+  Bell,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { SidebarProvider } from './sidebar-context';
+import { PortalSidebar } from './portal-sidebar';
+import { PortalHeader } from './portal-header';
 
-const mobileNav = [
-  { href: '/portal', label: 'Home', icon: Home, match: (p: string) => p === '/portal' },
-  {
-    href: '/portal/parent',
-    label: 'Parent',
-    icon: UserRound,
-    match: (p: string) => p.includes('/portal/parent'),
-    role: 'parent',
-  },
+interface BottomNavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  match: (pathname: string) => boolean;
+  roles?: Array<'student' | 'parent'>;
+}
+
+const studentBottomNav: BottomNavItem[] = [
   {
     href: '/portal/student',
-    label: 'Student',
+    label: 'Home',
+    icon: Home,
+    match: (p) => p === '/portal/student' || p === '/portal/student/',
+    roles: ['student'],
+  },
+  {
+    href: '/portal/student/learning',
+    label: 'Learning',
     icon: BookOpen,
-    match: (p: string) => p.includes('/portal/student'),
-    role: 'student',
+    match: (p) => p.includes('/portal/student/learning'),
+    roles: ['student'],
+  },
+  {
+    href: '/portal/student/attendance',
+    label: 'Attendance',
+    icon: ClipboardCheck,
+    match: (p) => p.includes('/portal/student/attendance'),
+    roles: ['student'],
+  },
+  {
+    href: '/portal/student/fees',
+    label: 'Fees',
+    icon: Wallet,
+    match: (p) => p.includes('/portal/student/fees'),
+    roles: ['student'],
+  },
+  {
+    href: '/portal/student/notices',
+    label: 'Notices',
+    icon: Bell,
+    match: (p) => p.includes('/portal/student/notices'),
+    roles: ['student'],
   },
 ];
 
-export function PortalShell({ children }: { children: React.ReactNode }) {
-  const { name, settings } = useInstitution();
-  const { user, signOut } = useAuth();
+const parentBottomNav: BottomNavItem[] = [
+  {
+    href: '/portal/parent',
+    label: 'Home',
+    icon: Home,
+    match: (p) => p === '/portal/parent' || p === '/portal/parent/',
+    roles: ['parent'],
+  },
+  {
+    href: '/portal/parent/learning',
+    label: 'Learning',
+    icon: BookOpen,
+    match: (p) => p.includes('/portal/parent/learning'),
+    roles: ['parent'],
+  },
+  {
+    href: '/portal/parent/children',
+    label: 'Children',
+    icon: Users,
+    match: (p) => p.includes('/portal/parent/children'),
+    roles: ['parent'],
+  },
+  {
+    href: '/portal/parent/fees',
+    label: 'Fees',
+    icon: Wallet,
+    match: (p) => p.includes('/portal/parent/fees'),
+    roles: ['parent'],
+  },
+  {
+    href: '/portal/parent/notices',
+    label: 'Notices',
+    icon: Bell,
+    match: (p) => p.includes('/portal/parent/notices'),
+    roles: ['parent'],
+  },
+];
+
+function PortalBottomNav() {
+  const pathname = usePathname();
+  const { user } = useAuth();
+  const roles = user?.roles ?? [];
+
+  const items = [
+    ...(roles.includes('student') ? studentBottomNav : []),
+    ...(roles.includes('parent') ? parentBottomNav : []),
+  ];
+
+  if (items.length === 0) {
+    return (
+      <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background md:hidden">
+        <div className="mx-auto flex max-w-4xl justify-around py-2">
+          <Link
+            href="/portal"
+            className="flex flex-col items-center gap-1 px-3 py-1 text-xs text-[var(--institution-primary)]"
+          >
+            <BookOpen className="h-5 w-5" />
+            Portal
+          </Link>
+        </div>
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background lg:hidden">
+      <div className="mx-auto flex max-w-4xl justify-around py-2">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const active = item.match(pathname);
+          return (
+            <Link
+              key={`${item.href}-${item.label}`}
+              href={item.href}
+              className={cn(
+                'flex flex-col items-center gap-1 px-3 py-1 text-xs font-[family-name:var(--font-inter)]',
+                active ? 'text-[var(--institution-primary)]' : 'text-muted-foreground',
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+export function PortalDashboardShell({ children }: { children: ReactNode }) {
+  const { settings } = useInstitution();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -43,53 +170,21 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     }
   }, [settings, pathname, router]);
 
-  const visibleNav = mobileNav.filter((item) => {
-    if (!item.role) return true;
-    return user?.roles.includes(item.role);
-  });
-
   return (
-    <div className="min-h-screen bg-muted/20 pb-20 md:pb-0">
-      <header className="border-b border-border bg-background">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-6 w-6 text-[var(--institution-primary)]" />
-            <div>
-              <p className="font-semibold">{name}</p>
-              <p className="text-xs text-muted-foreground">Mobile portal · Add to home screen</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">{user?.fullName}</span>
-            <Button variant="ghost" size="sm" onClick={signOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </Button>
-          </div>
+    <SidebarProvider>
+      <div className="flex h-screen min-w-0 overflow-hidden">
+        <PortalSidebar />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <PortalHeader />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-24 font-[family-name:var(--font-inter)] lg:p-6 lg:pb-6">
+            {children}
+          </main>
         </div>
-      </header>
-      <main className="mx-auto max-w-4xl p-4 md:p-6">{children}</main>
-
-      <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background md:hidden">
-        <div className="mx-auto flex max-w-4xl justify-around py-2">
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            const active = item.match(pathname);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex flex-col items-center gap-1 px-3 py-1 text-xs ${
-                  active ? 'text-[var(--institution-primary)]' : 'text-muted-foreground'
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-    </div>
+      </div>
+      <PortalBottomNav />
+    </SidebarProvider>
   );
 }
+
+/** @deprecated Use PortalDashboardShell */
+export const PortalShell = PortalDashboardShell;

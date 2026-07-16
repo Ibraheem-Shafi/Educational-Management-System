@@ -1,22 +1,28 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { GraduationCap } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { apiClient } from '@/lib/api-client';
 import { getPostLoginPath } from '@/lib/auth-redirect';
+import { getLoginErrorMessage, isPortalDisabledLoginError } from '@/lib/login-errors';
 import { resolveAdminMfaStep, startMfaChallenge } from '@/lib/mfa';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
 import type { AuthUser } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PasswordInput } from '@/components/ui/password-input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import {
+  AuthShell,
+  authFieldClassName,
+  authPrimaryButtonClassName,
+} from '@/components/auth/auth-shell';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 
 const MfaEnrollLogin = dynamic(
   () => import('@/components/auth/mfa-enroll-login').then((m) => ({ default: m.MfaEnrollLogin })),
@@ -26,7 +32,19 @@ const MfaEnrollLogin = dynamic(
 type LoginStep = 'credentials' | 'mfa-enroll' | 'mfa-verify';
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<PageContentSkeleton />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const errorCode = searchParams.get('error');
+  const errorMessage = getLoginErrorMessage(errorCode);
+  const portalDisabled = isPortalDisabledLoginError(errorCode);
   const navigatedRef = useRef(false);
   const { name } = useInstitution();
   const { session, user, loading: authLoading, syncAuth } = useAuth();
@@ -38,14 +56,15 @@ export default function LoginPage() {
   const [challengeId, setChallengeId] = useState('');
   const [mfaCode, setMfaCode] = useState('');
 
-  const finishLogin = (roles: string[]) => {
+  const finishLogin = useCallback((roles: string[]) => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
     toast.success('Welcome back');
     router.replace(getPostLoginPath(roles));
-  };
+  }, [router]);
 
   useEffect(() => {
+    if (portalDisabled) return;
     if (authLoading || !session?.access_token || !user || step !== 'credentials') return;
 
     const resume = async () => {
@@ -67,7 +86,7 @@ export default function LoginPage() {
     };
 
     void resume();
-  }, [authLoading, session, user, step]);
+  }, [authLoading, session, user, step, portalDisabled, finishLogin]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,78 +189,85 @@ export default function LoginPage() {
 
   const description =
     step === 'mfa-enroll'
-      ? 'Set up two-factor authentication'
+      ? 'Set up two-factor authentication to continue'
       : step === 'mfa-verify'
-        ? 'Enter your authenticator code'
-        : 'Sign in to your account';
+        ? 'Enter the 6-digit code from your authenticator app'
+        : `Sign in to ${name}`;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--institution-primary)]/10">
-            <GraduationCap className="h-6 w-6 text-[var(--institution-primary)]" />
+    <AuthShell
+      title={step === 'credentials' ? 'Welcome back' : step === 'mfa-enroll' ? 'Secure your account' : 'Verify it’s you'}
+      description={description}
+      footer={
+        step === 'credentials' ? (
+          <p className="text-center text-sm text-[#5B6578]">
+            <Link
+              href="/forgot-password"
+              className="font-medium text-[#5B2FE0] transition hover:text-[#3B1FA8]"
+            >
+              Forgot password?
+            </Link>
+          </p>
+        ) : null
+      }
+    >
+      {errorMessage && (
+        <div
+          role="alert"
+          className="mb-5 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-3 text-sm leading-5 text-[#991B1B]"
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      {step === 'mfa-enroll' ? (
+        <MfaEnrollLogin onEnrolled={handleEnrolled} />
+      ) : step === 'mfa-verify' ? (
+        <form onSubmit={handleMfaVerify} className="space-y-5">
+          <div>
+            <FormFieldLabel required>Authenticator code</FormFieldLabel>
+            <Input
+              placeholder="6-digit code"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value)}
+              maxLength={6}
+              required
+              className={authFieldClassName}
+            />
           </div>
-          <CardTitle>{name}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {step === 'mfa-enroll' ? (
-            <MfaEnrollLogin onEnrolled={handleEnrolled} />
-          ) : step === 'mfa-verify' ? (
-            <form onSubmit={handleMfaVerify} className="space-y-4">
-              <Input
-                placeholder="6-digit code"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                maxLength={6}
-                required
-              />
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Verifying...' : 'Verify'}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="admin@institution.pk"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium">
-                  Password
-                </label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign in'}
-              </Button>
-            </form>
-          )}
-          {step === 'credentials' && (
-            <p className="mt-4 text-center text-sm">
-              <Button variant="link" asChild>
-                <Link href="/forgot-password">Forgot password?</Link>
-              </Button>
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
+            {loading ? 'Verifying…' : 'Verify'}
+          </Button>
+        </form>
+      ) : (
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <FormFieldLabel required>Email</FormFieldLabel>
+            <Input
+              id="email"
+              type="email"
+              placeholder="admin@institution.pk"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <div>
+            <FormFieldLabel required>Password</FormFieldLabel>
+            <PasswordInput
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={authFieldClassName}
+            />
+          </div>
+          <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
+            {loading ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

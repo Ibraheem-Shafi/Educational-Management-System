@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import { calculateGrade, calculatePercentage } from '@eims/shared';
-import type { AuthUser } from '@eims/types';
+import type { AssessmentsStatsResponse, AuthUser } from '@eims/types';
 import type {
   CreateAssessmentInput,
   ListAssessmentsQuery,
@@ -18,12 +20,55 @@ import type {
   UpdateAssessmentSeriesInput,
 } from '@eims/shared';
 
+const STATS_CACHE_TTL_MS = 45_000;
+
 @Injectable()
 export class AssessmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly ttlCache: TtlCacheService,
   ) {}
+
+  async getStats(branchId: string | null): Promise<AssessmentsStatsResponse> {
+    const cacheKey = `assessments:stats:${branchId ?? 'all'}`;
+    const cached = this.ttlCache.get<AssessmentsStatsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const branchFilter = branchId ? { branchId } : {};
+    const thirtyAgo = thirtyDaysAgo();
+    const now = new Date();
+
+    const [active, activePrev, completed, completedPrev, marksAgg, pendingMarks] =
+      await Promise.all([
+        this.prisma.assessment.count({
+          where: { ...branchFilter, conductedAt: { gte: now } },
+        }),
+        this.prisma.assessment.count({
+          where: { ...branchFilter, conductedAt: { gte: thirtyAgo, lt: now } },
+        }),
+        this.prisma.assessment.count({
+          where: { ...branchFilter, conductedAt: { lt: now } },
+        }),
+        this.prisma.assessment.count({
+          where: { ...branchFilter, conductedAt: { lt: thirtyAgo } },
+        }),
+        this.prisma.assessmentRecord.aggregate({ _avg: { percentage: true } }),
+        this.prisma.assessmentRecord.count({ where: { obtainedMarks: null } }),
+      ]);
+
+    const avgScore = Math.round(Number(marksAgg._avg.percentage ?? 0));
+
+    const result: AssessmentsStatsResponse = {
+      activeAssessments: countWithTrend(active, activePrev),
+      completedAssessments: countWithTrend(completed, completedPrev),
+      averageScore: countWithTrend(avgScore, avgScore),
+      pendingMarks: countWithTrend(pendingMarks, 0),
+    };
+
+    this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
+    return result;
+  }
 
   async listTypes(includeInactive = false) {
     const types = await this.prisma.assessmentType.findMany({

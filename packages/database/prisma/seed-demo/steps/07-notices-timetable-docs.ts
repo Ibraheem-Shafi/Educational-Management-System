@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { DemoContext } from '../types';
 
 export async function seedNoticesTimetableDocs(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
-  const adminId = ctx.userIds.get('admin@rekhta.edu.pk') ?? null;
+  const adminId = ctx.userIds.get('admin@nexium.edu.pk') ?? null;
 
   for (const n of ctx.config.notices) {
     const branchId = ctx.branchMap.get(n.branchCode)!;

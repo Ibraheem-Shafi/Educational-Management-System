@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { loadDemoConfig } from './seed-demo/load-demo-config';
 
-const DEFAULT_PASSWORD = 'Rekhta@2026!';
+const DEFAULT_PASSWORD = 'Nexium@2026!';
 
 async function fetchWithTimeout(
   url: string,
@@ -191,7 +191,7 @@ const password =
       const path = require('path');
       const inst = JSON.parse(
         fs.readFileSync(
-          path.resolve(__dirname, '../../../docs/templates/rekhta.institution.json'),
+          path.resolve(__dirname, '../../../docs/templates/nexium.institution.json'),
           'utf-8',
         ),
       );

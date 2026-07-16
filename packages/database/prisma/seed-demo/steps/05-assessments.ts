@@ -3,7 +3,7 @@ import { buildAssessmentRecords } from '../generators/marks';
 import type { DemoContext } from '../types';
 
 export async function seedAssessments(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
-  const adminId = ctx.userIds.get('admin@rekhta.edu.pk') ?? null;
+  const adminId = ctx.userIds.get('admin@nexium.edu.pk') ?? null;
 
   for (const spec of ctx.config.assessments) {
     const branchId = ctx.branchMap.get(spec.branchCode)!;

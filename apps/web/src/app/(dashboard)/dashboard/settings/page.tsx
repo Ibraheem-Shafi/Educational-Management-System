@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { useInstitution } from '@/providers/institution-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadInstitutionAsset } from '@/lib/upload-institution-asset';
 import type { InstitutionSettingsResponse } from '@eims/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { queryKeys } from '@/lib/query-keys';
 import { PageHeader } from '@/components/layout/page-header';
+import { ContentPanel } from '@/components/layout/content-panel';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import { PermissionGate } from '@/components/auth/permission-gate';
 
 interface LookupStatus {
   id: string;
@@ -35,7 +38,7 @@ export default function SettingsPage() {
   });
 
   const { data: studentStatuses } = useQuery({
-    queryKey: ['lookups', 'student_status'],
+    queryKey: queryKeys.lookups('student_status'),
     queryFn: () =>
       apiClient<{ statuses: LookupStatus[] }>('/settings/lookups/student_status', { token }),
     enabled: !!token,
@@ -81,7 +84,6 @@ export default function SettingsPage() {
       }),
     onSuccess: () => {
       toast.success('Settings saved');
-      queryClient.invalidateQueries({ queryKey: ['institution-settings'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.institutionSettings });
     },
     onError: (err: Error) => toast.error(err.message),
@@ -143,26 +145,23 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <PageHeader title="Settings" description="Institution profile, terminology, and lookups" />
+    <div className="mx-auto max-w-2xl space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={Settings}
+        title="Settings"
+        description="Institution profile, terminology, and lookups"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Branding</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <ContentPanel title="Branding">
+        <div className="space-y-4 px-5 py-5">
           <Input placeholder="Institution name" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input
-            placeholder="Primary color (#hex)"
-            value={primaryColor}
-            onChange={(e) => setPrimaryColor(e.target.value)}
-          />
+          <Input placeholder="Primary color (#hex)" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} />
           <Input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input placeholder="Timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           <Input placeholder="Currency (PKR)" value={currency} onChange={(e) => setCurrency(e.target.value)} />
           <div className="space-y-2">
-            <label className="text-sm font-medium">Logo</label>
+            <label className="text-sm font-medium text-[var(--text-main-900)]">Logo</label>
             <Input
               type="file"
               accept="image/*"
@@ -179,30 +178,20 @@ export default function SettingsPage() {
               }}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ContentPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Terminology</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <ContentPanel title="Terminology">
+        <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
           <Input placeholder="Batch label" value={termBatch} onChange={(e) => setTermBatch(e.target.value)} />
           <Input placeholder="Program label" value={termProgram} onChange={(e) => setTermProgram(e.target.value)} />
-          <Input
-            placeholder="Assessment label"
-            value={termAssessment}
-            onChange={(e) => setTermAssessment(e.target.value)}
-          />
+          <Input placeholder="Assessment label" value={termAssessment} onChange={(e) => setTermAssessment(e.target.value)} />
           <Input placeholder="Session label" value={termSession} onChange={(e) => setTermSession(e.target.value)} />
-        </CardContent>
-      </Card>
+        </div>
+      </ContentPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Feature flags</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <ContentPanel title="Feature flags">
+        <div className="space-y-3 px-5 py-5">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={parentPortal} onChange={(e) => setParentPortal(e.target.checked)} />
             Parent portal enabled
@@ -211,18 +200,15 @@ export default function SettingsPage() {
             <input type="checkbox" checked={studentPortal} onChange={(e) => setStudentPortal(e.target.checked)} />
             Student portal enabled
           </label>
-        </CardContent>
-      </Card>
+        </div>
+      </ContentPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Student statuses</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="divide-y divide-border">
+      <ContentPanel title="Student statuses">
+        <div className="space-y-4 px-5 py-5">
+          <div className="divide-y divide-[var(--stroke-soft-200,#E2E4E9)]">
             {studentStatuses?.statuses.map((s) => (
               <div key={s.id} className="flex items-center gap-2 py-2">
-                <span className="w-24 text-xs text-muted-foreground">{s.code}</span>
+                <span className="w-24 text-xs text-[var(--text-sub-500)]">{s.code}</span>
                 <Input
                   defaultValue={s.label}
                   onBlur={(e) => {
@@ -241,25 +227,25 @@ export default function SettingsPage() {
               onChange={(e) => setNewStatusCode(e.target.value)}
               className="max-w-[140px]"
             />
-            <Input
-              placeholder="Label"
-              value={newStatusLabel}
-              onChange={(e) => setNewStatusLabel(e.target.value)}
-            />
-            <Button
-              variant="outline"
-              disabled={!newStatusCode || !newStatusLabel || createStatusMutation.isPending}
-              onClick={() => createStatusMutation.mutate({ code: newStatusCode, label: newStatusLabel })}
-            >
-              Add status
-            </Button>
+            <Input placeholder="Label" value={newStatusLabel} onChange={(e) => setNewStatusLabel(e.target.value)} />
+            <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
+              <Button
+                variant="outline"
+                disabled={!newStatusCode || !newStatusLabel || createStatusMutation.isPending}
+                onClick={() => createStatusMutation.mutate({ code: newStatusCode, label: newStatusLabel })}
+              >
+                Add status
+              </Button>
+            </PermissionGate>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ContentPanel>
 
-      <Button onClick={handleSave} disabled={saveMutation.isPending}>
-        Save settings
-      </Button>
+      <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
+        <Button onClick={handleSave} disabled={saveMutation.isPending}>
+          Save settings
+        </Button>
+      </PermissionGate>
     </div>
   );
 }

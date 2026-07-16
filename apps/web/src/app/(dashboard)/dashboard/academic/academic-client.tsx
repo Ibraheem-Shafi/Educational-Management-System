@@ -1,29 +1,46 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
+import type { AcademicStatsResponse, ProgramListItem } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/page-header';
-import { PageTabs } from '@/components/layout/page-tabs';
-import { ListRow } from '@/components/layout/list-row';
-import { filterSelectClass } from '@/components/layout/filter-bar';
-import { ListLoadingSkeleton } from '@/components/layout/list-loading-skeleton';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import { MainStatsSection, type MainStatItem } from '@/components/layout/main-stats-section';
+import { Tabs } from '@/components/ui/tabs';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { StatusBadge } from '@/components/layout/status-badge';
+import { CreateBatchDialog } from '@/components/features/academic/create-batch-dialog';
+import { EditBatchDialog } from '@/components/features/academic/edit-batch-dialog';
+import { CreateSubjectDialog } from '@/components/features/academic/create-subject-dialog';
+import { EditSubjectDialog } from '@/components/features/academic/edit-subject-dialog';
+import { CreateSessionDialog } from '@/components/features/academic/create-session-dialog';
+import { cn } from '@/lib/utils';
+
+const thClass =
+  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+const tdClass =
+  'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
+
+type AcademicTab = 'programs' | 'batches' | 'subjects' | 'sessions';
 
 interface Branch {
   id: string;
   name: string;
-}
-
-interface Program {
-  id: string;
-  name: string;
-  code: string | null;
-  branchId: string;
 }
 
 interface Subject {
@@ -46,32 +63,52 @@ interface Session {
   isCurrent: boolean;
 }
 
+function tabStats(tab: AcademicTab, stats?: AcademicStatsResponse): MainStatItem[] {
+  if (!stats) {
+    return [
+      { label: 'Programs', value: 0 },
+      { label: 'Batches', value: 0 },
+      { label: 'Subjects', value: 0 },
+      { label: 'Sessions', value: 0 },
+    ];
+  }
+
+  const all: MainStatItem[] = [
+    { label: 'Programs', value: stats.programs.total, changePercent: stats.programs.changePercent },
+    { label: 'Batches', value: stats.batches.total, changePercent: stats.batches.changePercent },
+    { label: 'Subjects', value: stats.subjects.total, changePercent: stats.subjects.changePercent },
+    { label: 'Sessions', value: stats.sessions.total, changePercent: stats.sessions.changePercent },
+  ];
+
+  const order: Record<AcademicTab, number[]> = {
+    programs: [0, 1, 2, 3],
+    batches: [1, 0, 2, 3],
+    subjects: [2, 0, 1, 3],
+    sessions: [3, 0, 1, 2],
+  };
+
+  return order[tab].map((i) => all[i]);
+}
+
 export default function AcademicPage() {
+  const router = useRouter();
   const { session, user } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'programs' | 'batches' | 'subjects' | 'sessions' | 'assignments'>('programs');
+  const canManage = can(PERMISSIONS.ACADEMIC_MANAGE);
+  const [tab, setTab] = useState<AcademicTab>('programs');
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
-  const [programName, setProgramName] = useState('');
-  const [programCode, setProgramCode] = useState('');
-  const [subjectName, setSubjectName] = useState('');
-  const [subjectCode, setSubjectCode] = useState('');
-  const [batchName, setBatchName] = useState('');
-  const [batchProgramId, setBatchProgramId] = useState('');
-  const [sessionName, setSessionName] = useState('');
-  const [sessionStart, setSessionStart] = useState('');
-  const [sessionEnd, setSessionEnd] = useState('');
-  const [assignBatchId, setAssignBatchId] = useState('');
-  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
 
-  const [editProgramId, setEditProgramId] = useState<string | null>(null);
-  const [editProgramName, setEditProgramName] = useState('');
-  const [editProgramCode, setEditProgramCode] = useState('');
-  const [editBatchId, setEditBatchId] = useState<string | null>(null);
-  const [editBatchName, setEditBatchName] = useState('');
-  const [editSubjectId, setEditSubjectId] = useState<string | null>(null);
-  const [editSubjectName, setEditSubjectName] = useState('');
-  const [editSubjectCode, setEditSubjectCode] = useState('');
+  const [createBatchOpen, setCreateBatchOpen] = useState(false);
+  const [createSubjectOpen, setCreateSubjectOpen] = useState(false);
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
+  const [editBatch, setEditBatch] = useState<{ id: string; name: string } | null>(null);
+  const [editSubject, setEditSubject] = useState<{
+    id: string;
+    name: string;
+    code: string | null;
+  } | null>(null);
   const [editSessionId, setEditSessionId] = useState<string | null>(null);
   const [editSessionName, setEditSessionName] = useState('');
   const [editSessionStart, setEditSessionStart] = useState('');
@@ -79,57 +116,37 @@ export default function AcademicPage() {
   const [editSessionCurrent, setEditSessionCurrent] = useState(false);
 
   const { data: branches } = useQuery({
-    queryKey: ['branches'],
+    queryKey: queryKeys.branches,
     queryFn: () => apiClient<{ data: Branch[] }>('/branches', { token }),
     enabled: !!token,
   });
 
   const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
 
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.academicStats(tab),
+    queryFn: () => apiClient<AcademicStatsResponse>('/academic/stats', { token }),
+    enabled: !!token,
+  });
+
   const { data: programs, isLoading: programsLoading } = useQuery({
-    queryKey: ['programs', effectiveBranchId],
+    queryKey: queryKeys.programs(effectiveBranchId),
     queryFn: () =>
-      apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
-    enabled: !!token && !!effectiveBranchId && (tab === 'programs' || tab === 'batches' || tab === 'assignments'),
+      apiClient<{ data: ProgramListItem[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+    enabled: !!token && !!effectiveBranchId && (tab === 'programs' || tab === 'batches'),
   });
 
   const { data: subjects, isLoading: subjectsLoading } = useQuery({
-    queryKey: ['subjects'],
+    queryKey: queryKeys.subjects,
     queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
-    enabled: !!token && (tab === 'subjects' || tab === 'assignments'),
+    enabled: !!token && tab === 'subjects',
   });
 
   const { data: batches, isLoading: batchesLoading } = useQuery({
     queryKey: ['batches', effectiveBranchId],
     queryFn: () =>
       apiClient<{ data: Batch[] }>(`/batches?branchId=${effectiveBranchId}`, { token }),
-    enabled: !!token && !!effectiveBranchId && (tab === 'batches' || tab === 'assignments'),
-  });
-
-  const { data: batchSubjects } = useQuery({
-    queryKey: ['batch-subjects', assignBatchId],
-    queryFn: () =>
-      apiClient<{ subjects: Subject[] }>(`/batches/${assignBatchId}/subjects`, { token }),
-    enabled: !!token && !!assignBatchId && tab === 'assignments',
-  });
-
-  useEffect(() => {
-    if (!batchSubjects) return;
-    setSelectedSubjectIds(batchSubjects.subjects.map((s) => s.id));
-  }, [batchSubjects]);
-
-  const saveBatchSubjects = useMutation({
-    mutationFn: () =>
-      apiClient(`/batches/${assignBatchId}/subjects`, {
-        method: 'PUT',
-        token,
-        body: JSON.stringify({ subjectIds: selectedSubjectIds }),
-      }),
-    onSuccess: () => {
-      toast.success('Batch subjects saved');
-      queryClient.invalidateQueries({ queryKey: ['batch-subjects', assignBatchId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
+    enabled: !!token && !!effectiveBranchId && tab === 'batches',
   });
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery({
@@ -138,530 +155,377 @@ export default function AcademicPage() {
     enabled: !!token && tab === 'sessions',
   });
 
-  const createProgram = useMutation({
-    mutationFn: (body: { branchId: string; name: string; code?: string }) =>
-      apiClient('/programs', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Program created');
-      queryClient.invalidateQueries({ queryKey: ['programs'] });
-      setProgramName('');
-      setProgramCode('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const branchOptions = useMemo(
+    () => (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+    [branches],
+  );
 
-  const createBatch = useMutation({
-    mutationFn: (body: { branchId: string; programId: string; name: string }) =>
-      apiClient('/batches', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Batch created');
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      setBatchName('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const programOptions = useMemo(
+    () => (programs?.data ?? []).map((p) => ({ value: p.id, label: p.name })),
+    [programs],
+  );
 
-  const createSession = useMutation({
-    mutationFn: (body: { name: string; startDate: string; endDate: string; isCurrent?: boolean }) =>
-      apiClient('/academic-sessions', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Session created');
-      queryClient.invalidateQueries({ queryKey: ['academic-sessions'] });
-      setSessionName('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const createSubject = useMutation({
-    mutationFn: (body: { name: string; code?: string }) =>
-      apiClient('/subjects', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Subject created');
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-      setSubjectName('');
-      setSubjectCode('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateProgram = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiClient(`/programs/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Program updated');
-      queryClient.invalidateQueries({ queryKey: ['programs'] });
-      setEditProgramId(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateBatch = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiClient(`/batches/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Batch updated');
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      setEditBatchId(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateSubject = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiClient(`/subjects/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Subject updated');
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-      setEditSubjectId(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const invalidateAcademic = () => {
+    queryClient.invalidateQueries({ queryKey: ['programs'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.programs() });
+    queryClient.invalidateQueries({ queryKey: ['batches'] });
+    queryClient.invalidateQueries({ queryKey: ['subjects'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+    queryClient.invalidateQueries({ queryKey: ['academic-sessions'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.academicStats() });
+  };
 
   const updateSession = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
       apiClient(`/academic-sessions/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
     onSuccess: () => {
       toast.success('Session updated');
-      queryClient.invalidateQueries({ queryKey: ['academic-sessions'] });
+      invalidateAcademic();
       setEditSessionId(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  return (
-    <div className="space-y-6">
-      <PageHeader title="Academic" description="Programs, batches, and subjects" />
+  const createAction = (() => {
+    if (tab === 'programs') {
+      return {
+        label: 'Add program',
+        onClick: () => router.push('/dashboard/academic/programs/new'),
+      };
+    }
+    if (tab === 'batches') return { label: 'Add batch', onClick: () => setCreateBatchOpen(true) };
+    if (tab === 'subjects') return { label: 'Add subject', onClick: () => setCreateSubjectOpen(true) };
+    if (tab === 'sessions') return { label: 'Add session', onClick: () => setCreateSessionOpen(true) };
+    return null;
+  })();
 
-      <PageTabs
+  return (
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={BookOpen}
+        title="Academic"
+        description="Programs, batches, and subjects"
+        actions={
+          canManage && createAction ? (
+            <button type="button" onClick={createAction.onClick} className={pageHeaderActionClassName}>
+              <PageHeaderActionIcon />
+              {createAction.label}
+            </button>
+          ) : undefined
+        }
+      />
+
+      <Tabs
+        aria-label="Academic sections"
         tabs={[
           { id: 'programs', label: 'Programs' },
           { id: 'batches', label: 'Batches' },
           { id: 'subjects', label: 'Subjects' },
           { id: 'sessions', label: 'Sessions' },
-          { id: 'assignments', label: 'Batch subjects' },
         ]}
-        activeId={tab}
-        onChange={(id) => setTab(id as typeof tab)}
+        value={tab}
+        onValueChange={(id) => setTab(id as AcademicTab)}
       />
 
+      {!user?.branchId && tab !== 'subjects' && tab !== 'sessions' && (
+        <SelectDropdown
+          aria-label="Branch"
+          placeholder="Select branch"
+          value={branchId}
+          onValueChange={setBranchId}
+          options={branchOptions}
+        />
+      )}
+
+      <MainStatsSection isLoading={statsLoading} stats={tabStats(tab, stats)} />
+
       {tab === 'programs' && (
-        <>
-          {!user?.branchId && (
-            <select
-              className={filterSelectClass}
-              value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
-            >
-              {branches?.data.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Add program</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="flex flex-wrap gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createProgram.mutate({
-                    branchId: effectiveBranchId,
-                    name: programName,
-                    ...(programCode ? { code: programCode } : {}),
-                  });
-                }}
-              >
-                <Input placeholder="Program name" value={programName} onChange={(e) => setProgramName(e.target.value)} required />
-                <Input placeholder="Code" value={programCode} onChange={(e) => setProgramCode(e.target.value)} />
-                <Button type="submit" disabled={createProgram.isPending || !effectiveBranchId}>
-                  Add
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Programs ({programs?.data.length ?? 0})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {programsLoading && <ListLoadingSkeleton />}
-              <div className="divide-y divide-border">
-                {programs?.data.map((p) => (
-                  <div key={p.id} className="py-3">
-                    {editProgramId === p.id ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Input value={editProgramName} onChange={(e) => setEditProgramName(e.target.value)} placeholder="Name" />
-                        <Input value={editProgramCode} onChange={(e) => setEditProgramCode(e.target.value)} placeholder="Code" />
-                        <Button
-                          size="sm"
-                          disabled={updateProgram.isPending}
-                          onClick={() =>
-                            updateProgram.mutate({
-                              id: p.id,
-                              body: {
-                                name: editProgramName,
-                                ...(editProgramCode ? { code: editProgramCode } : {}),
+        <ContentPanel title={`Programs (${programs?.data.length ?? 0})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className={thClass}>Name</th>
+                  <th className={thClass}>Code</th>
+                  <th className={thClass}>Batches</th>
+                  <th className={cn(thClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {programsLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={4} className={tdClass}>
+                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                      </td>
+                    </tr>
+                  ))}
+                {!programsLoading &&
+                  programs?.data.map((p) => (
+                    <tr key={p.id} className="hover:bg-[var(--neutral-50)]/50">
+                      <td className={tdClass}>{p.name}</td>
+                      <td className={tdClass}>{p.code ?? '—'}</td>
+                      <td className={tdClass}>
+                        {p.batches.length
+                          ? p.batches.map((b) => b.name).join(', ')
+                          : '—'}
+                      </td>
+                      <td className={cn(tdClass, 'text-right')}>
+                        {canManage ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                onClick: () =>
+                                  router.push(`/dashboard/academic/programs/${p.id}/edit`),
                               },
-                            })
-                          }
-                        >
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditProgramId(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <ListRow
-                        actions={
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditProgramId(p.id);
-                              setEditProgramName(p.name);
-                              setEditProgramCode(p.code ?? '');
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        }
-                      >
-                        <p className="font-medium">{p.name}</p>
-                        <p className="text-sm text-muted-foreground">{p.code ?? '—'}</p>
-                      </ListRow>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </ContentPanel>
       )}
 
       {tab === 'batches' && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Add batch</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="flex flex-wrap gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createBatch.mutate({
-                    branchId: effectiveBranchId,
-                    programId: batchProgramId,
-                    name: batchName,
-                  });
-                }}
-              >
-                <select
-                  className={filterSelectClass}
-                  value={batchProgramId}
-                  onChange={(e) => setBatchProgramId(e.target.value)}
-                  required
-                >
-                  <option value="">Program</option>
-                  {programs?.data.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
+        <ContentPanel title={`Batches (${batches?.data.length ?? 0})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className={thClass}>Name</th>
+                  <th className={thClass}>Program</th>
+                  <th className={cn(thClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {batchesLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={3} className={tdClass}>
+                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                      </td>
+                    </tr>
                   ))}
-                </select>
-                <Input placeholder="Batch name" value={batchName} onChange={(e) => setBatchName(e.target.value)} required />
-                <Button type="submit" disabled={createBatch.isPending}>
-                  Add
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Batches ({batches?.data.length ?? 0})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {batchesLoading && <ListLoadingSkeleton />}
-              <div className="divide-y divide-border">
-                {batches?.data.map((b) => (
-                  <div key={b.id} className="py-3">
-                    {editBatchId === b.id ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Input value={editBatchName} onChange={(e) => setEditBatchName(e.target.value)} placeholder="Name" />
-                        <Button
-                          size="sm"
-                          disabled={updateBatch.isPending}
-                          onClick={() => updateBatch.mutate({ id: b.id, body: { name: editBatchName } })}
-                        >
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditBatchId(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <ListRow
-                        actions={
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditBatchId(b.id);
-                              setEditBatchName(b.name);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        }
-                      >
-                        <p className="font-medium">{b.name}</p>
-                        <p className="text-sm text-muted-foreground">{b.program?.name ?? '—'}</p>
-                      </ListRow>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+                {!batchesLoading &&
+                  batches?.data.map((b) => (
+                    <tr key={b.id} className="hover:bg-[var(--neutral-50)]/50">
+                      <td className={tdClass}>{b.name}</td>
+                      <td className={tdClass}>{b.program?.name ?? '—'}</td>
+                      <td className={cn(tdClass, 'text-right')}>
+                        {canManage ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                onClick: () => setEditBatch({ id: b.id, name: b.name }),
+                              },
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </ContentPanel>
       )}
 
       {tab === 'sessions' && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Add academic session</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="flex flex-wrap gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createSession.mutate({
-                    name: sessionName,
-                    startDate: new Date(sessionStart).toISOString(),
-                    endDate: new Date(sessionEnd).toISOString(),
-                    isCurrent: true,
-                  });
-                }}
-              >
-                <Input placeholder="Name (e.g. 2026)" value={sessionName} onChange={(e) => setSessionName(e.target.value)} required />
-                <Input type="date" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} required />
-                <Input type="date" value={sessionEnd} onChange={(e) => setSessionEnd(e.target.value)} required />
-                <Button type="submit" disabled={createSession.isPending}>
-                  Add
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Sessions ({sessions?.data.length ?? 0})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {sessionsLoading && <ListLoadingSkeleton />}
-              <div className="divide-y divide-border">
-                {sessions?.data.map((s) => (
-                  <div key={s.id} className="py-3">
-                    {editSessionId === s.id ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Input value={editSessionName} onChange={(e) => setEditSessionName(e.target.value)} placeholder="Name" />
-                        <Input type="date" value={editSessionStart} onChange={(e) => setEditSessionStart(e.target.value)} />
-                        <Input type="date" value={editSessionEnd} onChange={(e) => setEditSessionEnd(e.target.value)} />
-                        <label className="flex items-center gap-2 text-sm">
-                          <input type="checkbox" checked={editSessionCurrent} onChange={(e) => setEditSessionCurrent(e.target.checked)} />
-                          Current
-                        </label>
-                        <Button
-                          size="sm"
-                          disabled={updateSession.isPending}
-                          onClick={() =>
-                            updateSession.mutate({
-                              id: s.id,
-                              body: {
-                                name: editSessionName,
-                                startDate: new Date(editSessionStart).toISOString(),
-                                endDate: new Date(editSessionEnd).toISOString(),
-                                isCurrent: editSessionCurrent,
-                              },
-                            })
-                          }
-                        >
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditSessionId(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <ListRow
-                        actions={
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditSessionId(s.id);
-                              setEditSessionName(s.name);
-                              setEditSessionStart(s.startDate.slice(0, 10));
-                              setEditSessionEnd(s.endDate.slice(0, 10));
-                              setEditSessionCurrent(s.isCurrent);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        }
-                      >
-                        <p className="font-medium">
-                          {s.name} {s.isCurrent ? '(current)' : ''}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {s.startDate.slice(0, 10)} – {s.endDate.slice(0, 10)}
-                        </p>
-                      </ListRow>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+        <ContentPanel title={`Sessions (${sessions?.data.length ?? 0})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className={thClass}>Name</th>
+                  <th className={thClass}>Period</th>
+                  <th className={thClass}>Status</th>
+                  <th className={cn(thClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {sessionsLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={4} className={tdClass}>
+                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                      </td>
+                    </tr>
+                  ))}
+                {!sessionsLoading &&
+                  sessions?.data.map((s) => (
+                    <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+                      {editSessionId === s.id ? (
+                        <>
+                          <td className={tdClass}>
+                            <Input
+                              value={editSessionName}
+                              onChange={(e) => setEditSessionName(e.target.value)}
+                            />
+                          </td>
+                          <td className={tdClass}>
+                            <div className="flex gap-2">
+                              <Input
+                                type="date"
+                                value={editSessionStart}
+                                onChange={(e) => setEditSessionStart(e.target.value)}
+                              />
+                              <Input
+                                type="date"
+                                value={editSessionEnd}
+                                onChange={(e) => setEditSessionEnd(e.target.value)}
+                              />
+                            </div>
+                          </td>
+                          <td className={tdClass}>
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={editSessionCurrent}
+                                onChange={(e) => setEditSessionCurrent(e.target.checked)}
+                              />
+                              Current
+                            </label>
+                          </td>
+                          <td className={cn(tdClass, 'text-right')}>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                disabled={updateSession.isPending}
+                                onClick={() =>
+                                  updateSession.mutate({
+                                    id: s.id,
+                                    body: {
+                                      name: editSessionName,
+                                      startDate: new Date(editSessionStart).toISOString(),
+                                      endDate: new Date(editSessionEnd).toISOString(),
+                                      isCurrent: editSessionCurrent,
+                                    },
+                                  })
+                                }
+                              >
+                                Save
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditSessionId(null)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className={tdClass}>{s.name}</td>
+                          <td className={tdClass}>
+                            {s.startDate.slice(0, 10)} – {s.endDate.slice(0, 10)}
+                          </td>
+                          <td className={tdClass}>
+                            {s.isCurrent ? <StatusBadge label="Current" code="active" /> : '—'}
+                          </td>
+                          <td className={cn(tdClass, 'text-right')}>
+                            {canManage ? (
+                              <RowActionsMenu
+                                items={[
+                                  {
+                                    label: 'Edit',
+                                    onClick: () => {
+                                      setEditSessionId(s.id);
+                                      setEditSessionName(s.name);
+                                      setEditSessionStart(s.startDate.slice(0, 10));
+                                      setEditSessionEnd(s.endDate.slice(0, 10));
+                                      setEditSessionCurrent(s.isCurrent);
+                                    },
+                                  },
+                                ]}
+                              />
+                            ) : null}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </ContentPanel>
       )}
 
       {tab === 'subjects' && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Add subject</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="flex flex-wrap gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createSubject.mutate({
-                    name: subjectName,
-                    ...(subjectCode ? { code: subjectCode } : {}),
-                  });
-                }}
-              >
-                <Input placeholder="Subject name" value={subjectName} onChange={(e) => setSubjectName(e.target.value)} required />
-                <Input placeholder="Code" value={subjectCode} onChange={(e) => setSubjectCode(e.target.value)} />
-                <Button type="submit" disabled={createSubject.isPending}>
-                  Add
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Subjects ({subjects?.data.length ?? 0})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {subjectsLoading && <ListLoadingSkeleton />}
-              <div className="divide-y divide-border">
-                {subjects?.data.map((s) => (
-                  <div key={s.id} className="py-3">
-                    {editSubjectId === s.id ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Input value={editSubjectName} onChange={(e) => setEditSubjectName(e.target.value)} placeholder="Name" />
-                        <Input value={editSubjectCode} onChange={(e) => setEditSubjectCode(e.target.value)} placeholder="Code" />
-                        <Button
-                          size="sm"
-                          disabled={updateSubject.isPending}
-                          onClick={() =>
-                            updateSubject.mutate({
-                              id: s.id,
-                              body: {
-                                name: editSubjectName,
-                                ...(editSubjectCode ? { code: editSubjectCode } : {}),
+        <ContentPanel title={`Subjects (${subjects?.data.length ?? 0})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className={thClass}>Name</th>
+                  <th className={thClass}>Code</th>
+                  <th className={cn(thClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {subjectsLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={3} className={tdClass}>
+                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                      </td>
+                    </tr>
+                  ))}
+                {!subjectsLoading &&
+                  subjects?.data.map((s) => (
+                    <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+                      <td className={tdClass}>{s.name}</td>
+                      <td className={tdClass}>{s.code ?? '—'}</td>
+                      <td className={cn(tdClass, 'text-right')}>
+                        {canManage ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                onClick: () =>
+                                  setEditSubject({
+                                    id: s.id,
+                                    name: s.name,
+                                    code: s.code,
+                                  }),
                               },
-                            })
-                          }
-                        >
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditSubjectId(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <ListRow
-                        actions={
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditSubjectId(s.id);
-                              setEditSubjectName(s.name);
-                              setEditSubjectCode(s.code ?? '');
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        }
-                      >
-                        <p className="font-medium">{s.name}</p>
-                        <p className="text-sm text-muted-foreground">{s.code ?? '—'}</p>
-                      </ListRow>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </ContentPanel>
       )}
 
-      {tab === 'assignments' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Assign subjects to batch</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <select
-              className={filterSelectClass}
-              value={assignBatchId}
-              onChange={(e) => setAssignBatchId(e.target.value)}
-            >
-              <option value="">Select batch</option>
-              {batches?.data.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            {assignBatchId && (
-              <div className="space-y-2">
-                {subjects?.data.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={selectedSubjectIds.includes(s.id)}
-                      onChange={(e) => {
-                        setSelectedSubjectIds((prev) =>
-                          e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id),
-                        );
-                      }}
-                    />
-                    {s.name}
-                  </label>
-                ))}
-                <Button onClick={() => saveBatchSubjects.mutate()} disabled={saveBatchSubjects.isPending}>
-                  Save assignments
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <CreateBatchDialog
+        open={createBatchOpen}
+        onOpenChange={setCreateBatchOpen}
+        branchId={effectiveBranchId}
+        programOptions={programOptions}
+      />
+      <EditBatchDialog
+        open={!!editBatch}
+        onOpenChange={(open) => {
+          if (!open) setEditBatch(null);
+        }}
+        batch={editBatch}
+      />
+      <CreateSubjectDialog open={createSubjectOpen} onOpenChange={setCreateSubjectOpen} />
+      <EditSubjectDialog
+        open={!!editSubject}
+        onOpenChange={(open) => {
+          if (!open) setEditSubject(null);
+        }}
+        subject={editSubject}
+      />
+      <CreateSessionDialog open={createSessionOpen} onOpenChange={setCreateSessionOpen} />
     </div>
   );
 }

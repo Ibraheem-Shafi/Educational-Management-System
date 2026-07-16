@@ -55,7 +55,7 @@ function loadConfig(): SeedConfig {
   const configArg = process.argv.find((a) => a.startsWith('--config='));
   const configPath = configArg
     ? configArg.replace('--config=', '')
-    : process.env.SEED_CONFIG_PATH || '../../../docs/templates/rekhta.institution.json';
+    : process.env.SEED_CONFIG_PATH || '../../../docs/templates/nexium.institution.json';
 
   const resolved = path.isAbsolute(configPath)
     ? configPath
@@ -90,9 +90,19 @@ const PERMISSION_LABELS: Record<string, { name: string; module: string }> = {
   [PERMISSIONS.ANALYTICS_READ]: { name: 'View Analytics', module: 'analytics' },
   [PERMISSIONS.DOCUMENTS_READ]: { name: 'View Documents', module: 'documents' },
   [PERMISSIONS.DOCUMENTS_UPLOAD]: { name: 'Upload Documents', module: 'documents' },
+  [PERMISSIONS.LEARNING_READ]: { name: 'View Learning Content', module: 'learning' },
+  [PERMISSIONS.LEARNING_PUBLISH]: { name: 'Publish Learning Content', module: 'learning' },
   [PERMISSIONS.AI_ATTENDANCE_USE]: { name: 'Use AI Attendance OCR', module: 'ai-attendance' },
   [PERMISSIONS.COMMUNICATIONS_SEND]: { name: 'Send SMS/WhatsApp', module: 'communications' },
   [PERMISSIONS.AI_INSIGHTS_READ]: { name: 'View AI Insights', module: 'ai-insights' },
+  [PERMISSIONS.DASHBOARD_ACTIVITIES_READ_ALL]: {
+    name: 'View All-Branch Recent Activities',
+    module: 'dashboard',
+  },
+  [PERMISSIONS.DASHBOARD_ACTIVITIES_READ_BRANCH]: {
+    name: 'View Branch Recent Activities',
+    module: 'dashboard',
+  },
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -141,7 +151,12 @@ async function main() {
   });
 
   const permissionMap = new Map<string, string>();
-  for (const [code, meta] of Object.entries(PERMISSION_LABELS)) {
+  // Seed every code in PERMISSIONS (labels are optional metadata; missing labels must not skip codes).
+  for (const code of Object.values(PERMISSIONS)) {
+    const meta = PERMISSION_LABELS[code] ?? {
+      name: code.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      module: code.split('.')[0] ?? 'general',
+    };
     const perm = await prisma.permission.upsert({
       where: { code },
       create: { code, name: meta.name, module: meta.module },
@@ -166,9 +181,11 @@ async function main() {
     roleMap.set(code, role.id);
 
     const permCodes = DEFAULT_ROLE_PERMISSIONS[code] ?? [];
+    const allowedPermissionIds = new Set<string>();
     for (const permCode of permCodes) {
       const permissionId = permissionMap.get(permCode);
       if (!permissionId) continue;
+      allowedPermissionIds.add(permissionId);
       await prisma.rolePermission.upsert({
         where: {
           roleId_permissionId: { roleId: role.id, permissionId },
@@ -177,6 +194,16 @@ async function main() {
         update: {},
       });
     }
+
+    // Revoke permissions removed from DEFAULT_ROLE_PERMISSIONS for this role.
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+        ...(allowedPermissionIds.size > 0
+          ? { permissionId: { notIn: [...allowedPermissionIds] } }
+          : {}),
+      },
+    });
   }
 
   const branchMap = new Map<string, string>();

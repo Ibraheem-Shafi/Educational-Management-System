@@ -1,50 +1,79 @@
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { TodayAttendanceCard } from '@/components/dashboard/today-attendance-card';
+import { MonthlyRevenueCard } from '@/components/dashboard/monthly-revenue-card';
+import { BranchPerformanceCard } from '@/components/dashboard/branch-performance-card';
+import { RecentActivitiesCard } from '@/components/dashboard/recent-activities-card';
+import { QuickActionsCard } from '@/components/dashboard/quick-actions-card';
 
-export function DashboardPageSkeleton() {
+export function DashboardPageSkeleton({
+  section = 'full',
+  hideHeader = false,
+}: {
+  section?: 'overview' | 'charts' | 'branches' | 'bottom' | 'full';
+  hideHeader?: boolean;
+}) {
+  const showHeader = !hideHeader && (!section || section === 'full');
+  const showOverview = !section || section === 'full' || section === 'overview';
+  const showCharts = !section || section === 'full' || section === 'charts';
+  const showBranches = !section || section === 'full' || section === 'branches';
+  const showBottom = !section || section === 'full' || section === 'bottom';
+
+  if (section === 'overview') {
+    return <MainStatsSection isLoading stats={[]} />;
+  }
+
+  if (section === 'charts') {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TodayAttendanceCard isLoading />
+        <MonthlyRevenueCard isLoading />
+      </div>
+    );
+  }
+
+  if (section === 'branches') {
+    return <BranchPerformanceCard isLoading />;
+  }
+
+  if (section === 'bottom') {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RecentActivitiesCard isLoading />
+        <QuickActionsCard isLoading />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-64" />
-      </div>
+      {showHeader && (
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-28" />
+            <Skeleton className="h-5 w-56" />
+          </div>
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-4 w-24" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-16" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {showOverview && <MainStatsSection isLoading stats={[]} />}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-4 w-32" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-12" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {showCharts && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TodayAttendanceCard isLoading />
+          <MonthlyRevenueCard isLoading />
+        </div>
+      )}
 
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-36" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </CardContent>
-      </Card>
+      {showBranches && <BranchPerformanceCard isLoading />}
+
+      {showBottom && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <RecentActivitiesCard isLoading />
+          <QuickActionsCard isLoading />
+        </div>
+      )}
     </div>
   );
 }

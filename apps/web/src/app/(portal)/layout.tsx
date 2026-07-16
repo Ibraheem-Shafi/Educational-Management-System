@@ -1,4 +1,4 @@
-import { PortalShell } from '@/components/layout/portal-shell';
+import { PortalDashboardShell } from '@/components/layout/portal-shell';
 import { prefetchAuthenticatedQueries } from '@/lib/prefetch-authenticated';
 import { AppProviders } from '@/providers/app-providers';
 import { QueryHydration } from '@/providers/query-hydration';
@@ -11,7 +11,7 @@ export default async function PortalLayout({ children }: { children: React.React
   return (
     <QueryHydration state={dehydratedState}>
       <AppProviders initialUser={initialUser}>
-        <PortalShell>{children}</PortalShell>
+        <PortalDashboardShell>{children}</PortalDashboardShell>
       </AppProviders>
     </QueryHydration>
   );

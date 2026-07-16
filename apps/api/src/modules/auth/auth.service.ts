@@ -14,8 +14,11 @@ import { AssessmentsService } from '../assessments/assessments.service';
 import { FeesService } from '../fees/fees.service';
 import { NoticesService } from '../notices/notices.service';
 import { SettingsService } from '../settings/settings.service';
-import type { AuthUser } from '@eims/types';
-import type { AcceptInvitationInput, UpdateProfileInput } from '@eims/shared';
+import { LearningService } from '../learning/learning.service';
+import { PortalSectionsService } from './portal-sections.service';
+import { countWithTrend } from '../../common/utils/stats.util';
+import type { AuthUser, PortalParentStatsResponse, PortalStudentStatsResponse } from '@eims/types';
+import type { AcceptInvitationInput, CreateLeaveRequestInput, PortalSectionQuery, UpdateProfileInput } from '@eims/shared';
 
 @Injectable()
 export class AuthService {
@@ -71,6 +74,8 @@ export class AuthService {
       data: {
         ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.gender !== undefined ? { gender: input.gender } : {}),
+        ...(input.cnic !== undefined ? { cnic: input.cnic } : {}),
       },
     });
 
@@ -79,7 +84,12 @@ export class AuthService {
       action: 'user.profile_updated',
       entityType: 'User',
       entityId: user.id,
-      newValue: { fullName: updated.fullName, phone: updated.phone },
+      newValue: {
+        fullName: updated.fullName,
+        phone: updated.phone,
+        gender: updated.gender,
+        cnic: updated.cnic,
+      },
     });
 
     return {
@@ -87,6 +97,8 @@ export class AuthService {
       email: updated.email,
       fullName: updated.fullName,
       phone: updated.phone,
+      gender: updated.gender,
+      cnic: updated.cnic,
     };
   }
 
@@ -161,6 +173,8 @@ export class AuthService {
         email: invitation.email,
         fullName: input.fullName,
         branchId: invitation.branchId,
+        ...(input.gender ? { gender: input.gender } : {}),
+        ...(input.cnic ? { cnic: input.cnic } : {}),
       },
     });
 
@@ -227,6 +241,8 @@ export class PortalService {
     private readonly feesService: FeesService,
     private readonly noticesService: NoticesService,
     private readonly settingsService: SettingsService,
+    private readonly learningService: LearningService,
+    private readonly portalSections: PortalSectionsService,
   ) {}
 
   private async assertPortalEnabled(flag: 'parentPortal' | 'studentPortal') {
@@ -234,6 +250,55 @@ export class PortalService {
     if (settings.featureFlags?.[flag] === false) {
       throw new ForbiddenException('This portal is disabled for your institution');
     }
+  }
+
+  async getStudentStats(user: AuthUser): Promise<PortalStudentStatsResponse> {
+    await this.assertPortalEnabled('studentPortal');
+    const portal = await this.getStudentPortal(user);
+    if (!portal.student) {
+      return {
+        attendanceRate: countWithTrend(0, 0),
+        outstandingFees: countWithTrend(0, 0),
+        averageGrade: countWithTrend(0, 0),
+        upcomingClasses: countWithTrend(0, 0),
+      };
+    }
+
+    const present = portal.attendance?.filter((r) => r.status?.label?.toLowerCase().includes('present')).length ?? 0;
+    const total = portal.attendance?.length ?? 0;
+    const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+    const grades = portal.assessments?.map((a) => a.percentage).filter((p): p is number => p !== null) ?? [];
+    const avgGrade = grades.length > 0 ? Math.round(grades.reduce((s, g) => s + g, 0) / grades.length) : 0;
+
+    return {
+      attendanceRate: countWithTrend(rate, rate),
+      outstandingFees: countWithTrend(portal.fees?.outstanding ?? 0, 0),
+      averageGrade: countWithTrend(avgGrade, avgGrade),
+      upcomingClasses: countWithTrend(portal.timetable?.length ?? 0, 0),
+    };
+  }
+
+  async getParentStats(user: AuthUser): Promise<PortalParentStatsResponse> {
+    await this.assertPortalEnabled('parentPortal');
+    const portal = await this.getParentPortal(user);
+    const children = portal.children ?? [];
+    const totalOutstanding = children.reduce((s, c) => s + (c.fees?.outstanding ?? 0), 0);
+    const attendanceRates = children.map((c) => {
+      const present = c.attendance?.filter((r) => r.status?.label?.toLowerCase().includes('present')).length ?? 0;
+      const total = c.attendance?.length ?? 0;
+      return total > 0 ? Math.round((present / total) * 100) : 0;
+    });
+    const aggregateAttendance =
+      attendanceRates.length > 0
+        ? Math.round(attendanceRates.reduce((s, r) => s + r, 0) / attendanceRates.length)
+        : 0;
+
+    return {
+      childrenCount: countWithTrend(children.length, children.length),
+      aggregateAttendance: countWithTrend(aggregateAttendance, aggregateAttendance),
+      totalOutstanding: countWithTrend(totalOutstanding, 0),
+      recentNotices: countWithTrend(portal.notices?.length ?? 0, 0),
+    };
   }
 
   async getParentPortal(user: AuthUser) {
@@ -394,5 +459,278 @@ export class PortalService {
         subjectName: subjectMap.get(slot.subjectId) ?? null,
       })),
     };
+  }
+
+  private async resolveStudentContext(user: AuthUser) {
+    await this.assertPortalEnabled('studentPortal');
+    if (!user.roles.includes('student')) {
+      throw new ForbiddenException('Student portal access only');
+    }
+    const student = await this.prisma.student.findFirst({
+      where: { email: user.email, deletedAt: null },
+      select: { id: true, branchId: true, programId: true, batchId: true },
+    });
+    if (!student) throw new ForbiddenException('No student profile linked');
+    return student;
+  }
+
+  private async resolveParentChild(user: AuthUser, studentId: string) {
+    await this.assertPortalEnabled('parentPortal');
+    if (!user.roles.includes('parent')) {
+      throw new ForbiddenException('Parent portal access only');
+    }
+    const parent = await this.prisma.parent.findFirst({
+      where: { email: user.email, deletedAt: null },
+      include: {
+        studentParents: {
+          where: { studentId },
+          include: {
+            student: {
+              select: { id: true, branchId: true, programId: true, batchId: true, fullName: true },
+            },
+          },
+        },
+      },
+    });
+    const link = parent?.studentParents[0];
+    if (!link) throw new ForbiddenException('Student not linked to your parent profile');
+    return link.student;
+  }
+
+  async getStudentLearning(
+    user: AuthUser,
+    query: { type?: string; search?: string; page?: number; limit?: number },
+  ) {
+    const student = await this.resolveStudentContext(user);
+    return this.learningService.listForStudentContext({
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'students',
+      type: query.type,
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+    });
+  }
+
+  async getStudentLearningDetail(user: AuthUser, id: string) {
+    const student = await this.resolveStudentContext(user);
+    return this.learningService.findOnePublishedForStudent(id, {
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'students',
+    });
+  }
+
+  async getStudentLearningDueSoon(user: AuthUser) {
+    const student = await this.resolveStudentContext(user);
+    return {
+      data: await this.learningService.getDueSoonForStudent({
+        branchId: student.branchId,
+        programId: student.programId,
+        batchId: student.batchId,
+        audience: 'students',
+        limit: 3,
+      }),
+    };
+  }
+
+  async getParentLearning(
+    user: AuthUser,
+    studentId: string,
+    query: { type?: string; search?: string; page?: number; limit?: number },
+  ) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.learningService.listForStudentContext({
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'parents',
+      type: query.type,
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+    });
+  }
+
+  async getParentLearningDetail(user: AuthUser, studentId: string, id: string) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.learningService.findOnePublishedForStudent(id, {
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'parents',
+    });
+  }
+
+  async getParentLearningDueSoon(user: AuthUser, studentId: string) {
+    const student = await this.resolveParentChild(user, studentId);
+    return {
+      data: await this.learningService.getDueSoonForStudent({
+        branchId: student.branchId,
+        programId: student.programId,
+        batchId: student.batchId,
+        audience: 'parents',
+        limit: 3,
+      }),
+    };
+  }
+
+  async getLearningAttachmentSignedUrl(
+    user: AuthUser,
+    resourceId: string,
+    attachmentId: string,
+    studentId?: string,
+  ) {
+    let branchId: string;
+    if (user.roles.includes('student')) {
+      const student = await this.resolveStudentContext(user);
+      branchId = student.branchId;
+      await this.learningService.findOnePublishedForStudent(resourceId, {
+        branchId: student.branchId,
+        programId: student.programId,
+        batchId: student.batchId,
+        audience: 'students',
+      });
+    } else if (user.roles.includes('parent')) {
+      if (!studentId) throw new ForbiddenException('studentId is required for parent access');
+      const student = await this.resolveParentChild(user, studentId);
+      branchId = student.branchId;
+      await this.learningService.findOnePublishedForStudent(resourceId, {
+        branchId: student.branchId,
+        programId: student.programId,
+        batchId: student.batchId,
+        audience: 'parents',
+      });
+    } else {
+      throw new ForbiddenException('Portal access only');
+    }
+    return this.learningService.getAttachmentSignedUrl(resourceId, attachmentId, branchId);
+  }
+
+  async getStudentAttendance(user: AuthUser, query: PortalSectionQuery) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentAttendance(student, query);
+  }
+
+  async getParentAttendance(user: AuthUser, studentId: string, query: PortalSectionQuery) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getStudentAttendance(student, query);
+  }
+
+  async getStudentAssessments(user: AuthUser, query: PortalSectionQuery) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentAssessments(student, query);
+  }
+
+  async getParentAssessments(user: AuthUser, studentId: string, query: PortalSectionQuery) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getStudentAssessments(student, query);
+  }
+
+  async getStudentFees(user: AuthUser, query: PortalSectionQuery) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentFees(student, query);
+  }
+
+  async getParentFees(user: AuthUser, studentId: string, query: PortalSectionQuery) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getStudentFees(student, query);
+  }
+
+  async getStudentTimetable(user: AuthUser) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentTimetable(student);
+  }
+
+  async getParentTimetable(user: AuthUser, studentId: string) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getStudentTimetable(student);
+  }
+
+  async getStudentNotices(user: AuthUser, query: PortalSectionQuery) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentNotices(user, student.branchId, query);
+  }
+
+  async getParentNotices(user: AuthUser, query: PortalSectionQuery) {
+    await this.assertPortalEnabled('parentPortal');
+    if (!user.roles.includes('parent')) throw new ForbiddenException('Parent portal access only');
+    return this.portalSections.getParentNotices(user, user.branchId, query);
+  }
+
+  async getStudentDocuments(user: AuthUser, query: PortalSectionQuery) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentDocuments(student, query);
+  }
+
+  async getParentDocuments(user: AuthUser, studentId: string, query: PortalSectionQuery) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getStudentDocuments(student, query);
+  }
+
+  async getStudentDocumentSignedUrl(user: AuthUser, documentId: string) {
+    const student = await this.resolveStudentContext(user);
+    const doc = await this.prisma.document.findFirst({
+      where: { id: documentId, studentId: student.id, deletedAt: null },
+    });
+    if (!doc) throw new ForbiddenException('Document not found');
+    return this.portalSections.getDocumentSignedUrl(documentId, student.branchId);
+  }
+
+  async getParentDocumentSignedUrl(user: AuthUser, studentId: string, documentId: string) {
+    const student = await this.resolveParentChild(user, studentId);
+    const doc = await this.prisma.document.findFirst({
+      where: { id: documentId, studentId: student.id, deletedAt: null },
+    });
+    if (!doc) throw new ForbiddenException('Document not found');
+    return this.portalSections.getDocumentSignedUrl(documentId, student.branchId);
+  }
+
+  async getStudentCalendar(user: AuthUser, month?: string) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentCalendar(student, month);
+  }
+
+  async getParentCalendar(user: AuthUser, studentId: string, month?: string) {
+    const student = await this.resolveParentChild(user, studentId);
+    return this.portalSections.getParentCalendar(student, month);
+  }
+
+  async getStudentInsights(user: AuthUser) {
+    const student = await this.resolveStudentContext(user);
+    return this.portalSections.getStudentInsights(student);
+  }
+
+  async getStudentProfile(user: AuthUser) {
+    await this.assertPortalEnabled('studentPortal');
+    return this.portalSections.getStudentProfile(user);
+  }
+
+  async getParentProfile(user: AuthUser) {
+    await this.assertPortalEnabled('parentPortal');
+    return this.portalSections.getParentProfile(user);
+  }
+
+  async listParentLeaveRequests(user: AuthUser, studentId?: string) {
+    await this.assertPortalEnabled('parentPortal');
+    if (!user.roles.includes('parent')) throw new ForbiddenException('Parent portal access only');
+    return this.portalSections.listParentLeaveRequests(user.email, studentId);
+  }
+
+  async createParentLeaveRequest(user: AuthUser, input: CreateLeaveRequestInput) {
+    await this.assertPortalEnabled('parentPortal');
+    if (!user.roles.includes('parent')) throw new ForbiddenException('Parent portal access only');
+    return this.portalSections.createParentLeaveRequest(user.email, input);
+  }
+
+  async listStaffLeaveRequests(branchId: string | null) {
+    return this.portalSections.listStaffLeaveRequests(branchId);
+  }
+
+  async reviewLeaveRequest(user: AuthUser, id: string, status: 'approved' | 'rejected') {
+    return this.portalSections.reviewLeaveRequest(id, status, user.id);
   }
 }

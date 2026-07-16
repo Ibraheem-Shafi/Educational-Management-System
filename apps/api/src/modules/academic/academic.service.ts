@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '@eims/types';
@@ -18,7 +19,22 @@ import type {
   UpdateSubjectInput,
   CreateAcademicSessionInput,
   UpdateAcademicSessionInput,
+  ProgramBatchInput,
 } from '@eims/shared';
+
+async function assertValidSubjectIds(
+  prisma: PrismaService,
+  subjectIds: string[] | undefined,
+) {
+  if (!subjectIds?.length) return;
+  const subjects = await prisma.subject.findMany({
+    where: { id: { in: subjectIds }, deletedAt: null },
+    select: { id: true },
+  });
+  if (subjects.length !== subjectIds.length) {
+    throw new BadRequestException('One or more subjects are invalid');
+  }
+}
 
 @Injectable()
 export class ProgramsService {
@@ -35,9 +51,16 @@ export class ProgramsService {
         ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
         ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       },
+      include: {
+        batches: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        },
+      },
       orderBy: { name: 'asc' },
     });
-    return { data: programs.map(this.toResponse) };
+    return { data: programs.map((p) => this.toListResponse(p)) };
   }
 
   async findOne(id: string, branchId: string | null) {
@@ -47,9 +70,21 @@ export class ProgramsService {
         deletedAt: null,
         ...(branchId ? { branchId } : {}),
       },
+      include: {
+        batches: {
+          where: { deletedAt: null },
+          orderBy: { name: 'asc' },
+          include: {
+            batchSubjects: {
+              include: { subject: { select: { id: true, name: true, code: true } } },
+              orderBy: { subject: { name: 'asc' } },
+            },
+          },
+        },
+      },
     });
     if (!program) throw new NotFoundException('Program not found');
-    return this.toResponse(program);
+    return this.toDetailResponse(program);
   }
 
   async create(input: CreateProgramInput, user: AuthUser) {
@@ -60,24 +95,50 @@ export class ProgramsService {
       if (existing) throw new ConflictException('Program code already exists for this branch');
     }
 
-    const program = await this.prisma.program.create({
-      data: {
-        branchId: input.branchId,
-        name: input.name,
-        code: input.code,
-        description: input.description,
-      },
+    for (const batch of input.batches ?? []) {
+      await assertValidSubjectIds(this.prisma, batch.subjectIds);
+    }
+
+    const programId = await this.prisma.$transaction(async (tx) => {
+      const program = await tx.program.create({
+        data: {
+          branchId: input.branchId,
+          name: input.name,
+          code: input.code,
+          description: input.description,
+        },
+      });
+
+      for (const batchInput of input.batches ?? []) {
+        const batch = await tx.batch.create({
+          data: {
+            branchId: input.branchId,
+            programId: program.id,
+            name: batchInput.name,
+          },
+        });
+        if (batchInput.subjectIds?.length) {
+          await tx.batchSubject.createMany({
+            data: batchInput.subjectIds.map((subjectId) => ({
+              batchId: batch.id,
+              subjectId,
+            })),
+          });
+        }
+      }
+
+      return program.id;
     });
 
     await this.audit.log({
       userId: user.id,
       action: 'program.created',
       entityType: 'Program',
-      entityId: program.id,
-      newValue: program,
+      entityId: programId,
+      newValue: { ...input, id: programId },
     });
 
-    return this.toResponse(program);
+    return this.findOne(programId, null);
   }
 
   async update(id: string, input: UpdateProgramInput, branchId: string | null, user: AuthUser) {
@@ -86,29 +147,83 @@ export class ProgramsService {
     });
     if (!existing) throw new NotFoundException('Program not found');
 
-    const program = await this.prisma.program.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.code !== undefined ? { code: input.code } : {}),
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      },
+    for (const batch of input.batches ?? []) {
+      await assertValidSubjectIds(this.prisma, batch.subjectIds);
+      if (batch.id) {
+        const owned = await this.prisma.batch.findFirst({
+          where: { id: batch.id, programId: id, deletedAt: null },
+        });
+        if (!owned) throw new BadRequestException('One or more batches do not belong to this program');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.program.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.code !== undefined ? { code: input.code } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        },
+      });
+
+      if (input.batches) {
+        await this.syncProgramBatches(tx, id, existing.branchId, input.batches);
+      }
     });
 
     await this.audit.log({
       userId: user.id,
       action: 'program.updated',
       entityType: 'Program',
-      entityId: program.id,
+      entityId: id,
       previousValue: existing,
-      newValue: program,
+      newValue: input,
     });
 
-    return this.toResponse(program);
+    return this.findOne(id, branchId);
   }
 
-  private toResponse(program: {
+  private async syncProgramBatches(
+    tx: Prisma.TransactionClient,
+    programId: string,
+    branchId: string,
+    batches: ProgramBatchInput[],
+  ) {
+    for (const batchInput of batches) {
+      let batchId = batchInput.id;
+      if (batchId) {
+        await tx.batch.update({
+          where: { id: batchId },
+          data: { name: batchInput.name },
+        });
+      } else {
+        const created = await tx.batch.create({
+          data: {
+            branchId,
+            programId,
+            name: batchInput.name,
+          },
+        });
+        batchId = created.id;
+      }
+
+      if (batchInput.subjectIds !== undefined) {
+        await tx.batchSubject.deleteMany({ where: { batchId } });
+        if (batchInput.subjectIds.length) {
+          await tx.batchSubject.createMany({
+            data: batchInput.subjectIds.map((subjectId) => ({
+              batchId,
+              subjectId,
+            })),
+          });
+        }
+      }
+    }
+  }
+
+  private toListResponse(program: {
     id: string;
     branchId: string;
     name: string;
@@ -117,6 +232,7 @@ export class ProgramsService {
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
+    batches: Array<{ id: string; name: string }>;
   }) {
     return {
       id: program.id,
@@ -127,6 +243,45 @@ export class ProgramsService {
       isActive: program.isActive,
       createdAt: program.createdAt.toISOString(),
       updatedAt: program.updatedAt.toISOString(),
+      batches: program.batches,
+    };
+  }
+
+  private toDetailResponse(program: {
+    id: string;
+    branchId: string;
+    name: string;
+    code: string | null;
+    description: string | null;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    batches: Array<{
+      id: string;
+      name: string;
+      batchSubjects: Array<{
+        subject: { id: string; name: string; code: string | null };
+      }>;
+    }>;
+  }) {
+    return {
+      id: program.id,
+      branchId: program.branchId,
+      name: program.name,
+      code: program.code,
+      description: program.description,
+      isActive: program.isActive,
+      createdAt: program.createdAt.toISOString(),
+      updatedAt: program.updatedAt.toISOString(),
+      batches: program.batches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        subjects: b.batchSubjects.map((link) => ({
+          id: link.subject.id,
+          name: link.subject.name,
+          code: link.subject.code,
+        })),
+      })),
     };
   }
 }
@@ -194,27 +349,39 @@ export class BatchesService {
     });
     if (!program) throw new BadRequestException('Invalid program for this branch');
 
-    const batch = await this.prisma.batch.create({
-      data: {
-        branchId: input.branchId,
-        programId: input.programId,
-        name: input.name,
-        code: input.code,
-        sessionId: input.sessionId,
-        scheduleType: input.scheduleType,
-      },
-      include: { program: { select: { id: true, name: true } } },
+    await assertValidSubjectIds(this.prisma, input.subjectIds);
+
+    const batchId = await this.prisma.$transaction(async (tx) => {
+      const batch = await tx.batch.create({
+        data: {
+          branchId: input.branchId,
+          programId: input.programId,
+          name: input.name,
+          code: input.code,
+          sessionId: input.sessionId,
+          scheduleType: input.scheduleType,
+        },
+      });
+      if (input.subjectIds?.length) {
+        await tx.batchSubject.createMany({
+          data: input.subjectIds.map((subjectId) => ({
+            batchId: batch.id,
+            subjectId,
+          })),
+        });
+      }
+      return batch.id;
     });
 
     await this.audit.log({
       userId: user.id,
       action: 'batch.created',
       entityType: 'Batch',
-      entityId: batch.id,
-      newValue: batch,
+      entityId: batchId,
+      newValue: input,
     });
 
-    return this.findOne(batch.id, null);
+    return this.findOne(batchId, null);
   }
 
   async update(id: string, input: UpdateBatchInput, branchId: string | null, user: AuthUser) {
@@ -223,27 +390,43 @@ export class BatchesService {
     });
     if (!existing) throw new NotFoundException('Batch not found');
 
-    const batch = await this.prisma.batch.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.code !== undefined ? { code: input.code } : {}),
-        ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
-        ...(input.scheduleType !== undefined ? { scheduleType: input.scheduleType } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      },
+    await assertValidSubjectIds(this.prisma, input.subjectIds);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.batch.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.code !== undefined ? { code: input.code } : {}),
+          ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+          ...(input.scheduleType !== undefined ? { scheduleType: input.scheduleType } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        },
+      });
+
+      if (input.subjectIds !== undefined) {
+        await tx.batchSubject.deleteMany({ where: { batchId: id } });
+        if (input.subjectIds.length) {
+          await tx.batchSubject.createMany({
+            data: input.subjectIds.map((subjectId) => ({
+              batchId: id,
+              subjectId,
+            })),
+          });
+        }
+      }
     });
 
     await this.audit.log({
       userId: user.id,
       action: 'batch.updated',
       entityType: 'Batch',
-      entityId: batch.id,
+      entityId: id,
       previousValue: existing,
-      newValue: batch,
+      newValue: input,
     });
 
-    return this.findOne(batch.id, branchId);
+    return this.findOne(id, branchId);
   }
 }
 

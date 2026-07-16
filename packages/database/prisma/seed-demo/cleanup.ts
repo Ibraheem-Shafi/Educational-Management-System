@@ -1,8 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 import type { DemoConfig } from './types';
+import { DEMO_LEARNING_TITLES } from './steps/09-learning';
 
 export async function cleanupDemoData(prisma: PrismaClient, config: DemoConfig): Promise<void> {
-  const demoEmails = config.accounts.map((a) => a.email);
   const batchCodes = config.batches.map((b) => b.code);
   const demoKeys = config.students.map((s) => s.demoKey);
   const parentCnic = config.parents.map((p) => p.cnic);
@@ -67,15 +67,14 @@ export async function cleanupDemoData(prisma: PrismaClient, config: DemoConfig):
   await prisma.document.deleteMany({
     where: { title: { in: config.documents.map((d) => d.title) } },
   });
+  await prisma.learningAttachment.deleteMany({
+    where: { resource: { title: { in: [...DEMO_LEARNING_TITLES] } } },
+  });
+  await prisma.learningResource.deleteMany({
+    where: { title: { in: [...DEMO_LEARNING_TITLES] } },
+  });
   await prisma.communicationLog.deleteMany({});
 
-  const demoUsers = await prisma.user.findMany({
-    where: { email: { in: demoEmails } },
-    select: { id: true },
-  });
-  const userIds = demoUsers.map((u) => u.id);
-  if (userIds.length) {
-    await prisma.userRole.deleteMany({ where: { userId: { in: userIds } } });
-    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
-  }
+  // Keep demo users (and their supabaseUserId links). seedUsers upserts by email.
+  // Deleting users here breaks auth until db:seed:auth is re-run.
 }

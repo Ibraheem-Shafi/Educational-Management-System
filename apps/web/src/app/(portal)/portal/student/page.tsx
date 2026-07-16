@@ -1,164 +1,199 @@
 'use client';
 
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { LayoutDashboard } from 'lucide-react';
+import { formatCurrency } from '@eims/shared';
+import type { LearningResourceResponse, PortalStudentStatsResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { formatCurrency } from '@eims/shared';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { queryKeys } from '@/lib/query-keys';
+import {
+  PORTAL_STUDENT_KEY,
+  attendanceRatePercents,
+  type StudentPortalData,
+} from '@/lib/portal-types';
+import { formatLearningDueDate } from '@/lib/portal-learning';
 import { useNoticesRealtime } from '@/hooks/use-notices-realtime';
+import { PageHeader } from '@/components/layout/page-header';
+import { MainStatsSection } from '@/components/layout/main-stats-section';
+import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
+import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
+import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 
-const PORTAL_STUDENT_KEYS = ['portal-student'] as const;
-
-const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-interface StudentPortal {
-  student: { fullName: string; batch?: { name: string }; program?: { name: string } } | null;
-  message?: string;
-  attendance: Array<{ date: string; status?: { label: string } | null }>;
-  assessments: Array<{ assessment: string | null; grade: string | null; percentage: number | null }>;
-  fees: { outstanding: number; invoices: Array<{ feeType?: { name: string }; netAmount: number; status?: { label: string } }> };
-  notices?: Array<{ title: string; body: string }>;
-  timetable?: Array<{
-    dayOfWeek: number;
-    startTime: string;
-    endTime: string;
-    room: string | null;
-    subjectName: string | null;
-  }>;
-}
-
-export default function StudentPortalPage() {
+export default function StudentPortalHomePage() {
   const { session } = useAuth();
   const token = session?.access_token;
 
-  useNoticesRealtime(PORTAL_STUDENT_KEYS);
+  useNoticesRealtime(PORTAL_STUDENT_KEY);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['portal-student'],
-    queryFn: () => apiClient<StudentPortal>('/portal/student', { token }),
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.portalStudentStats,
+    queryFn: () => apiClient<PortalStudentStatsResponse>('/portal/student/stats', { token }),
     enabled: !!token,
   });
 
-  if (isLoading) return <PortalPageSkeleton />;
+  const { data, isLoading, error } = useQuery({
+    queryKey: PORTAL_STUDENT_KEY,
+    queryFn: () => apiClient<StudentPortalData>('/portal/student', { token }),
+    enabled: !!token,
+  });
+
+  const { data: dueSoon } = useQuery({
+    queryKey: queryKeys.portalStudentLearningDueSoon,
+    queryFn: () =>
+      apiClient<{ data: LearningResourceResponse[] }>('/portal/student/learning/due-soon', {
+        token,
+      }),
+    enabled: !!token,
+  });
+
+  if (isLoading && !data) return <PortalPageSkeleton />;
   if (error) return <p className="text-red-600">Unable to load portal.</p>;
 
+  const rates = attendanceRatePercents(data?.attendance);
+  const gradeTrend =
+    data?.assessments
+      ?.filter((a) => a.percentage != null)
+      .slice(0, 8)
+      .reverse()
+      .map((a, i) => ({
+        label: a.assessment?.slice(0, 8) || `T${i + 1}`,
+        value: a.percentage ?? 0,
+      })) ?? [];
+
+  const notices = data?.notices?.slice(0, 3) ?? [];
+  const dueSoonItems = dueSoon?.data?.slice(0, 3) ?? [];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Student portal</h1>
-        {data?.student && (
-          <p className="text-muted-foreground">
-            {data.student.fullName} · {data.student.program?.name ?? '—'} ·{' '}
-            {data.student.batch?.name ?? '—'}
-          </p>
-        )}
-      </div>
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Student portal"
+        description={
+          data?.student
+            ? `${data.student.fullName} · ${data.student.program?.name ?? '—'} · ${data.student.batch?.name ?? '—'}`
+            : 'Welcome'
+        }
+      />
 
       {data?.message && (
-        <Card>
-          <CardContent className="py-6 text-center text-muted-foreground">{data.message}</CardContent>
-        </Card>
+        <ContentPanel>
+          <p className="px-5 py-6 text-center text-sm text-[var(--text-sub-500)]">{data.message}</p>
+        </ContentPanel>
       )}
 
-      {data?.notices && data.notices.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Announcements</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {data.notices.map((n) => (
-              <div key={n.title}>
-                <p className="font-medium">{n.title}</p>
-                <p className="text-sm text-muted-foreground">{n.body}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      {(statsLoading || stats) && (
+        <MainStatsSection
+          isLoading={statsLoading && !stats}
+          stats={[
+            {
+              label: 'Attendance rate',
+              value: `${stats?.attendanceRate.total ?? 0}%`,
+              changePercent: stats?.attendanceRate.changePercent,
+            },
+            {
+              label: 'Outstanding fees',
+              value: formatCurrency(stats?.outstandingFees.total ?? 0),
+              changePercent: stats?.outstandingFees.changePercent,
+            },
+            {
+              label: 'Average grade',
+              value: `${stats?.averageGrade.total ?? 0}%`,
+              changePercent: stats?.averageGrade.changePercent,
+            },
+            {
+              label: 'Weekly classes',
+              value: String(stats?.upcomingClasses.total ?? 0),
+              changePercent: stats?.upcomingClasses.changePercent,
+            },
+          ]}
+        />
       )}
 
       {data?.student && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent attendance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.attendance.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No records</p>
-              ) : (
-                <ul className="space-y-1 text-sm">
-                  {data.attendance.map((a, i) => (
-                    <li key={i} className="break-words">
-                      {a.date} — {a.status?.label ?? '—'}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <MetricDonutCard
+              title="Attendance mix"
+              subtitle="Last 30 days"
+              segments={[
+                { label: 'Present', rate: rates.present, color: '#38C793' },
+                { label: 'Absent', rate: rates.absent, color: '#EF4444' },
+                { label: 'Late', rate: rates.late, color: '#F59E0B' },
+              ]}
+            />
+            <TrendAreaChart
+              title="Grade trend"
+              subtitle="Recent assessments"
+              data={gradeTrend}
+              totalValue={stats ? `${stats.averageGrade.total}%` : undefined}
+              changePercent={stats?.averageGrade.changePercent}
+              gradientId="studentGradeTrend"
+              valueFormatter={(v) => `${v}%`}
+            />
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Assessments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.assessments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No records</p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ContentPanel
+              title="Due soon"
+              actions={
+                <Link
+                  href="/portal/student/learning?type=homework"
+                  className="text-sm font-medium text-[var(--institution-primary)] hover:underline"
+                >
+                  View all
+                </Link>
+              }
+            >
+              {dueSoonItems.length === 0 ? (
+                <p className="px-5 py-6 text-sm text-[var(--text-sub-500)]">No homework due soon</p>
               ) : (
-                <ul className="space-y-1 text-sm">
-                  {data.assessments.map((a, i) => (
-                    <li key={i} className="break-words">
-                      {a.assessment ?? 'Test'} — {a.grade ?? '—'}{' '}
-                      {a.percentage != null ? `(${a.percentage}%)` : ''}
+                <ul className="divide-y divide-stroke-soft-200">
+                  {dueSoonItems.map((item) => (
+                    <li key={item.id}>
+                      <Link
+                        href={`/portal/student/learning/${item.id}`}
+                        className="block px-5 py-4 transition-colors hover:bg-neutral-50"
+                      >
+                        <p className="text-sm font-medium text-text-main-900">{item.title}</p>
+                        <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                          {item.subject?.name ? `${item.subject.name} · ` : ''}
+                          Due {formatLearningDueDate(item.dueAt)}
+                        </p>
+                      </Link>
                     </li>
                   ))}
                 </ul>
               )}
-            </CardContent>
-          </Card>
+            </ContentPanel>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Class timetable</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!data.timetable?.length ? (
-                <p className="text-sm text-muted-foreground">No timetable published</p>
+            <ContentPanel
+              title="Announcements"
+              actions={
+                <Link
+                  href="/portal/student/notices"
+                  className="text-sm font-medium text-[var(--institution-primary)] hover:underline"
+                >
+                  View all
+                </Link>
+              }
+            >
+              {notices.length === 0 ? (
+                <p className="px-5 py-6 text-sm text-[var(--text-sub-500)]">No announcements yet</p>
               ) : (
-                <ul className="space-y-1 text-sm">
-                  {data.timetable.map((slot, i) => (
-                    <li key={i} className="break-words">
-                      {DAY_NAMES[slot.dayOfWeek] ?? slot.dayOfWeek} {slot.startTime}–{slot.endTime} ·{' '}
-                      {slot.subjectName ?? '—'}
-                      {slot.room ? ` · ${slot.room}` : ''}
+                <ul className="divide-y divide-stroke-soft-200">
+                  {notices.map((n) => (
+                    <li key={n.title} className="px-5 py-4">
+                      <p className="text-sm font-medium text-text-main-900">{n.title}</p>
+                      <p className="mt-1 line-clamp-2 text-sm text-[var(--text-sub-500)]">{n.body}</p>
                     </li>
                   ))}
                 </ul>
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                Fees · Outstanding {formatCurrency(data.fees.outstanding)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.fees.invoices.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No invoices</p>
-              ) : (
-                <ul className="space-y-1 text-sm">
-                  {data.fees.invoices.map((f, i) => (
-                    <li key={i} className="break-words">
-                      {f.feeType?.name ?? 'Fee'} — {formatCurrency(f.netAmount)} ({f.status?.label})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+            </ContentPanel>
+          </div>
         </>
       )}
     </div>

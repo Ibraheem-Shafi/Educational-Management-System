@@ -1,12 +1,19 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { cn } from '@/lib/utils';
+import { useSidebar } from './sidebar-context';
 
 const SidebarNav = dynamic(
   () => import('./sidebar-nav').then((m) => ({ default: m.SidebarNav })),
   {
     loading: () => (
-      <div className="hidden h-screen w-64 shrink-0 animate-pulse border-r border-border bg-muted/30 lg:block" />
+      <div
+        className={cn(
+          'hidden h-screen shrink-0 animate-pulse border-r border-stroke-soft-200 bg-neutral-0 lg:block',
+          'w-[clamp(220px,19vw,272px)]',
+        )}
+      />
     ),
   },
 );
@@ -14,8 +21,15 @@ const SidebarNav = dynamic(
 export { navItems } from './sidebar-nav';
 
 export function Sidebar() {
+  const { collapsed } = useSidebar();
+
   return (
-    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-muted/30 lg:flex">
+    <aside
+      className={cn(
+        'sticky top-0 hidden h-screen shrink-0 flex-col border-r border-stroke-soft-200 bg-neutral-0 font-[family-name:var(--font-inter)] transition-[width] duration-200 lg:flex',
+        collapsed ? 'w-[clamp(56px,4.5vw,72px)]' : 'w-[clamp(220px,19vw,272px)]',
+      )}
+    >
       <SidebarNav />
     </aside>
   );

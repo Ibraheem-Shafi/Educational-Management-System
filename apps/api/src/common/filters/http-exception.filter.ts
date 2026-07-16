@@ -25,9 +25,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     this.logger.error(exception);
+    const devMessage =
+      process.env.NODE_ENV !== 'production' && exception instanceof Error
+        ? exception.message
+        : 'Internal server error';
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: 'Internal server error',
+      message: devMessage,
     });
   }
 }

@@ -21,9 +21,21 @@ export async function seedUsers(prisma: PrismaClient, ctx: DemoContext): Promise
           email: account.email,
           fullName: account.fullName,
           phone: account.phone ?? null,
+          gender: account.gender ?? null,
+          cnic: account.cnic ?? null,
           branchId,
         },
       }));
+
+    if (existing && (account.gender || account.cnic)) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(account.gender ? { gender: account.gender } : {}),
+          ...(account.cnic ? { cnic: account.cnic } : {}),
+        },
+      });
+    }
 
     const existingRole = await prisma.userRole.findFirst({
       where: { userId: user.id, roleId },
@@ -36,7 +48,7 @@ export async function seedUsers(prisma: PrismaClient, ctx: DemoContext): Promise
   }
 
   await prisma.invitation.updateMany({
-    where: { email: 'admin@rekhta.edu.pk', acceptedAt: null },
+    where: { email: 'admin@nexium.edu.pk', acceptedAt: null },
     data: { acceptedAt: new Date() },
   });
 }
