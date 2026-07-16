@@ -11,7 +11,8 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "prisma generate && tsc",
+    "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "dotenv -e ../../apps/api/.env -- prisma db push",
     "db:migrate": "dotenv -e ../../apps/api/.env -- prisma migrate dev",
