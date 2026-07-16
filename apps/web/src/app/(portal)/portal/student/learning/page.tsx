@@ -29,9 +29,9 @@ import {
 } from '@/components/layout/data-table-styles';
 import { cn } from '@/lib/utils';
 
-const VALID_TYPES = new Set(
-  LEARNING_TYPE_FILTERS.map((f) => f.value).filter((v): v is string => Boolean(v)),
-);
+type LearningFilterValue = (typeof LEARNING_TYPE_FILTERS)[number]['value'];
+
+const VALID_TYPES = new Set<string>(LEARNING_TYPE_FILTERS.map((f) => f.value));
 
 export default function StudentLearningPage() {
   return (
@@ -47,8 +47,8 @@ function StudentLearningContent() {
   const searchParams = useSearchParams();
   const initialType = searchParams.get('type');
 
-  const [type, setType] = useState(
-    initialType && VALID_TYPES.has(initialType) ? initialType : '',
+  const [type, setType] = useState<LearningFilterValue>(
+    initialType && VALID_TYPES.has(initialType) ? (initialType as LearningFilterValue) : '',
   );
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);

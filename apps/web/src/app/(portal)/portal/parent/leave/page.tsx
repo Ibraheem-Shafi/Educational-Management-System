@@ -35,7 +35,11 @@ export default function ParentLeavePage() {
       />
       <PortalParentPageShell>
         {({ childId, setChildId, data }) => (
-          <ParentLeaveContent childId={childId} setChildId={setChildId} children={data.children} />
+          <ParentLeaveContent
+            childId={childId}
+            setChildId={setChildId}
+            linkedChildren={data.children}
+          />
         )}
       </PortalParentPageShell>
     </div>
@@ -45,11 +49,11 @@ export default function ParentLeavePage() {
 function ParentLeaveContent({
   childId,
   setChildId,
-  children,
+  linkedChildren,
 }: {
   childId: string;
   setChildId: (id: string) => void;
-  children: ParentPortalData['children'];
+  linkedChildren: ParentPortalData['children'];
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -85,7 +89,7 @@ function ParentLeaveContent({
     onError: () => toast.error('Unable to submit leave request'),
   });
 
-  const childOptions = children.map((c) => ({
+  const childOptions = linkedChildren.map((c) => ({
     value: c.student.id,
     label: c.student.fullName,
   }));
@@ -94,7 +98,7 @@ function ParentLeaveContent({
     <div className="space-y-4">
       <ContentPanel title="New request">
         <div className="space-y-3 px-5 py-4">
-          {children.length > 1 && (
+          {linkedChildren.length > 1 && (
             <SelectDropdown
               value={childId}
               onValueChange={setChildId}

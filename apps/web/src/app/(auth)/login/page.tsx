@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -56,12 +56,12 @@ function LoginPageContent() {
   const [challengeId, setChallengeId] = useState('');
   const [mfaCode, setMfaCode] = useState('');
 
-  const finishLogin = (roles: string[]) => {
+  const finishLogin = useCallback((roles: string[]) => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
     toast.success('Welcome back');
     router.replace(getPostLoginPath(roles));
-  };
+  }, [router]);
 
   useEffect(() => {
     if (portalDisabled) return;
@@ -86,7 +86,7 @@ function LoginPageContent() {
     };
 
     void resume();
-  }, [authLoading, session, user, step, portalDisabled]);
+  }, [authLoading, session, user, step, portalDisabled, finishLogin]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

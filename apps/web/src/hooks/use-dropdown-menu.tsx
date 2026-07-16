@@ -101,7 +101,7 @@ export function computeDropdownPosition(
   };
 }
 
-export function useDropdownMenu({
+export function useDropdownMenu<TMenu extends HTMLElement = HTMLElement>({
   open,
   onClose,
   maxHeight = DEFAULT_MAX_HEIGHT,
@@ -115,7 +115,7 @@ export function useDropdownMenu({
   minWidth?: number;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<TMenu>(null);
   const [position, setPosition] = useState<DropdownMenuPosition | null>(null);
   const [clickShield, setClickShield] = useState(false);
 

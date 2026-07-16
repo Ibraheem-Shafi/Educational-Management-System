@@ -327,8 +327,8 @@ export default function LearningPage() {
           </table>
         </div>
         <PaginationBar
-          page={data?.page ?? page}
-          totalPages={data?.totalPages ?? 1}
+          page={data?.meta.page ?? page}
+          totalPages={data?.meta.totalPages ?? 1}
           onPageChange={setPage}
           limit={limit}
           onLimitChange={(next) => {

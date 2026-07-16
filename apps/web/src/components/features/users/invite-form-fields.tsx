@@ -62,7 +62,7 @@ export function InvitePhoneField({
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
-  const { triggerRef, menuRef, position } = useDropdownMenu({
+  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLUListElement>({
     open,
     onClose: () => setOpen(false),
     align: 'left',

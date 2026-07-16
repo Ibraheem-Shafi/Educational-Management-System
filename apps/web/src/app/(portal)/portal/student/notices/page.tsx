@@ -22,7 +22,7 @@ export default function StudentNoticesPage() {
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState('');
 
-  useNoticesRealtime(queryKeys.portalStudentNotices({ search }));
+  useNoticesRealtime(['portal-student-notices']);
 
   const params = { page, limit, search };
   const { data, isLoading, error } = useQuery({

@@ -5,8 +5,6 @@ import { cn } from '@/lib/utils';
 export function UserAvatar({
   name,
   src,
-  gender: _gender,
-  seed: _seed,
   className,
   size = 'md',
 }: {

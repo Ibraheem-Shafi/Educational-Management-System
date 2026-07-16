@@ -21,7 +21,7 @@ export default function ParentNoticesPage() {
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState('');
 
-  useNoticesRealtime(queryKeys.portalParentNotices({ search }));
+  useNoticesRealtime(['portal-parent-notices']);
 
   const params = { page, limit, search };
   const { data, isLoading, error } = useQuery({

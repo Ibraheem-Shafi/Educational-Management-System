@@ -15,7 +15,7 @@ import { UserAvatar } from '@/components/layout/user-avatar';
 import { Button } from '@/components/ui/button';
 
 export default function StudentProfilePage() {
-  const { session, user, syncAuth } = useAuth();
+  const { session, user } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [phone, setPhone] = useState('');
@@ -31,9 +31,6 @@ export default function StudentProfilePage() {
     onSuccess: async () => {
       toast.success('Profile updated');
       await queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentProfile });
-      if (session && user) {
-        syncAuth(session, { ...user, phone: phone || null });
-      }
     },
     onError: () => toast.error('Unable to update profile'),
   });

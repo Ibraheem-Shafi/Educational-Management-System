@@ -66,7 +66,7 @@ export function SelectDropdown({
   const listId = useId();
   const isSm = size === 'sm';
 
-  const { triggerRef, menuRef, position } = useDropdownMenu({
+  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLUListElement>({
     open,
     onClose: () => setOpen(false),
     align: isSm ? 'right' : 'match',

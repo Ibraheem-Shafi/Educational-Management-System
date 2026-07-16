@@ -6,7 +6,6 @@ import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
-import { usePermissions } from '@/hooks/use-permissions';
 import { useInstitution } from '@/providers/institution-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadInstitutionAsset } from '@/lib/upload-institution-asset';

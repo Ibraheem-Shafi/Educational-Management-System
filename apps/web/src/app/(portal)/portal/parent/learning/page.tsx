@@ -57,7 +57,7 @@ function ParentLearningContent() {
     enabled: !!token,
   });
 
-  const children = parentData?.children ?? [];
+  const children = useMemo(() => parentData?.children ?? [], [parentData?.children]);
   const { childId, setChildId } = usePortalChildId(children);
   const childOptions = useMemo(
     () => children.map((c) => ({ value: c.student.id, label: c.student.fullName })),

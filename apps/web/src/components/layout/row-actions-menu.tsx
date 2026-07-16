@@ -20,7 +20,7 @@ export function RowActionsMenu({
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
 
-  const { triggerRef, menuRef, position } = useDropdownMenu({
+  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLDivElement>({
     open,
     onClose: close,
     align: 'right',

@@ -82,7 +82,8 @@ export function AuthProvider({
             (err.statusCode === 401 || err.statusCode === 403),
         }));
 
-      inflightMe.current = promise.then((r) => r.profile);
+      const profilePromise = promise.then((r) => r.profile);
+      inflightMe.current = profilePromise;
 
       try {
         const { profile, unauthorized } = await promise;
@@ -104,7 +105,7 @@ export function AuthProvider({
           }
         }
       } finally {
-        if (inflightMe.current === promise) {
+        if (inflightMe.current === profilePromise) {
           inflightMe.current = null;
         }
       }
