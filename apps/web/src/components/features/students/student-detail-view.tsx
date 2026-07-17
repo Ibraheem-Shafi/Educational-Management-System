@@ -85,6 +85,7 @@ export function StudentDetailView({
   onEdit,
   subjectsSection,
   documentsSection,
+  certificatesSection,
   attendanceSection,
   customFieldsSection,
 }: {
@@ -92,6 +93,7 @@ export function StudentDetailView({
   onEdit?: () => void;
   subjectsSection?: ReactNode;
   documentsSection?: ReactNode;
+  certificatesSection?: ReactNode;
   attendanceSection?: ReactNode;
   customFieldsSection?: ReactNode;
 }) {
@@ -197,6 +199,12 @@ export function StudentDetailView({
         {documentsSection && (
           <DetailCard title="Documents" icon={FileText} className="lg:col-span-2">
             <div className="p-5">{documentsSection}</div>
+          </DetailCard>
+        )}
+
+        {certificatesSection && (
+          <DetailCard title="Certificates & ID" icon={FileText} className="lg:col-span-2">
+            <div className="p-5">{certificatesSection}</div>
           </DetailCard>
         )}
 

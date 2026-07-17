@@ -23,6 +23,18 @@ export async function seedAssessments(prisma: PrismaClient, ctx: DemoContext): P
           sessionId: ctx.sessionId,
           totalMarks: spec.totalMarks,
           conductedAt,
+          status: 'published',
+          publishedAt: conductedAt,
+          publishedById: adminId,
+        },
+      });
+    } else if (assessment.status === 'draft') {
+      await prisma.assessment.update({
+        where: { id: assessment.id },
+        data: {
+          status: 'published',
+          publishedAt: assessment.conductedAt ?? conductedAt,
+          publishedById: adminId,
         },
       });
     }

@@ -10,6 +10,8 @@ export const DEMO_LEARNING_TITLES = [
   'Homework: Essay outline (due this week)',
   'Homework: Past paper practice set',
   'Homework: Vocabulary quiz prep',
+  'Online class: English composition workshop',
+  'Online class: Parent-teacher Q&A session',
 ] as const;
 
 export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
@@ -38,6 +40,15 @@ export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Prom
     return d;
   };
 
+  const tomorrowAt = (hour: number, minute = 0, durationMinutes = 60) => {
+    const start = new Date();
+    start.setUTCDate(start.getUTCDate() + 1);
+    start.setUTCHours(hour, minute, 0, 0);
+    const end = new Date(start);
+    end.setUTCMinutes(end.getUTCMinutes() + durationMinutes);
+    return { start, end };
+  };
+
   const resources: Array<{
     title: string;
     type: string;
@@ -47,6 +58,10 @@ export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Prom
     audience: string;
     dueAt?: Date;
     maxMarks?: number;
+    startsAt?: Date;
+    endsAt?: Date;
+    meetingUrl?: string;
+    meetingPlatform?: string;
     attachment?: { fileName: string; storagePath: string };
   }> = [
     {
@@ -119,6 +134,40 @@ export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Prom
       dueAt: dueInDays(2),
       maxMarks: 15,
     },
+    {
+      title: DEMO_LEARNING_TITLES[7],
+      type: 'online_class',
+      description: 'Live workshop on essay structure and composition',
+      body: 'Join the session for a guided walkthrough of essay planning, introductions, and conclusions. Bring your draft outline.',
+      visibilityScope: batchId && subjectId ? 'batch_subject' : batchId ? 'batch' : 'branch',
+      audience: 'students',
+      ...(() => {
+        const { start, end } = tomorrowAt(10, 0, 90);
+        return {
+          startsAt: start,
+          endsAt: end,
+          meetingUrl: 'https://meet.google.com/demo-nexium',
+          meetingPlatform: 'meet',
+        };
+      })(),
+    },
+    {
+      title: DEMO_LEARNING_TITLES[8],
+      type: 'online_class',
+      description: 'Open Q&A for parents about term progress and homework',
+      body: 'Parents are welcome to join and ask questions about assignments, attendance, and upcoming assessments.',
+      visibilityScope: batchId ? 'batch' : 'branch',
+      audience: 'parents',
+      ...(() => {
+        const { start, end } = tomorrowAt(15, 30, 45);
+        return {
+          startsAt: start,
+          endsAt: end,
+          meetingUrl: 'https://meet.google.com/demo-nexium',
+          meetingPlatform: 'meet',
+        };
+      })(),
+    },
   ];
 
   for (const item of resources) {
@@ -141,9 +190,13 @@ export async function seedLearning(prisma: PrismaClient, ctx: DemoContext): Prom
         audience: item.audience,
         dueAt: item.dueAt ?? null,
         maxMarks: item.maxMarks ?? null,
+        startsAt: item.startsAt ?? null,
+        endsAt: item.endsAt ?? null,
+        meetingUrl: item.meetingUrl ?? null,
+        meetingPlatform: item.meetingPlatform ?? null,
         isPublished: true,
         publishedAt: new Date(),
-        createdById: item.type === 'homework' ? teacherId : adminId,
+        createdById: item.type === 'homework' || item.type === 'online_class' ? teacherId : adminId,
         attachments: item.attachment
           ? {
               create: {

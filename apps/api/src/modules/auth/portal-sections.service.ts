@@ -11,7 +11,11 @@ import { LearningService } from '../learning/learning.service';
 import { DocumentsService } from '../documents/documents.service';
 import { AiInsightsService } from '../ai-insights/ai-insights.service';
 import type { AuthUser, PaginatedResponse } from '@eims/types';
-import type { CreateLeaveRequestInput, PortalSectionQuery } from '@eims/shared';
+import type {
+  CreateEmployeeLeaveRequestInput,
+  CreateLeaveRequestInput,
+  PortalSectionQuery,
+} from '@eims/shared';
 
 function paginate<T>(items: T[], page = 1, limit = 20): PaginatedResponse<T> {
   const total = items.length;
@@ -90,13 +94,20 @@ export class PortalSectionsService {
     const assessmentIds = [...new Set(records.map((r) => r.assessmentId))];
     const subjectIds = [...new Set(records.map((r) => r.subjectId))];
     const [assessments, subjects] = await Promise.all([
-      this.prisma.assessment.findMany({ where: { id: { in: assessmentIds } } }),
+      this.prisma.assessment.findMany({
+        where: {
+          id: { in: assessmentIds },
+          status: 'published',
+        },
+      }),
       this.prisma.subject.findMany({ where: { id: { in: subjectIds } } }),
     ]);
     const assessmentMap = new Map(assessments.map((a) => [a.id, a]));
     const subjectMap = new Map(subjects.map((s) => [s.id, s]));
 
-    const mapped = records.map((r) => ({
+    const mapped = records
+      .filter((r) => assessmentMap.has(r.assessmentId))
+      .map((r) => ({
       id: r.id,
       assessment: assessmentMap.get(r.assessmentId)?.name ?? null,
       subject: subjectMap.get(r.subjectId)?.name ?? null,
@@ -433,6 +444,7 @@ export class PortalSectionsService {
 
     const requests = await this.prisma.leaveRequest.findMany({
       where: {
+        kind: 'student',
         parentId: parent.id,
         ...(studentId ? { studentId } : {}),
       },
@@ -443,8 +455,11 @@ export class PortalSectionsService {
     return {
       data: requests.map((r: (typeof requests)[number]) => ({
         id: r.id,
+        kind: r.kind,
         studentId: r.studentId,
-        studentName: r.student.fullName,
+        studentName: r.student?.fullName ?? null,
+        employeeId: null,
+        employeeName: null,
         parentId: r.parentId,
         fromDate: r.fromDate.toISOString().slice(0, 10),
         toDate: r.toDate.toISOString().slice(0, 10),
@@ -474,6 +489,7 @@ export class PortalSectionsService {
 
     const request = await this.prisma.leaveRequest.create({
       data: {
+        kind: 'student',
         studentId: input.studentId,
         parentId: parent.id,
         fromDate,
@@ -486,8 +502,11 @@ export class PortalSectionsService {
 
     return {
       id: request.id,
+      kind: request.kind,
       studentId: request.studentId,
-      studentName: request.student.fullName,
+      studentName: request.student?.fullName ?? null,
+      employeeId: null,
+      employeeName: null,
       parentId: request.parentId,
       fromDate: request.fromDate.toISOString().slice(0, 10),
       toDate: request.toDate.toISOString().slice(0, 10),
@@ -497,20 +516,35 @@ export class PortalSectionsService {
     };
   }
 
-  async listStaffLeaveRequests(branchId: string | null) {
+  async listStaffLeaveRequests(branchId: string | null, kind?: string) {
     const requests = await this.prisma.leaveRequest.findMany({
-      where: branchId
-        ? { student: { branchId } }
-        : {},
+      where: {
+        ...(kind ? { kind } : {}),
+        ...(branchId
+          ? {
+              OR: [
+                { kind: 'student', student: { branchId } },
+                { kind: 'employee', user: { branchId } },
+                { kind: 'employee', userId: { not: null }, user: { branchId: null } },
+              ],
+            }
+          : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
-      include: { student: { select: { fullName: true, branchId: true } } },
+      include: {
+        student: { select: { fullName: true, branchId: true } },
+        user: { select: { fullName: true, branchId: true } },
+      },
     });
     return {
       data: requests.map((r: (typeof requests)[number]) => ({
         id: r.id,
+        kind: r.kind,
         studentId: r.studentId,
-        studentName: r.student.fullName,
+        studentName: r.student?.fullName ?? null,
+        employeeId: r.userId,
+        employeeName: r.user?.fullName ?? null,
         parentId: r.parentId,
         fromDate: r.fromDate.toISOString().slice(0, 10),
         toDate: r.toDate.toISOString().slice(0, 10),
@@ -521,18 +555,90 @@ export class PortalSectionsService {
     };
   }
 
+  async createEmployeeLeaveRequest(userId: string, input: CreateEmployeeLeaveRequestInput) {
+    const fromDate = new Date(input.fromDate);
+    const toDate = new Date(input.toDate);
+    if (toDate < fromDate) {
+      throw new BadRequestException('End date must be on or after start date');
+    }
+
+    const request = await this.prisma.leaveRequest.create({
+      data: {
+        kind: 'employee',
+        userId,
+        fromDate,
+        toDate,
+        reason: input.reason,
+        status: 'pending',
+      },
+      include: { user: { select: { fullName: true } } },
+    });
+
+    return {
+      id: request.id,
+      kind: request.kind,
+      studentId: null,
+      studentName: null,
+      employeeId: request.userId,
+      employeeName: request.user?.fullName ?? null,
+      parentId: null,
+      fromDate: request.fromDate.toISOString().slice(0, 10),
+      toDate: request.toDate.toISOString().slice(0, 10),
+      reason: request.reason,
+      status: request.status,
+      createdAt: request.createdAt.toISOString(),
+    };
+  }
+
+  async listMyEmployeeLeaveRequests(userId: string) {
+    const requests = await this.prisma.leaveRequest.findMany({
+      where: { kind: 'employee', userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { user: { select: { fullName: true } } },
+    });
+    return {
+      data: requests.map((r: (typeof requests)[number]) => ({
+        id: r.id,
+        kind: r.kind,
+        studentId: null,
+        studentName: null,
+        employeeId: r.userId,
+        employeeName: r.user?.fullName ?? null,
+        parentId: null,
+        fromDate: r.fromDate.toISOString().slice(0, 10),
+        toDate: r.toDate.toISOString().slice(0, 10),
+        reason: r.reason,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
+  }
+
   async reviewLeaveRequest(id: string, status: 'approved' | 'rejected', reviewerId: string) {
-    const existing = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const existing = await this.prisma.leaveRequest.findUnique({
+      where: { id },
+      include: {
+        student: { select: { fullName: true } },
+        user: { select: { fullName: true } },
+      },
+    });
     if (!existing) throw new NotFoundException('Leave request not found');
     const updated = await this.prisma.leaveRequest.update({
       where: { id },
       data: { status, reviewedById: reviewerId },
-      include: { student: { select: { fullName: true } } },
+      include: {
+        student: { select: { fullName: true } },
+        user: { select: { fullName: true } },
+      },
     });
     return {
       id: updated.id,
+      kind: updated.kind,
       studentId: updated.studentId,
-      studentName: updated.student.fullName,
+      studentName: updated.student?.fullName ?? null,
+      employeeId: updated.userId,
+      employeeName: updated.user?.fullName ?? null,
       parentId: updated.parentId,
       fromDate: updated.fromDate.toISOString().slice(0, 10),
       toDate: updated.toDate.toISOString().slice(0, 10),

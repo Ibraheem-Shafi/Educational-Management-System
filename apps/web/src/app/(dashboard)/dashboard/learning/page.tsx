@@ -43,6 +43,7 @@ const TYPE_OPTIONS = [
   { value: 'resource', label: 'Resources' },
   { value: 'homework', label: 'Homework' },
   { value: 'syllabus', label: 'Syllabus' },
+  { value: 'online_class', label: 'Online class' },
 ];
 
 interface Subject {

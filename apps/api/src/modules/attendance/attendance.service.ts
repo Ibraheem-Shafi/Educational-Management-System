@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { countWithTrend, thirtyDaysAgo, todayStart } from '../../common/utils/stats.util';
@@ -46,6 +47,7 @@ export class AttendanceService {
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
     private readonly lookupCache: LookupCacheService,
+    private readonly communications: CommunicationsService,
   ) {}
 
   async getStats(branchId: string | null): Promise<AttendanceStatsResponse> {
@@ -329,11 +331,35 @@ export class AttendanceService {
       },
     });
 
+    let absenceAlerts: { sent: number; failed: number; skipped: number } | null = null;
+    if (input.notifyAbsences !== false) {
+      const absentStatusId = await this.lookupCache.getStatusId('attendance_status', 'absent');
+      const absentStudentIds = input.records
+        .filter((r) => absentStatusId && r.statusId === absentStatusId)
+        .map((r) => r.studentId);
+      if (absentStudentIds.length > 0) {
+        try {
+          absenceAlerts = await this.communications.sendAbsenceAlerts(
+            {
+              branchId: input.branchId,
+              date: input.date,
+              studentIds: absentStudentIds,
+              channel: input.notifyChannel ?? 'sms',
+            },
+            user,
+          );
+        } catch {
+          absenceAlerts = { sent: 0, failed: absentStudentIds.length, skipped: 0 };
+        }
+      }
+    }
+
     return {
       date: input.date,
       branchId: input.branchId,
       batchId: input.batchId,
       marked: results.length,
+      absenceAlerts,
     };
   }
 

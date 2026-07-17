@@ -21,6 +21,7 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
+import { RecordPaymentDialog } from '@/components/features/fees/record-payment-dialog';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -54,6 +55,7 @@ export default function FeesPage() {
   const queryClient = useQueryClient();
   const canCollect = can(PERMISSIONS.FEES_COLLECT);
   const [createOpen, setCreateOpen] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<Invoice | null>(null);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
 
@@ -108,6 +110,8 @@ export default function FeesPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const openRecordPayment = (invoice: Invoice) => setPayInvoice(invoice);
+
   const handleLimitChange = useCallback((next: number) => {
     setInvoiceLimit(next);
     setInvoicePage(1);
@@ -137,6 +141,12 @@ export default function FeesPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         branchId={effectiveBranchId}
+      />
+
+      <RecordPaymentDialog
+        open={!!payInvoice}
+        onOpenChange={(open) => !open && setPayInvoice(null)}
+        invoice={payInvoice}
       />
 
       <MainStatsSection
@@ -212,6 +222,10 @@ export default function FeesPage() {
                         items={[
                           {
                             label: 'Record payment',
+                            onClick: () => openRecordPayment(inv),
+                          },
+                          {
+                            label: 'Pay in full',
                             onClick: () => payMutation.mutate(inv.id),
                           },
                         ]}
@@ -285,6 +299,10 @@ export default function FeesPage() {
                           items={[
                             {
                               label: 'Record payment',
+                              onClick: () => openRecordPayment(inv),
+                            },
+                            {
+                              label: 'Pay in full',
                               onClick: () => payMutation.mutate(inv.id),
                             },
                           ]}

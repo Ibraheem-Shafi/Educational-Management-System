@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronRight, GraduationCap, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -65,9 +65,12 @@ const emptyEmergency = {
 
 export function AdmitStudentForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inquiryId = searchParams.get('inquiryId');
   const { session, user } = useAuth();
   const token = session?.access_token;
   const formRef = useRef<HTMLFormElement>(null);
+  const inquiryPrefilledRef = useRef(false);
 
   const [activeSection, setActiveSection] = useState<AdmitStudentSectionId>('student-information');
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
@@ -134,6 +137,31 @@ export function AdmitStudentForm() {
     queryFn: () =>
       apiClient<{ statuses: LookupStatus[] }>('/settings/lookups/student_status'),
   });
+
+  const { data: inquiryConvert } = useQuery({
+    queryKey: ['inquiry-convert', inquiryId],
+    queryFn: () =>
+      apiClient<{
+        inquiry: {
+          id: string;
+          branchId: string;
+          fullName: string;
+          phone: string | null;
+          email: string | null;
+        };
+      }>(`/inquiries/${inquiryId}/convert`, { token }),
+    enabled: !!token && !!inquiryId,
+  });
+
+  useEffect(() => {
+    if (!inquiryConvert?.inquiry || inquiryPrefilledRef.current) return;
+    const inquiry = inquiryConvert.inquiry;
+    setFullName(inquiry.fullName);
+    setPhone(inquiry.phone ?? '');
+    setEmail(inquiry.email ?? '');
+    if (inquiry.branchId) setBranchId(inquiry.branchId);
+    inquiryPrefilledRef.current = true;
+  }, [inquiryConvert]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -224,6 +252,19 @@ export function AdmitStudentForm() {
           toast.error(err instanceof Error ? err.message : 'File upload failed');
         }
       }
+      if (inquiryId) {
+        try {
+          await apiClient(`/inquiries/${inquiryId}/convert`, {
+            method: 'POST',
+            token,
+            body: { studentId: created.id },
+          });
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : 'Student created but inquiry link failed',
+          );
+        }
+      }
       toast.success('Student admitted successfully');
       router.push('/dashboard/students');
     },
@@ -309,7 +350,9 @@ export function AdmitStudentForm() {
               <span className="font-medium text-[var(--text-main-900)]">Add Student</span>
             </nav>
             <p className="mt-1 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)]">
-              Create a new student record.
+              {inquiryId
+                ? 'Admit student from admission inquiry.'
+                : 'Create a new student record.'}
             </p>
           </div>
         </div>
@@ -339,6 +382,16 @@ export function AdmitStudentForm() {
           </button>
         </div>
       </div>
+
+      {inquiryId && inquiryConvert?.inquiry ? (
+        <div className="rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-[var(--neutral-50)] px-4 py-3 text-sm text-[var(--text-sub-500,#525866)]">
+          Prefilled from inquiry for{' '}
+          <span className="font-medium text-[var(--text-main-900)]">
+            {inquiryConvert.inquiry.fullName}
+          </span>
+          . Saving will link this student to the inquiry.
+        </div>
+      ) : null}
 
       <div className="flex items-start gap-8">
         <form ref={formRef} onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-5">

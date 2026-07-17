@@ -35,6 +35,8 @@ type EditForm = {
   phone: string;
   gender: string;
   cnic: string;
+  department: string;
+  designation: string;
 };
 
 function emptyForm(): EditForm {
@@ -44,6 +46,8 @@ function emptyForm(): EditForm {
     phone: '',
     gender: '',
     cnic: '',
+    department: '',
+    designation: '',
   };
 }
 
@@ -64,6 +68,8 @@ function userToForm(user: UserDetailResponse): EditForm {
     phone,
     gender: user.gender ?? '',
     cnic: user.cnic ?? '',
+    department: user.department ?? '',
+    designation: user.designation ?? '',
   };
 }
 
@@ -130,6 +136,8 @@ export function EditUserDialog({
           phone: fullPhone,
           gender: payload.gender || undefined,
           cnic,
+          department: payload.department.trim() || null,
+          designation: payload.designation.trim() || null,
         }),
       });
     },
@@ -236,6 +244,22 @@ export function EditUserDialog({
                     value={form.cnic}
                     onChange={(e) => update('cnic', e.target.value)}
                     placeholder="12345-1234567-1"
+                    className={modalFieldClassName}
+                  />
+                </Field>
+                <Field label="Department">
+                  <input
+                    type="text"
+                    value={form.department}
+                    onChange={(e) => update('department', e.target.value)}
+                    className={modalFieldClassName}
+                  />
+                </Field>
+                <Field label="Designation">
+                  <input
+                    type="text"
+                    value={form.designation}
+                    onChange={(e) => update('designation', e.target.value)}
                     className={modalFieldClassName}
                   />
                 </Field>

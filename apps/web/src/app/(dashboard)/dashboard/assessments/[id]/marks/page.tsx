@@ -69,12 +69,14 @@ export default function MarksEntryPage() {
   const { data: sheet, isLoading } = useQuery({
     queryKey: sheetKey,
     queryFn: () =>
-      apiClient<{ students: SheetStudent[]; assessment: { name: string; totalMarks: number } }>(
-        `/assessments/${id}/marks-sheet?batchId=${batchId}`,
-        { token },
-      ),
+      apiClient<{
+        students: SheetStudent[];
+        assessment: { name: string; totalMarks: number; status: string };
+      }>(`/assessments/${id}/marks-sheet?batchId=${batchId}`, { token }),
     enabled: !!token && !!batchId,
   });
+
+  const isPublished = sheet?.assessment.status === 'published';
 
   useEffect(() => {
     if (!sheet || !subjectId) return;
@@ -129,8 +131,46 @@ export default function MarksEntryPage() {
       <PageHeader
         title="Enter marks"
         description={`${sheet?.assessment.name ?? 'Assessment'} · ${sheet?.assessment.totalMarks ?? '—'} total`}
-        actions={<LinkButton href="/dashboard/assessments">Back to assessments</LinkButton>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {batchId && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+                  const url = `${base}/assessments/${id}/export.csv?batchId=${batchId}`;
+                  void fetch(url, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  })
+                    .then(async (res) => {
+                      if (!res.ok) throw new Error('Export failed');
+                      const blob = await res.blob();
+                      const disp = res.headers.get('Content-Disposition');
+                      const match = disp?.match(/filename="([^"]+)"/);
+                      const name = match?.[1] ?? 'results.csv';
+                      const a = document.createElement('a');
+                      a.href = URL.createObjectURL(blob);
+                      a.download = name;
+                      a.click();
+                      URL.revokeObjectURL(a.href);
+                    })
+                    .catch(() => toast.error('Unable to export results'));
+                }}
+              >
+                Export CSV
+              </Button>
+            )}
+            <LinkButton href="/dashboard/assessments">Back to assessments</LinkButton>
+          </div>
+        }
       />
+
+      {isPublished && (
+        <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This assessment is published. Marks cannot be edited until it is unpublished.
+        </div>
+      )}
 
       <Card>
         <CardContent className="pt-6">
@@ -163,7 +203,7 @@ export default function MarksEntryPage() {
             <PermissionGate permission={PERMISSIONS.ASSESSMENTS_MARKS_ENTER}>
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={!batchId || !subjectId || saveMutation.isPending}
+                disabled={!batchId || !subjectId || saveMutation.isPending || isPublished}
               >
                 Save marks
               </Button>
@@ -193,7 +233,7 @@ export default function MarksEntryPage() {
                     remarks={remarks[row.studentId] ?? ''}
                     onMarksChange={handleMarksChange}
                     onRemarksChange={handleRemarksChange}
-                    disabled={!canEnterMarks}
+                    disabled={!canEnterMarks || isPublished}
                   />
                 )}
               />

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const ASSESSMENT_STATUSES = ['draft', 'in_review', 'published'] as const;
+
 export const createAssessmentSchema = z.object({
   branchId: z.string().min(1),
   name: z.string().min(2).max(200),
@@ -8,16 +10,31 @@ export const createAssessmentSchema = z.object({
   sessionId: z.string().optional(),
   totalMarks: z.coerce.number().positive(),
   conductedAt: z.string().datetime().optional(),
+  answerKey: z.string().max(50000).optional(),
+  reviewNotes: z.string().max(5000).optional(),
 });
 
 export type CreateAssessmentInput = z.infer<typeof createAssessmentSchema>;
 
+export const updateAssessmentSchema = createAssessmentSchema.partial();
+
+export type UpdateAssessmentInput = z.infer<typeof updateAssessmentSchema>;
+
 export const listAssessmentsQuerySchema = z.object({
   branchId: z.string().optional(),
   typeId: z.string().optional(),
+  status: z.enum(ASSESSMENT_STATUSES).optional(),
+  publishedOnly: z.coerce.boolean().optional(),
 });
 
 export type ListAssessmentsQuery = z.infer<typeof listAssessmentsQuerySchema>;
+
+export const reportCardsQuerySchema = z.object({
+  studentId: z.string().min(1),
+  assessmentId: z.string().optional(),
+});
+
+export type ReportCardsQuery = z.infer<typeof reportCardsQuerySchema>;
 
 export const marksSheetQuerySchema = z.object({
   batchId: z.string().min(1),

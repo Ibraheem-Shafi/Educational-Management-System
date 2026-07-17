@@ -1,0 +1,232 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { formatCurrency } from '@eims/shared';
+import { useAuth } from '@/providers/auth-provider';
+import { apiClient } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
+
+interface PrintData {
+  line: {
+    basicSalary: number;
+    allowancesTotal: number;
+    deductionsTotal: number;
+    adjustmentsTotal: number;
+    netPay: number;
+    attendancePresentDays: number;
+    attendanceAbsentDays: number;
+    workingDays: number;
+  };
+  run: { year: number; month: number; status: string };
+  employee: {
+    fullName: string;
+    staffCode: string;
+    designation: string | null;
+    department: string | null;
+    branch: { name: string } | null;
+  };
+  institution: {
+    name: string;
+    logoUrl: string | null;
+    address: string | null;
+  };
+  components: Array<{ kind: string; name: string; amount: number }>;
+}
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export default function PrintSalarySlipPage() {
+  const { lineId } = useParams<{ lineId: string }>();
+  const { session } = useAuth();
+  const token = session?.access_token;
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.payrollLinePrint(lineId),
+    queryFn: () => apiClient<PrintData>(`/payroll/lines/${lineId}/print-data`, { token }),
+    enabled: !!token && !!lineId,
+  });
+
+  useEffect(() => {
+    if (data) {
+      const timer = setTimeout(() => window.print(), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [data]);
+
+  if (isLoading) {
+    return (
+      <p className="p-8 text-center text-sm text-[var(--text-sub-500)]">Preparing salary slip…</p>
+    );
+  }
+
+  if (error || !data) {
+    return <p className="p-8 text-center text-sm text-red-600">Unable to load salary slip</p>;
+  }
+
+  const period = `${MONTH_NAMES[data.run.month - 1] ?? data.run.month} ${data.run.year}`;
+  const allowances = data.components.filter((c) => c.kind === 'allowance');
+  const deductions = data.components.filter((c) => c.kind === 'deduction');
+
+  return (
+    <>
+      <style jsx global>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 12mm;
+          }
+        }
+      `}</style>
+      <div className="no-print flex justify-end gap-2 border-b border-[var(--stroke-soft-200,#E2E4E9)] p-4">
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white"
+        >
+          Print
+        </button>
+      </div>
+      <div className="mx-auto max-w-2xl p-8 print:p-0">
+        <div className="rounded-2xl border border-[var(--stroke-soft-200,#E2E4E9)] p-8">
+          <div className="flex items-start justify-between gap-4 border-b border-[var(--stroke-soft-200,#E2E4E9)] pb-6">
+            <div>
+              {data.institution.logoUrl && !data.institution.logoUrl.startsWith('storage://') && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={data.institution.logoUrl}
+                  alt=""
+                  className="mb-3 h-12 object-contain"
+                />
+              )}
+              <p className="text-lg font-semibold text-[var(--text-main-900)]">
+                {data.institution.name}
+              </p>
+              {data.institution.address && (
+                <p className="mt-1 text-sm text-[var(--text-sub-500)]">{data.institution.address}</p>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-medium uppercase tracking-wide text-[var(--text-sub-500)]">
+                Salary slip
+              </p>
+              <p className="mt-1 text-base font-semibold text-[var(--midnight-blue-950,#01366C)]">
+                {period}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--text-sub-500)]">Employee</p>
+              <p className="mt-1 font-semibold text-[var(--text-main-900)]">
+                {data.employee.fullName}
+              </p>
+              <p className="text-sm text-[var(--text-sub-500)]">{data.employee.staffCode}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--text-sub-500)]">Department</p>
+              <p className="mt-1 text-sm text-[var(--text-main-900)]">
+                {data.employee.department ?? '—'}
+              </p>
+              <p className="text-sm text-[var(--text-sub-500)]">
+                {data.employee.designation ?? '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[10px] bg-[#F8F8F8] px-4 py-3 text-sm">
+            Attendance: {data.line.attendancePresentDays} present / {data.line.workingDays} working
+            days ({data.line.attendanceAbsentDays} absent)
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <div>
+              <p className="mb-2 text-sm font-medium text-[var(--text-main-900)]">Earnings</p>
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr>
+                    <td className="py-1 text-[var(--text-sub-500)]">Basic salary</td>
+                    <td className="py-1 text-right font-medium">
+                      {formatCurrency(data.line.basicSalary)}
+                    </td>
+                  </tr>
+                  {allowances.map((c) => (
+                    <tr key={c.name}>
+                      <td className="py-1 text-[var(--text-sub-500)]">{c.name}</td>
+                      <td className="py-1 text-right">{formatCurrency(c.amount)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-[var(--stroke-soft-200,#E2E4E9)]">
+                    <td className="py-2 font-medium">Total allowances</td>
+                    <td className="py-2 text-right font-medium">
+                      {formatCurrency(data.line.allowancesTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-[var(--text-main-900)]">Deductions</p>
+              <table className="w-full text-sm">
+                <tbody>
+                  {deductions.length === 0 ? (
+                    <tr>
+                      <td className="py-1 text-[var(--text-sub-500)]">—</td>
+                      <td className="py-1 text-right">{formatCurrency(0)}</td>
+                    </tr>
+                  ) : (
+                    deductions.map((c) => (
+                      <tr key={c.name}>
+                        <td className="py-1 text-[var(--text-sub-500)]">{c.name}</td>
+                        <td className="py-1 text-right">{formatCurrency(c.amount)}</td>
+                      </tr>
+                    ))
+                  )}
+                  <tr className="border-t border-[var(--stroke-soft-200,#E2E4E9)]">
+                    <td className="py-2 font-medium">Total deductions</td>
+                    <td className="py-2 text-right font-medium">
+                      {formatCurrency(data.line.deductionsTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {data.line.adjustmentsTotal !== 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-sub-500)]">Adjustments</span>
+                <span className="font-medium">{formatCurrency(data.line.adjustmentsTotal)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8 flex items-center justify-between border-t border-[var(--stroke-soft-200,#E2E4E9)] pt-6">
+            <p className="text-sm text-[var(--text-sub-500)]">Net pay</p>
+            <p className="text-2xl font-semibold text-[var(--midnight-blue-950,#01366C)]">
+              {formatCurrency(data.line.netPay)}
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

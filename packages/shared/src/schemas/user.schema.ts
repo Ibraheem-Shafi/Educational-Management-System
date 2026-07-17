@@ -37,6 +37,8 @@ export const updateUserSchema = z.object({
   phone: z.string().max(20).nullable().optional(),
   gender: genderSchema.optional(),
   cnic: z.string().regex(CNIC_REGEX).nullable().optional(),
+  department: z.string().max(200).nullable().optional(),
+  designation: z.string().max(200).nullable().optional(),
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

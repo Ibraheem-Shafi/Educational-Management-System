@@ -18,7 +18,13 @@ import { LearningService } from '../learning/learning.service';
 import { PortalSectionsService } from './portal-sections.service';
 import { countWithTrend } from '../../common/utils/stats.util';
 import type { AuthUser, PortalParentStatsResponse, PortalStudentStatsResponse } from '@eims/types';
-import type { AcceptInvitationInput, CreateLeaveRequestInput, PortalSectionQuery, UpdateProfileInput } from '@eims/shared';
+import type {
+  AcceptInvitationInput,
+  CreateEmployeeLeaveRequestInput,
+  CreateLeaveRequestInput,
+  PortalSectionQuery,
+  UpdateProfileInput,
+} from '@eims/shared';
 
 @Injectable()
 export class AuthService {
@@ -336,7 +342,7 @@ export class PortalService {
         const fromStr = from.toISOString().slice(0, 10);
 
         const [assessments, fees, attendance, timetableSlots] = await Promise.all([
-          this.assessmentsService.getStudentRecords(sp.student.id, sp.student.branchId),
+          this.assessmentsService.getStudentRecords(sp.student.id, sp.student.branchId, true),
           this.feesService.getStudentFees(sp.student.id, sp.student.branchId),
           this.attendanceService.getHistory(
             { studentId: sp.student.id, from: fromStr, to },
@@ -420,7 +426,7 @@ export class PortalService {
         { studentId: student.id, from: fromStr, to },
         student.branchId,
       ),
-      this.assessmentsService.getStudentRecords(student.id, student.branchId),
+      this.assessmentsService.getStudentRecords(student.id, student.branchId, true),
       this.feesService.getStudentFees(student.id, student.branchId),
       this.noticesService.getPortalNotices(user, student.branchId),
       student.batchId
@@ -726,8 +732,16 @@ export class PortalService {
     return this.portalSections.createParentLeaveRequest(user.email, input);
   }
 
-  async listStaffLeaveRequests(branchId: string | null) {
-    return this.portalSections.listStaffLeaveRequests(branchId);
+  async listStaffLeaveRequests(branchId: string | null, kind?: string) {
+    return this.portalSections.listStaffLeaveRequests(branchId, kind);
+  }
+
+  async createEmployeeLeaveRequest(user: AuthUser, input: CreateEmployeeLeaveRequestInput) {
+    return this.portalSections.createEmployeeLeaveRequest(user.id, input);
+  }
+
+  async listMyEmployeeLeaveRequests(user: AuthUser) {
+    return this.portalSections.listMyEmployeeLeaveRequests(user.id);
   }
 
   async reviewLeaveRequest(user: AuthUser, id: string, status: 'approved' | 'rejected') {

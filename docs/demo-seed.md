@@ -3,7 +3,7 @@
 Single reference for database seeding, demo logins, and what data is created for client presentations.
 
 **Institution:** Nexium Academy Pakistan (Pakistani coaching center)  
-**Demo version:** `nexium-v1.1`  
+**Demo version:** `nexium-v1.4`  
 **Config files:** [`templates/nexium.institution.json`](templates/nexium.institution.json) (foundation) · [`templates/nexium.demo.json`](templates/nexium.demo.json) (transactional data)  
 **Logo:** `apps/web/public/logo.png` — temporary asset until a new Nexium logo is provided (filename stays the same).
 
@@ -154,7 +154,7 @@ npm run db:seed:auth
 | notices | 5 |
 | users | 8 |
 
-Plus `terminology._demoSeedVersion` = `nexium-v1.1` on institution settings.
+Plus `terminology._demoSeedVersion` = `nexium-v1.4` on institution settings.
 
 ---
 
@@ -164,10 +164,16 @@ Plus `terminology._demoSeedVersion` = `nexium-v1.1` on institution settings.
 |--------|----------------|
 | Dashboard, branches, academic | `admin@nexium.edu.pk` or `branchadmin@nexium.edu.pk` |
 | Students, parents, attendance | `ahmed.teacher@nexium.edu.pk` |
-| Fees, reports | `fees@nexium.edu.pk` |
-| Users, communications | `reception@nexium.edu.pk` |
+| Fees, reports, accounting, payroll | `fees@nexium.edu.pk` |
+| Users, communications, front office | `reception@nexium.edu.pk` |
 | Lahore campus data | `lahore.admin@nexium.edu.pk` |
-| Learning (publish notes / homework) | `admin@nexium.edu.pk` or `ahmed.teacher@nexium.edu.pk` |
+| Learning + online classes | `admin@nexium.edu.pk` or `ahmed.teacher@nexium.edu.pk` |
+| Library | `branchadmin@nexium.edu.pk` |
+| Transport (+ GPS last ping) | `branchadmin@nexium.edu.pk` |
+| Assessments publish / report cards | `branchadmin@nexium.edu.pk` |
+| Certificates & ID cards | `admin@nexium.edu.pk` |
+| HR (contracts / reviews on user detail) | `admin@nexium.edu.pk` |
+| Portal fee pay online (mock) | `rashid.ahmad@nexium.edu.pk` or `ali.khan@nexium.edu.pk` |
 | Parent portal (+ Learning for children) | `rashid.ahmad@nexium.edu.pk` |
 | Student portal (+ Learning / due soon) | `ali.khan@nexium.edu.pk` |
 

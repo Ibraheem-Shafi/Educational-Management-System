@@ -27,4 +27,14 @@ export const createLeaveRequestSchema = z.object({
 
 export type CreateLeaveRequestInput = z.infer<typeof createLeaveRequestSchema>;
 
+/** Staff/employee leave (no studentId — requester is the authenticated user). */
+export const createEmployeeLeaveRequestSchema = z.object({
+  fromDate: z.string().min(1),
+  toDate: z.string().min(1),
+  reason: z.string().min(3).max(500),
+});
+
+export type CreateEmployeeLeaveRequestInput = z.infer<typeof createEmployeeLeaveRequestSchema>;
+
+export const LEAVE_REQUEST_KINDS = ['student', 'employee'] as const;
 export const LEAVE_REQUEST_STATUSES = ['pending', 'approved', 'rejected'] as const;

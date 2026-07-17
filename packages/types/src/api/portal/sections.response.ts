@@ -139,8 +139,11 @@ export interface PortalParentProfileResponse {
 
 export interface LeaveRequestResponse {
   id: string;
-  studentId: string;
-  studentName: string;
+  kind: 'student' | 'employee' | string;
+  studentId: string | null;
+  studentName: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
   parentId: string | null;
   fromDate: string;
   toDate: string;

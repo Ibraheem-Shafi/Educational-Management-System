@@ -75,6 +75,66 @@ export async function cleanupDemoData(prisma: PrismaClient, config: DemoConfig):
   });
   await prisma.communicationLog.deleteMany({});
 
+  await prisma.admissionInquiry.deleteMany({
+    where: {
+      fullName: {
+        in: [
+          'Ahmed Raza (inquiry)',
+          'Fatima Noor (inquiry)',
+          'Hassan Ali (inquiry)',
+        ],
+      },
+    },
+  });
+  await prisma.visitor.deleteMany({
+    where: { fullName: { in: ['Walk-in Parent', 'Textbook Supplier'] } },
+  });
+  await prisma.complaintRequest.deleteMany({
+    where: { subject: { in: ['Fee clarification', 'Timetable request'] } },
+  });
+  await prisma.certificateIssue.deleteMany({
+    where: { title: 'Demo Completion Certificate' },
+  });
+  await prisma.receptionActivity.deleteMany({
+    where: {
+      OR: [
+        { summary: { contains: '(inquiry)' } },
+        { summary: { contains: 'Walk-in Parent' } },
+        { summary: { contains: 'Fee clarification' } },
+      ],
+    },
+  });
+
+  const demoTransportRoutes = await prisma.transportRoute.findMany({
+    where: { name: 'Demo Route — G-9 to Campus' },
+    select: { id: true },
+  });
+  if (demoTransportRoutes.length) {
+    const routeIds = demoTransportRoutes.map((r) => r.id);
+    await prisma.transportAttendance.deleteMany({
+      where: { trip: { routeId: { in: routeIds } } },
+    });
+    await prisma.transportTrip.deleteMany({ where: { routeId: { in: routeIds } } });
+    await prisma.studentTransport.deleteMany({ where: { routeId: { in: routeIds } } });
+    await prisma.transportStop.deleteMany({ where: { routeId: { in: routeIds } } });
+    await prisma.transportRoute.deleteMany({ where: { id: { in: routeIds } } });
+  }
+
+  const demoVehicles = await prisma.transportVehicle.findMany({
+    where: { plateNumber: 'ISB-1234' },
+    select: { id: true },
+  });
+  if (demoVehicles.length) {
+    const vehicleIds = demoVehicles.map((v) => v.id);
+    await prisma.transportStaffAssignment.deleteMany({ where: { vehicleId: { in: vehicleIds } } });
+    await prisma.transportVehicleDocument.deleteMany({ where: { vehicleId: { in: vehicleIds } } });
+    await prisma.transportTrip.updateMany({
+      where: { vehicleId: { in: vehicleIds } },
+      data: { vehicleId: null },
+    });
+    await prisma.transportVehicle.deleteMany({ where: { id: { in: vehicleIds } } });
+  }
+
   // Keep demo users (and their supabaseUserId links). seedUsers upserts by email.
   // Deleting users here breaks auth until db:seed:auth is re-run.
 }

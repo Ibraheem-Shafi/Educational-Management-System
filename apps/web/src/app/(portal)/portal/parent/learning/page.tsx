@@ -15,9 +15,11 @@ import {
 import { usePortalChildId } from '@/lib/portal-child-context';
 import {
   LEARNING_TYPE_FILTERS,
+  formatLearningDueAt,
   formatLearningDueDate,
   learningTypeLabel,
 } from '@/lib/portal-learning';
+import { OnlineClassSessionMeta } from '@/components/features/learning/online-class-session';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SearchInput } from '@/components/layout/search-input';
@@ -195,6 +197,14 @@ function ParentLearningContent() {
                                     {item.description}
                                   </p>
                                 )}
+                                {item.type === 'online_class' && (
+                                  <OnlineClassSessionMeta
+                                    startsAt={item.startsAt}
+                                    endsAt={item.endsAt}
+                                    meetingUrl={item.meetingUrl}
+                                    variant="inline"
+                                  />
+                                )}
                               </td>
                               <td className={dataTableTdClass}>
                                 <StatusBadge
@@ -204,7 +214,9 @@ function ParentLearningContent() {
                               </td>
                               <td className={dataTableTdClass}>{item.subject?.name ?? '—'}</td>
                               <td className={dataTableTdClass}>
-                                {formatLearningDueDate(item.dueAt)}
+                                {item.type === 'online_class'
+                                  ? formatLearningDueAt(item.startsAt)
+                                  : formatLearningDueDate(item.dueAt)}
                               </td>
                               <td className={dataTableTdClass}>
                                 <Link

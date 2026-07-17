@@ -86,4 +86,54 @@ export const queryKeys = {
   portalParentProfile: ['portal-parent-profile'] as const,
   portalParentLeave: (studentId?: string) => ['portal-parent-leave', studentId ?? 'all'] as const,
   leaveRequests: ['leave-requests'] as const,
+  frontOfficeInquiries: (branchId?: string, params?: Record<string, unknown>) =>
+    ['front-office-inquiries', branchId, params] as const,
+  frontOfficeVisitors: (branchId?: string, params?: Record<string, unknown>) =>
+    ['front-office-visitors', branchId, params] as const,
+  frontOfficeComplaints: (branchId?: string, params?: Record<string, unknown>) =>
+    ['front-office-complaints', branchId, params] as const,
+  frontOfficeActivities: (branchId?: string) => ['front-office-activities', branchId] as const,
+  certificateIssues: (branchId?: string) =>
+    branchId ? (['certificate-issues', branchId] as const) : (['certificate-issues'] as const),
+  certificateTemplates: (branchId?: string) =>
+    branchId ? (['certificate-templates', branchId] as const) : (['certificate-templates'] as const),
+  libraryStats: (branchId?: string) => ['library-stats', branchId] as const,
+  libraryCategories: (branchId?: string, params?: Record<string, unknown>) =>
+    ['library-categories', branchId, params] as const,
+  libraryBooks: (branchId?: string, params?: Record<string, unknown>) =>
+    ['library-books', branchId, params] as const,
+  libraryLoans: (branchId?: string, params?: Record<string, unknown>) =>
+    ['library-loans', branchId, params] as const,
+  libraryReservations: (branchId?: string, params?: Record<string, unknown>) =>
+    ['library-reservations', branchId, params] as const,
+  libraryFines: (branchId?: string, params?: Record<string, unknown>) =>
+    ['library-fines', branchId, params] as const,
+  transportVehicles: (branchId?: string, params?: Record<string, unknown>) =>
+    ['transport-vehicles', branchId, params] as const,
+  transportRoutes: (branchId?: string, params?: Record<string, unknown>) =>
+    ['transport-routes', branchId, params] as const,
+  transportStudentAssignments: (branchId?: string, params?: Record<string, unknown>) =>
+    ['transport-student-assignments', branchId, params] as const,
+  transportTrips: (branchId?: string, params?: Record<string, unknown>) =>
+    ['transport-trips', branchId, params] as const,
+  transportTrip: (tripId: string) => ['transport-trip', tripId] as const,
+  biometricDevices: (branchId?: string, params?: Record<string, unknown>) =>
+    ['biometric-devices', branchId, params] as const,
+  biometricMappings: (branchId?: string, params?: Record<string, unknown>) =>
+    ['biometric-mappings', branchId, params] as const,
+  biometricPunchLogs: (branchId?: string, params?: Record<string, unknown>) =>
+    ['biometric-punch-logs', branchId, params] as const,
+  payrollStructures: (branchId?: string, params?: Record<string, unknown>) =>
+    ['payroll-structures', branchId, params] as const,
+  payrollRuns: (branchId?: string, params?: Record<string, unknown>) =>
+    ['payroll-runs', branchId, params] as const,
+  payrollRun: (runId: string) => ['payroll-run', runId] as const,
+  payrollHistory: (branchId?: string) => ['payroll-history', branchId] as const,
+  payrollLinePrint: (lineId: string) => ['payroll-line-print', lineId] as const,
+  accountingAccounts: (branchId?: string, params?: Record<string, unknown>) =>
+    ['accounting-accounts', branchId, params] as const,
+  accountingVouchers: (branchId?: string, params?: Record<string, unknown>) =>
+    ['accounting-vouchers', branchId, params] as const,
+  accountingBudgets: (branchId?: string, params?: Record<string, unknown>) =>
+    ['accounting-budgets', branchId, params] as const,
 };

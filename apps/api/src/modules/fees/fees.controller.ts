@@ -22,6 +22,7 @@ import {
   createFeeInvoiceSchema,
   listFeeInvoicesQuerySchema,
   recordPaymentSchema,
+  recordFeePaymentSchema,
   createFeeStructureSchema,
   updateFeeStructureSchema,
   listFeeStructuresQuerySchema,
@@ -34,6 +35,7 @@ import type {
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
   RecordPaymentInput,
+  RecordFeePaymentInput,
   CreateFeeStructureInput,
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
@@ -171,6 +173,18 @@ export class FeesController {
     @BranchId() branchId: string | null,
   ) {
     return this.feesService.recordPayment(id, body, user, branchId);
+  }
+
+  @Post('fee-invoices/:id/payments')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('fees.collect')
+  recordFeePayment(
+    @Param('id') id: string,
+    @Body(createZodPipe(recordFeePaymentSchema)) body: RecordFeePaymentInput,
+    @CurrentUser() user: AuthUser,
+    @BranchId() branchId: string | null,
+  ) {
+    return this.feesService.recordFeePayment(id, body, user, branchId);
   }
 
   @Get('students/:studentId/fees')

@@ -24,6 +24,8 @@ export const listFeeInvoicesQuerySchema = z.object({
 export type ListFeeInvoicesQuery = z.infer<typeof listFeeInvoicesQuerySchema>;
 
 export const recordPaymentSchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  method: z.enum(['cash', 'bank', 'online', 'other']).optional(),
   paidAt: z.string().datetime().optional(),
 });
 

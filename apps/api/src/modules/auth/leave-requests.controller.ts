@@ -7,16 +7,16 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  createLeaveRequestSchema,
-  portalCalendarQuerySchema,
-  portalSectionQuerySchema,
-} from '@eims/shared';
+import { createEmployeeLeaveRequestSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateLeaveRequestInput } from '@eims/shared';
+import type { CreateEmployeeLeaveRequestInput } from '@eims/shared';
 
 const reviewLeaveSchema = z.object({
   status: z.enum(['approved', 'rejected']),
+});
+
+const listLeaveQuerySchema = z.object({
+  kind: z.enum(['student', 'employee']).optional(),
 });
 
 @ApiTags('leave-requests')
@@ -27,13 +27,31 @@ export class LeaveRequestsController {
   constructor(private readonly portalService: PortalService) {}
 
   @Get()
-  @Permissions('students.read')
-  list(@BranchId() branchId: string | null) {
-    return this.portalService.listStaffLeaveRequests(branchId);
+  @Permissions('leave.read')
+  list(
+    @BranchId() branchId: string | null,
+    @Query(createZodPipe(listLeaveQuerySchema)) query: z.infer<typeof listLeaveQuerySchema>,
+  ) {
+    return this.portalService.listStaffLeaveRequests(branchId, query.kind);
+  }
+
+  @Get('mine')
+  @Permissions('leave.request')
+  listMine(@CurrentUser() user: AuthUser) {
+    return this.portalService.listMyEmployeeLeaveRequests(user);
+  }
+
+  @Post()
+  @Permissions('leave.request')
+  create(
+    @CurrentUser() user: AuthUser,
+    @Body(createZodPipe(createEmployeeLeaveRequestSchema)) body: CreateEmployeeLeaveRequestInput,
+  ) {
+    return this.portalService.createEmployeeLeaveRequest(user, body);
   }
 
   @Patch(':id')
-  @Permissions('students.update')
+  @Permissions('leave.manage')
   review(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,

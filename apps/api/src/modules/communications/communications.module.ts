@@ -9,5 +9,6 @@ import { SmsModule } from '../../common/sms/sms.module';
   imports: [AuditModule, ReportsModule, SmsModule],
   controllers: [CommunicationsController],
   providers: [CommunicationsService],
+  exports: [CommunicationsService],
 })
 export class CommunicationsModule {}

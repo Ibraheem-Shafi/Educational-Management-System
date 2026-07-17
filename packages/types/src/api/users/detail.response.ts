@@ -20,6 +20,8 @@ export interface UserDetailResponse {
   phone: string | null;
   gender: string | null;
   cnic: string | null;
+  department: string | null;
+  designation: string | null;
   branchId: string | null;
   branch: { id: string; name: string; code: string } | null;
   isActive: boolean;

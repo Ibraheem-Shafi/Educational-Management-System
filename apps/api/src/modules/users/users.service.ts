@@ -54,6 +54,8 @@ type UserDetailRecord = {
   phone: string | null;
   gender: string | null;
   cnic: string | null;
+  department: string | null;
+  designation: string | null;
   branchId: string | null;
   isActive: boolean;
   lastLoginAt: Date | null;
@@ -360,6 +362,8 @@ export class UsersService {
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.gender !== undefined ? { gender: input.gender } : {}),
         ...(input.cnic !== undefined ? { cnic: input.cnic } : {}),
+        ...(input.department !== undefined ? { department: input.department } : {}),
+        ...(input.designation !== undefined ? { designation: input.designation } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.isActive === false ? { deletedAt: new Date() } : {}),
         ...(input.isActive === true ? { deletedAt: null } : {}),
@@ -643,6 +647,8 @@ export class UsersService {
       phone: user.phone,
       gender: user.gender,
       cnic: user.cnic,
+      department: user.department,
+      designation: user.designation,
       branchId: user.branchId,
       branch: user.branch,
       isActive: user.isActive,

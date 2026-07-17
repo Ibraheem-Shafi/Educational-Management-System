@@ -11,6 +11,11 @@ import { seedFees } from './steps/06-fees';
 import { seedNoticesTimetableDocs } from './steps/07-notices-timetable-docs';
 import { seedCommsAndAudit } from './steps/08-comms-audit';
 import { seedLearning } from './steps/09-learning';
+import { seedFrontOfficeAndCertificates } from './steps/10-front-office-certificates';
+import { seedLibrary } from './steps/11-library';
+import { seedTransport } from './steps/12-transport';
+import { seedPayroll } from './steps/13-payroll';
+import { seedBiometric } from './steps/14-biometric';
 import { DEMO_SEED_VERSION, type RunDemoSeedOptions } from './types';
 
 async function getDemoSeedVersion(prisma: PrismaClient): Promise<string | null> {
@@ -81,6 +86,16 @@ export async function runDemoSeed(
   await seedCommsAndAudit(prisma, ctx);
   console.log('  → learning content');
   await seedLearning(prisma, ctx);
+  console.log('  → front office & certificates');
+  await seedFrontOfficeAndCertificates(prisma, ctx);
+  console.log('  → library');
+  await seedLibrary(prisma, ctx);
+  console.log('  → transport');
+  await seedTransport(prisma, ctx);
+  console.log('  → payroll');
+  await seedPayroll(prisma, ctx);
+  console.log('  → biometric');
+  await seedBiometric(prisma, ctx);
 
   await setDemoSeedVersion(prisma, config.version, config.institution);
 

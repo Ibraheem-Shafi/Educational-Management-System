@@ -7,12 +7,18 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  absenceAlertSchema,
   feeReminderSchema,
   noticeBroadcastSchema,
   sendMessageSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { FeeReminderInput, NoticeBroadcastInput, SendMessageInput } from '@eims/shared';
+import type {
+  AbsenceAlertInput,
+  FeeReminderInput,
+  NoticeBroadcastInput,
+  SendMessageInput,
+} from '@eims/shared';
 
 @ApiTags('communications')
 @ApiBearerAuth()
@@ -50,6 +56,19 @@ export class CommunicationsController {
     @BranchId() branchId: string | null,
   ) {
     return this.service.sendFeeReminders(body, user, branchId);
+  }
+
+  @Post('absence-alerts')
+  @Permissions('attendance.mark')
+  absenceAlerts(
+    @Body(createZodPipe(absenceAlertSchema)) body: AbsenceAlertInput,
+    @CurrentUser() user: AuthUser,
+    @BranchId() branchId: string | null,
+  ) {
+    return this.service.sendAbsenceAlerts(
+      { ...body, branchId: branchId ?? body.branchId },
+      user,
+    );
   }
 
   @Post('notice-broadcast')

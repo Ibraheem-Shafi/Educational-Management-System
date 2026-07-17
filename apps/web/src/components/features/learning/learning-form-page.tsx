@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LEARNING_AUDIENCES, LEARNING_RESOURCE_TYPES, LEARNING_VISIBILITY_SCOPES } from '@eims/shared';
+import {
+  LEARNING_AUDIENCES,
+  LEARNING_MEETING_PLATFORMS,
+  LEARNING_RESOURCE_TYPES,
+  LEARNING_VISIBILITY_SCOPES,
+} from '@eims/shared';
 import type { LearningResourceResponse } from '@eims/types';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
@@ -56,6 +61,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const [isPublished, setIsPublished] = useState(false);
   const [fileName, setFileName] = useState('');
   const [storagePath, setStoragePath] = useState('');
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingPlatform, setMeetingPlatform] = useState('meet');
 
   useEffect(() => {
     if (!existing || mode !== 'edit') return;
@@ -73,6 +82,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
     setIsPublished(existing.isPublished);
     setFileName(existing.attachments?.[0]?.fileName ?? '');
     setStoragePath(existing.attachments?.[0]?.storagePath ?? '');
+    setStartsAt(existing.startsAt ? existing.startsAt.slice(0, 16) : '');
+    setEndsAt(existing.endsAt ? existing.endsAt.slice(0, 16) : '');
+    setMeetingUrl(existing.meetingUrl ?? '');
+    setMeetingPlatform(existing.meetingPlatform ?? 'meet');
   }, [existing, mode]);
 
   const { data: programs } = useQuery({
@@ -93,7 +106,14 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const requiresBatch = visibilityScope === 'batch' || visibilityScope === 'batch_subject';
   const requiresSubject = visibilityScope === 'batch_subject';
 
-  const canSubmit = title.trim() && effectiveBranchId && (!requiresProgram || programId) && (!requiresBatch || batchId) && (!requiresSubject || subjectId);
+  const isOnlineClass = type === 'online_class';
+  const canSubmit =
+    title.trim() &&
+    effectiveBranchId &&
+    (!requiresProgram || programId) &&
+    (!requiresBatch || batchId) &&
+    (!requiresSubject || subjectId) &&
+    (!isOnlineClass || (startsAt.trim() && meetingUrl.trim()));
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -110,6 +130,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
         body: body.trim() || undefined,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         maxMarks: maxMarks ? Number(maxMarks) : undefined,
+        startsAt: isOnlineClass && startsAt ? new Date(startsAt).toISOString() : undefined,
+        endsAt: isOnlineClass && endsAt ? new Date(endsAt).toISOString() : undefined,
+        meetingUrl: isOnlineClass ? meetingUrl.trim() || undefined : undefined,
+        meetingPlatform: isOnlineClass ? meetingPlatform : undefined,
         isPublished,
       };
       const path = editId ? `/learning/${editId}` : '/learning';
@@ -249,15 +273,61 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 className="w-full"
               />
             </div>
-            <div>
-              <FormFieldLabel>Due at</FormFieldLabel>
-              <input
-                type="datetime-local"
-                className={modalFieldClassName}
-                value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
-              />
-            </div>
+            {isOnlineClass ? (
+              <>
+                <div>
+                  <FormFieldLabel required>Starts at</FormFieldLabel>
+                  <input
+                    type="datetime-local"
+                    className={modalFieldClassName}
+                    value={startsAt}
+                    onChange={(e) => setStartsAt(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <FormFieldLabel>Ends at</FormFieldLabel>
+                  <input
+                    type="datetime-local"
+                    className={modalFieldClassName}
+                    value={endsAt}
+                    onChange={(e) => setEndsAt(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <FormFieldLabel required>Meeting URL</FormFieldLabel>
+                  <input
+                    type="url"
+                    className={modalFieldClassName}
+                    value={meetingUrl}
+                    onChange={(e) => setMeetingUrl(e.target.value)}
+                    placeholder="https://meet.google.com/..."
+                  />
+                </div>
+                <div>
+                  <FormFieldLabel>Meeting platform</FormFieldLabel>
+                  <SelectDropdown
+                    aria-label="Meeting platform"
+                    value={meetingPlatform}
+                    onValueChange={setMeetingPlatform}
+                    options={LEARNING_MEETING_PLATFORMS.map((v) => ({
+                      value: v,
+                      label: v.charAt(0).toUpperCase() + v.slice(1),
+                    }))}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <FormFieldLabel>Due at</FormFieldLabel>
+                <input
+                  type="datetime-local"
+                  className={modalFieldClassName}
+                  value={dueAt}
+                  onChange={(e) => setDueAt(e.target.value)}
+                />
+              </div>
+            )}
             <div>
               <FormFieldLabel>Max marks</FormFieldLabel>
               <input

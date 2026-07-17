@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { AccountingPostingService } from '../accounting/accounting-posting.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
@@ -12,6 +13,7 @@ import type {
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
   RecordPaymentInput,
+  RecordFeePaymentInput,
   CreateFeeStructureInput,
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
@@ -28,6 +30,7 @@ export class FeesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
+    private readonly accountingPosting: AccountingPostingService,
   ) {}
 
   async getStats(branchId: string | null): Promise<FeesStatsResponse> {
@@ -238,40 +241,169 @@ export class FeesService {
   async recordPayment(id: string, input: RecordPaymentInput, user: AuthUser, branchId: string | null) {
     const invoice = await this.prisma.feeInvoice.findFirst({
       where: { id, ...(branchId ? { branchId } : {}) },
-      include: { student: { select: { id: true, fullName: true } } },
+      include: { payments: { where: { status: 'succeeded' } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
-    const paidStatus = await this.prisma.lookupStatus.findFirst({
-      where: { code: 'paid', category: { code: 'fee_status' } },
-    });
-    if (!paidStatus) throw new BadRequestException('Fee status lookup not configured');
+    const remaining = this.getRemainingAmount(invoice);
+    if (remaining <= 0) throw new BadRequestException('Invoice is already fully paid');
 
-    const updated = await this.prisma.feeInvoice.update({
-      where: { id },
-      data: {
-        paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
-        statusId: paidStatus.id,
+    return this.recordFeePayment(
+      id,
+      {
+        amount: input.amount ?? remaining,
+        method: input.method ?? 'other',
+        paidAt: input.paidAt,
       },
-      include: { student: { select: { id: true, fullName: true } } },
+      user,
+      branchId,
+      { provider: 'manual' },
+    );
+  }
+
+  async recordFeePayment(
+    id: string,
+    input: RecordFeePaymentInput,
+    user: AuthUser,
+    branchId: string | null,
+    options?: { provider?: string; providerRef?: string; status?: string; skipAudit?: boolean },
+  ) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...(branchId ? { branchId } : {}) },
+      include: {
+        student: { select: { id: true, fullName: true } },
+        payments: { where: { status: 'succeeded' } },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const currentStatus = await this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } });
+    if (currentStatus?.code === 'waived') {
+      throw new BadRequestException('Cannot record payment on waived invoice');
+    }
+
+    const remaining = this.getRemainingAmount(invoice);
+    if (input.amount > remaining) {
+      throw new BadRequestException(`Payment amount exceeds remaining balance (${remaining})`);
+    }
+
+    const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
+    const status = options?.status ?? 'succeeded';
+
+    const payment = await this.prisma.feePayment.create({
+      data: {
+        invoiceId: id,
+        branchId: invoice.branchId,
+        amount: input.amount,
+        method: input.method,
+        provider: options?.provider ?? 'manual',
+        providerRef: options?.providerRef,
+        status,
+        paidAt: status === 'succeeded' ? paidAt : null,
+        recordedById: user.id,
+      },
     });
 
-    await this.audit.log({
-      userId: user.id,
-      action: 'fee_invoice.paid',
-      entityType: 'FeeInvoice',
-      entityId: id,
-      previousValue: invoice,
-      newValue: updated,
-    });
+    const updated = await this.syncInvoiceAfterPayment(id);
 
-    const [feeType, status] = await Promise.all([
+    if (status === 'succeeded') {
+      await this.accountingPosting.postFeePayment(
+        payment.id,
+        invoice.branchId,
+        Number(input.amount),
+        user.id,
+      );
+    }
+
+    if (!options?.skipAudit) {
+      await this.audit.log({
+        userId: user.id,
+        action: status === 'succeeded' ? 'fee_invoice.paid' : 'fee_payment.created',
+        entityType: 'FeePayment',
+        entityId: payment.id,
+        previousValue: invoice,
+        newValue: { payment, invoice: updated },
+      });
+    }
+
+    const [feeType, statusLookup] = await Promise.all([
       this.prisma.feeType.findUnique({ where: { id: updated.feeTypeId } }),
       this.prisma.lookupStatus.findUnique({ where: { id: updated.statusId } }),
     ]);
     const feeTypeMap = feeType ? new Map([[feeType.id, feeType]]) : new Map();
-    const statusMap = status ? new Map([[status.id, status]]) : new Map();
-    return this.toResponse(updated, feeTypeMap, statusMap);
+    const statusMap = statusLookup ? new Map([[statusLookup.id, statusLookup]]) : new Map();
+    return {
+      payment: {
+        id: payment.id,
+        amount: Number(payment.amount),
+        method: payment.method,
+        status: payment.status,
+        paidAt: payment.paidAt?.toISOString() ?? null,
+      },
+      invoice: this.toResponse(updated, feeTypeMap, statusMap),
+    };
+  }
+
+  async syncInvoiceAfterPayment(invoiceId: string) {
+    const invoice = await this.prisma.feeInvoice.findUnique({
+      where: { id: invoiceId },
+      include: { payments: { where: { status: 'succeeded' } } },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const paidTotal = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const netAmount = Number(invoice.netAmount);
+    const statusCodes = await this.getFeeStatusMap();
+
+    let statusCode: string;
+    let paidAt: Date | null = null;
+
+    if (paidTotal >= netAmount) {
+      statusCode = 'paid';
+      const latestPayment = invoice.payments
+        .filter((p) => p.paidAt)
+        .sort((a, b) => (b.paidAt!.getTime() - a.paidAt!.getTime()));
+      paidAt = latestPayment[0]?.paidAt ?? new Date();
+    } else if (paidTotal > 0) {
+      statusCode = 'partial';
+    } else if (invoice.dueDate && invoice.dueDate < new Date()) {
+      statusCode = 'overdue';
+    } else {
+      statusCode = 'pending';
+    }
+
+    const statusId = statusCodes.get(statusCode);
+    if (!statusId) throw new BadRequestException(`Fee status lookup not configured: ${statusCode}`);
+
+    return this.prisma.feeInvoice.update({
+      where: { id: invoiceId },
+      data: { statusId, paidAt },
+      include: { student: { select: { id: true, fullName: true } } },
+    });
+  }
+
+  async getInvoiceRemainingAmount(id: string, branchId: string | null): Promise<number> {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...(branchId ? { branchId } : {}) },
+      include: { payments: { where: { status: 'succeeded' } } },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    return this.getRemainingAmount(invoice);
+  }
+
+  private getRemainingAmount(invoice: {
+    netAmount: { toString(): string };
+    payments?: Array<{ amount: { toString(): string } }>;
+  }): number {
+    const paid = (invoice.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+    return Math.max(0, Number(invoice.netAmount) - paid);
+  }
+
+  private async getFeeStatusMap(): Promise<Map<string, string>> {
+    const statuses = await this.prisma.lookupStatus.findMany({
+      where: { category: { code: 'fee_status' } },
+    });
+    return new Map(statuses.map((s) => [s.code, s.id]));
   }
 
   async getStudentFees(studentId: string, branchId: string | null) {
@@ -282,6 +414,7 @@ export class FeesService {
 
     const invoices = await this.prisma.feeInvoice.findMany({
       where: { studentId },
+      include: { payments: { where: { status: 'succeeded' } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
@@ -295,9 +428,7 @@ export class FeesService {
     const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
     const statusMap = new Map(statuses.map((s) => [s.id, s]));
 
-    const outstanding = invoices
-      .filter((inv) => !inv.paidAt)
-      .reduce((sum, inv) => sum + Number(inv.netAmount), 0);
+    const outstanding = invoices.reduce((sum, inv) => sum + this.getRemainingAmount(inv), 0);
 
     return {
       studentId,

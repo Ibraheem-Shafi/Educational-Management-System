@@ -195,6 +195,10 @@ export class LearningService {
         audience: input.audience,
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
         maxMarks: input.maxMarks ?? null,
+        startsAt: input.startsAt ? new Date(input.startsAt) : null,
+        endsAt: input.endsAt ? new Date(input.endsAt) : null,
+        meetingUrl: input.meetingUrl || null,
+        meetingPlatform: input.meetingPlatform ?? null,
         isPublished: input.isPublished ?? false,
         publishedAt: input.isPublished ? new Date() : null,
         createdById: user.id,
@@ -260,6 +264,14 @@ export class LearningService {
           ? { dueAt: input.dueAt ? new Date(input.dueAt) : null }
           : {}),
         ...(input.maxMarks !== undefined ? { maxMarks: input.maxMarks } : {}),
+        ...(input.startsAt !== undefined
+          ? { startsAt: input.startsAt ? new Date(input.startsAt) : null }
+          : {}),
+        ...(input.endsAt !== undefined
+          ? { endsAt: input.endsAt ? new Date(input.endsAt) : null }
+          : {}),
+        ...(input.meetingUrl !== undefined ? { meetingUrl: input.meetingUrl || null } : {}),
+        ...(input.meetingPlatform !== undefined ? { meetingPlatform: input.meetingPlatform } : {}),
         ...(input.isPublished !== undefined
           ? {
               isPublished,
@@ -488,6 +500,10 @@ export class LearningService {
       audience: string;
       dueAt: Date | null;
       maxMarks: Prisma.Decimal | null;
+      startsAt: Date | null;
+      endsAt: Date | null;
+      meetingUrl: string | null;
+      meetingPlatform: string | null;
       isPublished: boolean;
       publishedAt: Date | null;
       createdById: string | null;
@@ -544,6 +560,10 @@ export class LearningService {
       audience: r.audience,
       dueAt: r.dueAt?.toISOString() ?? null,
       maxMarks: r.maxMarks != null ? Number(r.maxMarks) : null,
+      startsAt: r.startsAt?.toISOString() ?? null,
+      endsAt: r.endsAt?.toISOString() ?? null,
+      meetingUrl: r.meetingUrl ?? null,
+      meetingPlatform: r.meetingPlatform ?? null,
       isPublished: r.isPublished,
       publishedAt: r.publishedAt?.toISOString() ?? null,
       createdById: r.createdById,

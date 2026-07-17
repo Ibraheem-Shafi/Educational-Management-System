@@ -1,0 +1,177 @@
+'use client';
+
+import { useCallback, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { PERMISSIONS } from '@eims/shared';
+import { useAuth } from '@/providers/auth-provider';
+import { apiClient } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
+import { ContentPanel } from '@/components/layout/content-panel';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { SearchInput } from '@/components/layout/search-input';
+import { PermissionGate } from '@/components/auth/permission-gate';
+import { Button } from '@/components/ui/button';
+import {
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { cn } from '@/lib/utils';
+import { StudentAssignmentDialog } from './student-assignment-dialog';
+import type { StudentTransportAssignment } from './types';
+import { formatLabel } from './types';
+
+export function StudentsPanel({ branchId }: { branchId: string }) {
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const queryClient = useQueryClient();
+
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editAssignment, setEditAssignment] = useState<StudentTransportAssignment | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.transportStudentAssignments(branchId, { search }),
+    queryFn: () => {
+      const params = new URLSearchParams({ branchId });
+      if (search) params.set('search', search);
+      return apiClient<{ data: StudentTransportAssignment[] }>(
+        `/transport/student-assignments?${params.toString()}`,
+        { token },
+      );
+    },
+    enabled: !!token && !!branchId,
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/transport/student-assignments/${id}`, { method: 'DELETE', token }),
+    onSuccess: async () => {
+      toast.success('Assignment removed');
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.transportStudentAssignments(branchId),
+      });
+    },
+    onError: () => toast.error('Unable to remove assignment'),
+  });
+
+  const rows = data?.data ?? [];
+
+  return (
+    <>
+      <ContentPanel
+        title={`Student assignments (${rows.length})`}
+        actions={
+          <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE}>
+            <button
+              type="button"
+              className={pageHeaderActionClassName}
+              onClick={() => setCreateOpen(true)}
+            >
+              <PageHeaderActionIcon />
+              Assign student
+            </button>
+          </PermissionGate>
+        }
+      >
+        <div className="border-b border-stroke-soft-200 px-5 py-4">
+          <FilterBar>
+            <SearchInput
+              value={search}
+              onValueChange={handleSearchChange}
+              placeholder="Search student name"
+              className="min-w-[220px] flex-1 sm:max-w-xs"
+            />
+          </FilterBar>
+        </div>
+
+        {error ? (
+          <p className="px-5 py-8 text-sm text-red-600">Unable to load student assignments.</p>
+        ) : (
+          <div className={dataTableWrapperClass}>
+            <table className={cn(dataTableClass, 'min-w-[900px]')}>
+              <thead>
+                <tr>
+                  <th className={dataTableThClass}>Student</th>
+                  <th className={dataTableThClass}>Route</th>
+                  <th className={dataTableThClass}>Stop</th>
+                  <th className={dataTableThClass}>Direction</th>
+                  <th className={dataTableThClass}>Actions</th>
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {isLoading ? (
+                  <DataTableSkeletonRows columns={5} rows={5} />
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
+                      No student assignments found
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((row) => (
+                    <tr key={row.id} className={dataTableRowHoverClass}>
+                      <td className={dataTableTdClass}>{row.student?.fullName ?? '—'}</td>
+                      <td className={dataTableTdClass}>{row.route?.name ?? '—'}</td>
+                      <td className={dataTableTdClass}>
+                        {row.stop ? `${row.stop.sequence}. ${row.stop.name}` : '—'}
+                      </td>
+                      <td className={dataTableTdClass}>{formatLabel(row.direction)}</td>
+                      <td className={dataTableTdClass}>
+                        <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setEditAssignment(row)}
+                              aria-label="Edit assignment"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                if (window.confirm('Remove this assignment?')) remove.mutate(row.id);
+                              }}
+                              aria-label="Remove assignment"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </PermissionGate>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ContentPanel>
+
+      <StudentAssignmentDialog open={createOpen} onOpenChange={setCreateOpen} branchId={branchId} />
+      <StudentAssignmentDialog
+        open={Boolean(editAssignment)}
+        onOpenChange={(open) => {
+          if (!open) setEditAssignment(null);
+        }}
+        branchId={branchId}
+        assignment={editAssignment}
+      />
+    </>
+  );
+}

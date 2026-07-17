@@ -71,24 +71,36 @@ export class DocumentsService {
         deletedAt: null,
         ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
         ...(query.studentId ? { studentId: query.studentId } : {}),
+        ...(query.userId ? { userId: query.userId } : {}),
         ...(query.category ? { category: query.category } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      include: { student: { select: { id: true, fullName: true } } },
+      include: {
+        student: { select: { id: true, fullName: true } },
+        user: { select: { id: true, fullName: true } },
+      },
     });
     return { data: docs };
   }
 
   async create(input: CreateDocumentInput, user: AuthUser) {
-    const student = await this.prisma.student.findFirst({
-      where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
-    });
-    if (!student) throw new NotFoundException('Student not found');
+    if (input.studentId) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
+      });
+      if (!student) throw new NotFoundException('Student not found');
+    } else if (input.userId) {
+      const employee = await this.prisma.user.findFirst({
+        where: { id: input.userId, branchId: input.branchId, deletedAt: null },
+      });
+      if (!employee) throw new NotFoundException('User not found');
+    }
 
     const doc = await this.prisma.document.create({
       data: {
         branchId: input.branchId,
-        studentId: input.studentId,
+        studentId: input.studentId ?? null,
+        userId: input.userId ?? null,
         category: input.category,
         title: input.title,
         storagePath: input.storagePath,
@@ -96,7 +108,10 @@ export class DocumentsService {
         sizeBytes: input.sizeBytes,
         uploadedById: user.id,
       },
-      include: { student: { select: { id: true, fullName: true } } },
+      include: {
+        student: { select: { id: true, fullName: true } },
+        user: { select: { id: true, fullName: true } },
+      },
     });
 
     await this.audit.log({

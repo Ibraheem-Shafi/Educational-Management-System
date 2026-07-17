@@ -5,11 +5,14 @@ import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 import {
   ChevronRight,
+  FileText,
   Info,
   Mail,
   Phone,
+  ScrollText,
   Shield,
   SquarePen,
+  Star,
   UserCog,
 } from 'lucide-react';
 import type { UserDetailResponse, UserPermissionDetail } from '@eims/types';
@@ -17,6 +20,11 @@ import { StatusBadge } from '@/components/layout/status-badge';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { pageHeaderActionClassName } from '@/components/layout/page-header';
 import { cn } from '@/lib/utils';
+import { UserContractsSection } from '@/components/features/users/user-contracts-section';
+import { UserReviewsSection } from '@/components/features/users/user-reviews-section';
+import { UserFilesSection } from '@/components/features/users/user-files-section';
+import { usePermissions } from '@/hooks/use-permissions';
+import { PERMISSIONS } from '@eims/shared';
 
 function formatGender(gender: string | null): string {
   if (!gender) return '—';
@@ -122,6 +130,10 @@ export function UserDetailView({
     () => groupPermissions(user.permissions ?? []),
     [user.permissions],
   );
+  const { can } = usePermissions();
+  const canViewHr = can(PERMISSIONS.HR_READ);
+  const canViewPayroll = can(PERMISSIONS.PAYROLL_READ);
+  const canViewDocs = can(PERMISSIONS.DOCUMENTS_READ);
 
   const primaryRole = user.roles[0] ?? null;
   const permissionCount = user.permissions?.length ?? 0;
@@ -191,10 +203,51 @@ export function UserDetailView({
           <InfoField label="Gender" value={formatGender(user.gender)} />
           <InfoField label="CNIC" value={user.cnic ?? '—'} />
           <InfoField label="Branch" value={user.branch?.name ?? 'All branches'} />
+          <InfoField label="Department" value={user.department ?? '—'} />
+          <InfoField label="Designation" value={user.designation ?? '—'} />
           <InfoField label="Last login" value={formatDateTime(user.lastLoginAt)} />
           <InfoField label="Joined" value={formatDateTime(user.createdAt)} />
         </div>
       </DetailCard>
+
+      {canViewHr && (
+        <>
+          <DetailCard title="Contracts" icon={ScrollText}>
+            <div className="px-5 py-5">
+              <UserContractsSection userId={user.id} branchId={user.branchId} />
+            </div>
+          </DetailCard>
+          <DetailCard title="Performance reviews" icon={Star}>
+            <div className="px-5 py-5">
+              <UserReviewsSection userId={user.id} branchId={user.branchId} />
+            </div>
+          </DetailCard>
+        </>
+      )}
+
+      {canViewPayroll && (
+        <DetailCard title="Payroll" icon={ScrollText}>
+          <div className="px-5 py-5">
+            <p className="text-sm text-[var(--text-sub-500)]">
+              View and manage salary structures for this staff member.
+            </p>
+            <Link
+              href={`/dashboard/payroll?userId=${user.id}`}
+              className="mt-3 inline-flex text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
+            >
+              Open payroll structures
+            </Link>
+          </div>
+        </DetailCard>
+      )}
+
+      {canViewDocs && (
+        <DetailCard title="Files" icon={FileText}>
+          <div className="px-5 py-5">
+            <UserFilesSection userId={user.id} branchId={user.branchId} />
+          </div>
+        </DetailCard>
+      )}
 
       <DetailCard title={`Roles & permissions (${permissionCount})`} icon={Shield}>
         <div className="space-y-6 px-5 py-5">

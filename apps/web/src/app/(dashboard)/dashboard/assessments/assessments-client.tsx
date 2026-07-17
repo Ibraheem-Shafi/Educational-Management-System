@@ -33,13 +33,41 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { queryKeys } from '@/lib/query-keys';
+import { StatusBadge } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
 
 interface Assessment {
   id: string;
   name: string;
   totalMarks: number;
+  typeId: string;
+  seriesId: string | null;
+  status: string;
+  answerKey: string | null;
+  reviewNotes: string | null;
   type?: { name: string };
+}
+
+function assessmentStatusLabel(status: string): string {
+  switch (status) {
+    case 'in_review':
+      return 'In review';
+    case 'published':
+      return 'Published';
+    default:
+      return 'Draft';
+  }
+}
+
+function assessmentStatusCode(status: string): string {
+  switch (status) {
+    case 'published':
+      return 'active';
+    case 'in_review':
+      return 'pending';
+    default:
+      return 'draft';
+  }
 }
 
 interface AssessmentType {
@@ -66,8 +94,10 @@ export default function AssessmentsPage() {
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const canEnterMarks = can(PERMISSIONS.ASSESSMENTS_MARKS_ENTER);
+  const canPublish = can(PERMISSIONS.ASSESSMENTS_PUBLISH);
   const canManageAcademic = can(PERMISSIONS.ACADEMIC_MANAGE);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [search, setSearch] = useState('');
   const [showSeries, setShowSeries] = useState(false);
   const [showTypes, setShowTypes] = useState(false);
@@ -168,6 +198,34 @@ export default function AssessmentsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const submitReviewMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/assessments/${id}/submit-review`, { method: 'POST', token }),
+    onSuccess: () => {
+      toast.success('Submitted for review');
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: (id: string) => apiClient(`/assessments/${id}/publish`, { method: 'POST', token }),
+    onSuccess: () => {
+      toast.success('Assessment published');
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const unpublishMutation = useMutation({
+    mutationFn: (id: string) => apiClient(`/assessments/${id}/unpublish`, { method: 'POST', token }),
+    onSuccess: () => {
+      toast.success('Assessment unpublished');
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const filteredAssessments = (assessments?.data ?? []).filter((a) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -210,9 +268,15 @@ export default function AssessmentsPage() {
       />
 
       <CreateAssessmentDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+        open={createOpen || Boolean(editingAssessment)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setEditingAssessment(null);
+          }
+        }}
         branchId={effectiveBranchId}
+        assessment={editingAssessment}
       />
 
       <MainStatsSection
@@ -411,16 +475,17 @@ export default function AssessmentsPage() {
               <tr>
                 <th className={dataTableThClass}>Name</th>
                 <th className={dataTableThClass}>Type</th>
+                <th className={dataTableThClass}>Status</th>
                 <th className={dataTableThClass}>Total marks</th>
                 <th className={cn(dataTableThClass, 'w-12')} />
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={4} rows={8} />}
+              {isLoading && <DataTableSkeletonRows columns={5} rows={8} />}
 
               {error && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
                     Failed to load assessments
                   </td>
                 </tr>
@@ -429,7 +494,7 @@ export default function AssessmentsPage() {
               {!isLoading && !error && filteredAssessments.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
                     No assessments found
@@ -443,15 +508,58 @@ export default function AssessmentsPage() {
                   <tr key={assessment.id} className={cn('transition-colors', dataTableRowHoverClass)}>
                     <td className={dataTableTdClass}>{assessment.name}</td>
                     <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
+                    <td className={dataTableTdClass}>
+                      <StatusBadge
+                        label={assessmentStatusLabel(assessment.status)}
+                        code={assessmentStatusCode(assessment.status)}
+                      />
+                    </td>
                     <td className={dataTableTdClass}>{assessment.totalMarks}</td>
                     <td className={cn(dataTableTdClass, 'text-right')}>
-                      {canEnterMarks ? (
+                      {(canEnterMarks || canPublish) ? (
                         <RowActionsMenu
                           items={[
-                            {
-                              label: 'Enter marks',
-                              href: `/dashboard/assessments/${assessment.id}/marks`,
-                            },
+                            ...(canEnterMarks && assessment.status !== 'published'
+                              ? [
+                                  {
+                                    label: 'Enter marks',
+                                    href: `/dashboard/assessments/${assessment.id}/marks`,
+                                  },
+                                ]
+                              : []),
+                            ...(canEnterMarks && assessment.status !== 'published'
+                              ? [
+                                  {
+                                    label: 'Edit',
+                                    onClick: () => setEditingAssessment(assessment),
+                                  },
+                                ]
+                              : []),
+                            ...(canEnterMarks && assessment.status === 'draft'
+                              ? [
+                                  {
+                                    label: 'Submit for review',
+                                    onClick: () => submitReviewMutation.mutate(assessment.id),
+                                  },
+                                ]
+                              : []),
+                            ...(canPublish &&
+                            (assessment.status === 'draft' || assessment.status === 'in_review')
+                              ? [
+                                  {
+                                    label: 'Publish',
+                                    onClick: () => publishMutation.mutate(assessment.id),
+                                  },
+                                ]
+                              : []),
+                            ...(canPublish && assessment.status === 'published'
+                              ? [
+                                  {
+                                    label: 'Unpublish',
+                                    onClick: () => unpublishMutation.mutate(assessment.id),
+                                  },
+                                ]
+                              : []),
                           ]}
                         />
                       ) : null}

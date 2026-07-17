@@ -14,6 +14,9 @@ export const bulkAttendanceSchema = z.object({
   branchId: z.string().min(1),
   date: dateOnlySchema,
   batchId: z.string().optional(),
+  /** When true (default), notify linked parents for students marked absent. */
+  notifyAbsences: z.boolean().optional().default(true),
+  notifyChannel: z.enum(['sms', 'whatsapp']).optional().default('sms'),
   records: z
     .array(
       z.object({

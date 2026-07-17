@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import { StudentDetailView } from '@/components/features/students/student-detail-view';
 import { PermissionGate } from '@/components/auth/permission-gate';
+import { IssueCertificateDialog } from '@/components/features/certificates/issue-certificate-dialog';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -47,8 +49,11 @@ export default function StudentDetailPage() {
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
+  const [issueCertOpen, setIssueCertOpen] = useState(false);
   const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
   const canDelete = can(PERMISSIONS.STUDENTS_DELETE);
+  const canIssueCert = can(PERMISSIONS.CERTIFICATES_ISSUE);
+  const canReadCert = can(PERMISSIONS.CERTIFICATES_READ);
 
   const { data: student, isLoading } = useQuery({
     queryKey: ['student', id],
@@ -286,6 +291,38 @@ export default function StudentDetailPage() {
             </div>
           </div>
         }
+        certificatesSection={
+          canReadCert || canIssueCert ? (
+            <div className="flex flex-wrap gap-3">
+              {canReadCert && (
+                <Link
+                  href={`/print/id-cards/${id}`}
+                  target="_blank"
+                  className="inline-flex items-center rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-2 text-sm font-medium text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+                >
+                  Print ID card
+                </Link>
+              )}
+              {canIssueCert && (
+                <button
+                  type="button"
+                  onClick={() => setIssueCertOpen(true)}
+                  className="inline-flex items-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  Issue certificate
+                </button>
+              )}
+              {canReadCert && (
+                <Link
+                  href="/dashboard/certificates"
+                  className="inline-flex items-center text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
+                >
+                  View certificate history
+                </Link>
+              )}
+            </div>
+          ) : null
+        }
         attendanceSection={
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
@@ -361,6 +398,15 @@ export default function StudentDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {canIssueCert && student.branchId && (
+        <IssueCertificateDialog
+          open={issueCertOpen}
+          onOpenChange={setIssueCertOpen}
+          branchId={student.branchId}
+          defaultStudentId={student.id}
+        />
       )}
     </div>
   );
