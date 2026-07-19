@@ -22,6 +22,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { cn } from '@/lib/utils';
 import type { LibraryFine } from './types';
 import { borrowerName, formatDate, formatLabel, statusBadgeCode } from './types';
@@ -147,22 +148,20 @@ export function FinesPanel({ branchId }: { branchId: string }) {
                     {canManage && (
                       <td className={dataTableTdClass}>
                         {fine.status === 'unpaid' ? (
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className="rounded px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
-                              onClick={() => updateStatus.mutate({ id: fine.id, status: 'paid' })}
-                            >
-                              Mark paid
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded px-2 py-1 text-xs font-medium text-[var(--text-sub-500)] hover:bg-neutral-50"
-                              onClick={() => updateStatus.mutate({ id: fine.id, status: 'waived' })}
-                            >
-                              Waive
-                            </button>
-                          </div>
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Mark paid',
+                                onClick: () =>
+                                  updateStatus.mutate({ id: fine.id, status: 'paid' }),
+                              },
+                              {
+                                label: 'Waive',
+                                onClick: () =>
+                                  updateStatus.mutate({ id: fine.id, status: 'waived' }),
+                              },
+                            ]}
+                          />
                         ) : (
                           '—'
                         )}

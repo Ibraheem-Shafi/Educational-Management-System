@@ -1,23 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardCheck, Pencil } from 'lucide-react';
-import { toast } from 'sonner';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PERMISSIONS } from '@eims/shared';
 import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
-import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -35,10 +32,8 @@ import { formatDate, formatLabel, statusBadgeCode } from './types';
 
 export function TripsPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();
-  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const canManage = can(PERMISSIONS.TRANSPORT_MANAGE);
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
@@ -117,27 +112,12 @@ export function TripsPanel({ branchId }: { branchId: string }) {
                         <td className={dataTableTdClass}>{row._count?.attendance ?? 0}</td>
                         <td className={dataTableTdClass}>
                           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditTrip(row)}
-                                aria-label="Edit trip"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setAttendanceTrip(row)}
-                                aria-label="Mark attendance"
-                                disabled={!canManage}
-                              >
-                                <ClipboardCheck className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'Edit', onClick: () => setEditTrip(row) },
+                                { label: 'Mark attendance', onClick: () => setAttendanceTrip(row) },
+                              ]}
+                            />
                           </PermissionGate>
                         </td>
                       </tr>

@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GraduationCap, Pencil, Trash2 } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { inquiryStatuses, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -22,6 +22,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -32,6 +33,7 @@ import {
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
+import { FrontOfficeDetailDialog } from './front-office-detail-dialog';
 import { InquiryDialog } from './inquiry-dialog';
 import type { AdmissionInquiry } from './types';
 import { formatDateTime, formatLabel, statusBadgeCode } from './types';
@@ -49,6 +51,7 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
   const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editInquiry, setEditInquiry] = useState<AdmissionInquiry | null>(null);
+  const [viewInquiry, setViewInquiry] = useState<AdmissionInquiry | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -195,42 +198,32 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
                       </td>
                       <td className={dataTableTdClass}>{formatDateTime(row.followUpAt)}</td>
                       <td className={dataTableTdClass}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {canManage && !row.convertedStudentId && row.status !== 'enrolled' ? (
-                            <Link
-                              href={`/dashboard/students/new?inquiryId=${row.id}`}
-                              className={cn(
-                                'inline-flex h-8 items-center gap-1 rounded-md border border-[var(--stroke-soft-200)] px-2.5',
-                                'text-xs font-medium text-[var(--midnight-blue-950)] hover:bg-[var(--neutral-50)]',
-                              )}
-                            >
-                              <GraduationCap className="h-3.5 w-3.5" />
-                              Convert
-                            </Link>
-                          ) : null}
-                          <PermissionGate permission={PERMISSIONS.FRONT_OFFICE_MANAGE} fallback="—">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditInquiry(row)}
-                              aria-label="Edit inquiry"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (window.confirm('Delete this inquiry?')) remove.mutate(row.id);
-                              }}
-                              aria-label="Delete inquiry"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </PermissionGate>
-                        </div>
+                        <RowActionsMenu
+                          items={[
+                            { label: 'View', onClick: () => setViewInquiry(row) },
+                            ...(canManage && !row.convertedStudentId && row.status !== 'enrolled'
+                              ? [
+                                  {
+                                    label: 'Convert',
+                                    href: `/dashboard/students/new?inquiryId=${row.id}`,
+                                  },
+                                ]
+                              : []),
+                            ...(canManage
+                              ? [
+                                  { label: 'Edit', onClick: () => setEditInquiry(row) },
+                                  {
+                                    label: 'Delete',
+                                    onClick: () => {
+                                      if (window.confirm('Delete this inquiry?')) {
+                                        remove.mutate(row.id);
+                                      }
+                                    },
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))
@@ -259,6 +252,69 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
         }}
         branchId={branchId}
         inquiry={editInquiry}
+      />
+      <FrontOfficeDetailDialog
+        open={Boolean(viewInquiry)}
+        onOpenChange={(open) => {
+          if (!open) setViewInquiry(null);
+        }}
+        title="Inquiry details"
+        description="Admission inquiry record"
+        icon={UserPlus}
+        fields={
+          viewInquiry
+            ? [
+                { label: 'Full name', value: viewInquiry.fullName },
+                {
+                  label: 'Status',
+                  value: (
+                    <StatusBadge
+                      label={formatLabel(viewInquiry.status)}
+                      code={statusBadgeCode(viewInquiry.status)}
+                    />
+                  ),
+                },
+                { label: 'Phone', value: viewInquiry.phone ?? '—' },
+                { label: 'Email', value: viewInquiry.email ?? '—' },
+                { label: 'Program interest', value: viewInquiry.programInterest ?? '—' },
+                { label: 'Follow-up', value: formatDateTime(viewInquiry.followUpAt) },
+                {
+                  label: 'Converted student',
+                  value: viewInquiry.convertedStudentId ? (
+                    <Link
+                      href={`/dashboard/students/${viewInquiry.convertedStudentId}`}
+                      className="text-[var(--midnight-blue-950)] underline-offset-2 hover:underline"
+                    >
+                      View student
+                    </Link>
+                  ) : (
+                    'Not converted'
+                  ),
+                },
+                { label: 'Created', value: formatDateTime(viewInquiry.createdAt) },
+                { label: 'Updated', value: formatDateTime(viewInquiry.updatedAt) },
+                { label: 'Notes', value: viewInquiry.notes ?? '—', fullWidth: true },
+              ]
+            : []
+        }
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setViewInquiry(null)}>
+              Close
+            </Button>
+            {canManage && viewInquiry ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditInquiry(viewInquiry);
+                  setViewInquiry(null);
+                }}
+              >
+                Edit
+              </Button>
+            ) : null}
+          </div>
+        }
       />
     </>
   );

@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, accountTypes } from '@eims/shared';
@@ -16,11 +15,11 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -168,26 +167,12 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
                       {canManage ? (
                         <td className={`${dataTableTdClass} text-right`}>
                           {!row.isSystem ? (
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Edit account"
-                                onClick={() => setEditAccount(row)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Delete account"
-                                onClick={() => remove.mutate(row.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'Edit', onClick: () => setEditAccount(row) },
+                                { label: 'Delete', onClick: () => remove.mutate(row.id) },
+                              ]}
+                            />
                           ) : null}
                         </td>
                       ) : null}

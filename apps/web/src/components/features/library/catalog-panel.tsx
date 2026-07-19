@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS, libraryCopyStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -21,6 +20,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -216,28 +216,19 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
                           </td>
                           {canManage && (
                             <td className={dataTableTdClass}>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  className="rounded p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
-                                  aria-label="Edit book"
-                                  onClick={() => setEditBook(book)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded p-1.5 text-red-600 hover:bg-red-50"
-                                  aria-label="Delete book"
-                                  onClick={() => {
-                                    if (window.confirm('Remove this book from catalog?')) {
-                                      remove.mutate(book.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
+                              <RowActionsMenu
+                                items={[
+                                  { label: 'Edit', onClick: () => setEditBook(book) },
+                                  {
+                                    label: 'Delete',
+                                    onClick: () => {
+                                      if (window.confirm('Remove this book from catalog?')) {
+                                        remove.mutate(book.id);
+                                      }
+                                    },
+                                  },
+                                ]}
+                              />
                             </td>
                           )}
                         </tr>

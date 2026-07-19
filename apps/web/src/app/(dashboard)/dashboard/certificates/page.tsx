@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { Award } from 'lucide-react';
 import { PERMISSIONS } from '@eims/shared';
 import type { PaginatedResponse } from '@eims/types';
@@ -21,6 +20,7 @@ import {
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SearchInput } from '@/components/layout/search-input';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { IssueCertificateDialog } from '@/components/features/certificates/issue-certificate-dialog';
 import {
   dataTableClass,
@@ -134,13 +134,15 @@ export default function CertificatesPage() {
                           })}
                         </td>
                         <td className={dataTableTdClass}>
-                          <Link
-                            href={`/print/certificates/${row.id}`}
-                            target="_blank"
-                            className="text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
-                          >
-                            Print
-                          </Link>
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Print',
+                                href: `/print/certificates/${row.id}`,
+                                target: '_blank',
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     ))

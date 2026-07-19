@@ -1,9 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -11,7 +9,6 @@ import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
-import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -21,6 +18,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import type { PayrollRunSummary } from './types';
 import { formatLabel, formatPeriod, statusBadgeCode } from './types';
 
@@ -123,22 +121,18 @@ export function HistoryPanel({ branchId }: { branchId: string }) {
                       : '—'}
                   </td>
                   <td className={dataTableTdClass}>
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/dashboard/payroll?runId=${row.id}`}
-                        className="text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
-                      >
-                        View
-                      </Link>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleExport(row.id)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    <RowActionsMenu
+                      items={[
+                        {
+                          label: 'View',
+                          href: `/dashboard/payroll?runId=${row.id}`,
+                        },
+                        {
+                          label: 'Export',
+                          onClick: () => handleExport(row.id),
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>
               ))

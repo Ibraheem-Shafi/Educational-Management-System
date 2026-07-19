@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS, libraryReservationStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -19,6 +18,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -168,23 +168,18 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
                       {canManage && (
                         <td className={dataTableTdClass}>
                           {row.status === 'active' ? (
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded px-2 py-1 text-xs font-medium text-[var(--midnight-blue-950,#01366C)] hover:bg-neutral-50"
-                                onClick={() => fulfill.mutate(row.id)}
-                              >
-                                Fulfill
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded p-1.5 text-red-600 hover:bg-red-50"
-                                aria-label="Cancel reservation"
-                                onClick={() => remove.mutate(row.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                {
+                                  label: 'Fulfill',
+                                  onClick: () => fulfill.mutate(row.id),
+                                },
+                                {
+                                  label: 'Cancel',
+                                  onClick: () => remove.mutate(row.id),
+                                },
+                              ]}
+                            />
                           ) : (
                             '—'
                           )}

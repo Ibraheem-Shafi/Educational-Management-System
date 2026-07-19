@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, biometricEntityTypes } from '@eims/shared';
@@ -16,7 +15,6 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
@@ -30,6 +28,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { cn } from '@/lib/utils';
 import { MappingDialog } from './mapping-dialog';
 import type { BiometricMapping } from './types';
@@ -171,27 +170,18 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
                       </td>
                       <td className={dataTableTdClass}>
                         {canManage ? (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditMapping(row)}
-                              aria-label="Edit mapping"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => remove.mutate(row.id)}
-                              disabled={remove.isPending}
-                              aria-label="Remove mapping"
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </div>
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                onClick: () => setEditMapping(row),
+                              },
+                              {
+                                label: 'Remove',
+                                onClick: () => remove.mutate(row.id),
+                              },
+                            ]}
+                          />
                         ) : (
                           '—'
                         )}

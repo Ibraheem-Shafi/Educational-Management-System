@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
 import type { PaginatedResponse } from '@eims/types';
@@ -13,11 +12,11 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -140,28 +139,17 @@ export function StudentsPanel({ branchId }: { branchId: string }) {
                         <td className={dataTableTdClass}>{formatLabel(row.direction)}</td>
                         <td className={dataTableTdClass}>
                           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditAssignment(row)}
-                                aria-label="Edit assignment"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  if (window.confirm('Remove this assignment?')) remove.mutate(row.id);
-                                }}
-                                aria-label="Remove assignment"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'Edit', onClick: () => setEditAssignment(row) },
+                                {
+                                  label: 'Remove',
+                                  onClick: () => {
+                                    if (window.confirm('Remove this assignment?')) remove.mutate(row.id);
+                                  },
+                                },
+                              ]}
+                            />
                           </PermissionGate>
                         </td>
                       </tr>

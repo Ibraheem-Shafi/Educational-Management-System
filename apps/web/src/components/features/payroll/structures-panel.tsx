@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -30,6 +29,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { cn } from '@/lib/utils';
 import { StructureDialog } from './structure-dialog';
 import type { SalaryStructure } from './types';
@@ -214,24 +214,18 @@ export function StructuresPanel({
                     </td>
                     {canManage && (
                       <td className={dataTableTdClass}>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            aria-label="Edit structure"
-                            onClick={() => setEditStructure(row)}
-                            className="rounded-md p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Remove structure"
-                            onClick={() => remove.mutate(row.id)}
-                            className="rounded-md p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Edit',
+                              onClick: () => setEditStructure(row),
+                            },
+                            {
+                              label: 'Remove',
+                              onClick: () => remove.mutate(row.id),
+                            },
+                          ]}
+                        />
                       </td>
                     )}
                   </tr>

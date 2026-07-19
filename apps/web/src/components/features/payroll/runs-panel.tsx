@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Download, Pencil, Play, Send, Check, Lock } from 'lucide-react';
+import { Download, Play, Send, Check, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -28,6 +28,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { CreateRunDialog } from './create-run-dialog';
 import { AdjustLineDialog } from './adjust-line-dialog';
 import type { PayrollLine, PayrollRunDetail, PayrollRunSummary } from './types';
@@ -282,14 +283,14 @@ function RunDetail({
                     </td>
                     {canManage && run.status === 'draft' && (
                       <td className={dataTableTdClass}>
-                        <button
-                          type="button"
-                          aria-label="Adjust line"
-                          onClick={() => setAdjustLine(line)}
-                          className="rounded-md p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Adjust',
+                              onClick: () => setAdjustLine(line),
+                            },
+                          ]}
+                        />
                       </td>
                     )}
                   </tr>
