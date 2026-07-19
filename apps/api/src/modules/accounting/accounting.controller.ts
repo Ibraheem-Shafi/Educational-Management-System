@@ -16,7 +16,7 @@ import { AccountingService } from './accounting.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   accountStatementQuerySchema,
@@ -36,6 +36,7 @@ import {
 import type { AuthUser } from '@eims/types';
 import type {
   AccountStatementQuery,
+  BranchScope,
   BudgetVsActualQuery,
   CreateAccountInput,
   CreateBudgetInput,
@@ -61,9 +62,9 @@ export class AccountingController {
   @Permissions('accounting.read')
   findAllAccounts(
     @Query(createZodPipe(listAccountsQuerySchema)) query: ListAccountsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.findAllAccounts(query, branchId);
+    return this.accountingService.findAllAccounts(query, scope);
   }
 
   @Post('accounts')
@@ -71,9 +72,9 @@ export class AccountingController {
   createAccount(
     @Body(createZodPipe(createAccountSchema)) body: CreateAccountInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.createAccount(body, user, branchId);
+    return this.accountingService.createAccount(body, user, scope);
   }
 
   @Patch('accounts/:id')
@@ -82,9 +83,9 @@ export class AccountingController {
     @Param('id') id: string,
     @Body(createZodPipe(updateAccountSchema)) body: UpdateAccountInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.updateAccount(id, body, user, branchId);
+    return this.accountingService.updateAccount(id, body, user, scope);
   }
 
   @Delete('accounts/:id')
@@ -93,24 +94,24 @@ export class AccountingController {
   removeAccount(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.removeAccount(id, user, branchId);
+    return this.accountingService.removeAccount(id, user, scope);
   }
 
   @Get('vouchers')
   @Permissions('accounting.read')
   findAllVouchers(
     @Query(createZodPipe(listVouchersQuerySchema)) query: ListVouchersQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.findAllVouchers(query, branchId);
+    return this.accountingService.findAllVouchers(query, scope);
   }
 
   @Get('vouchers/:id')
   @Permissions('accounting.read')
-  findVoucher(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.accountingService.findVoucher(id, branchId);
+  findVoucher(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.accountingService.findVoucher(id, scope);
   }
 
   @Post('vouchers')
@@ -118,9 +119,9 @@ export class AccountingController {
   createVoucher(
     @Body(createZodPipe(createVoucherSchema)) body: CreateVoucherInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.createVoucher(body, user, branchId);
+    return this.accountingService.createVoucher(body, user, scope);
   }
 
   @Patch('vouchers/:id')
@@ -129,9 +130,9 @@ export class AccountingController {
     @Param('id') id: string,
     @Body(createZodPipe(updateVoucherSchema)) body: UpdateVoucherInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.updateVoucher(id, body, user, branchId);
+    return this.accountingService.updateVoucher(id, body, user, scope);
   }
 
   @Delete('vouchers/:id')
@@ -140,9 +141,9 @@ export class AccountingController {
   removeVoucher(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.removeVoucher(id, user, branchId);
+    return this.accountingService.removeVoucher(id, user, scope);
   }
 
   @Post('vouchers/:id/post')
@@ -150,9 +151,9 @@ export class AccountingController {
   postVoucher(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.postVoucher(id, user, branchId);
+    return this.accountingService.postVoucher(id, user, scope);
   }
 
   @Post('vouchers/:id/unpost')
@@ -160,18 +161,18 @@ export class AccountingController {
   unpostVoucher(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.unpostVoucher(id, user, branchId);
+    return this.accountingService.unpostVoucher(id, user, scope);
   }
 
   @Get('budgets')
   @Permissions('accounting.read')
   findAllBudgets(
     @Query(createZodPipe(listBudgetsQuerySchema)) query: ListBudgetsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.findAllBudgets(query, branchId);
+    return this.accountingService.findAllBudgets(query, scope);
   }
 
   @Post('budgets')
@@ -179,9 +180,9 @@ export class AccountingController {
   createBudget(
     @Body(createZodPipe(createBudgetSchema)) body: CreateBudgetInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.createBudget(body, user, branchId);
+    return this.accountingService.createBudget(body, user, scope);
   }
 
   @Patch('budgets/:id')
@@ -190,9 +191,9 @@ export class AccountingController {
     @Param('id') id: string,
     @Body(createZodPipe(updateBudgetSchema)) body: UpdateBudgetInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.updateBudget(id, body, user, branchId);
+    return this.accountingService.updateBudget(id, body, user, scope);
   }
 
   @Delete('budgets/:id')
@@ -201,44 +202,44 @@ export class AccountingController {
   removeBudget(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.removeBudget(id, user, branchId);
+    return this.accountingService.removeBudget(id, user, scope);
   }
 
   @Get('reports/trial-balance')
   @Permissions('accounting.read')
   trialBalance(
     @Query(createZodPipe(trialBalanceQuerySchema)) query: TrialBalanceQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.trialBalance(query, branchId);
+    return this.accountingService.trialBalance(query, scope);
   }
 
   @Get('reports/income-expense')
   @Permissions('accounting.read')
   incomeExpense(
     @Query(createZodPipe(incomeExpenseQuerySchema)) query: IncomeExpenseQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.incomeExpense(query, branchId);
+    return this.accountingService.incomeExpense(query, scope);
   }
 
   @Get('reports/account-statement')
   @Permissions('accounting.read')
   accountStatement(
     @Query(createZodPipe(accountStatementQuerySchema)) query: AccountStatementQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.accountStatement(query, branchId);
+    return this.accountingService.accountStatement(query, scope);
   }
 
   @Get('reports/budget-vs-actual')
   @Permissions('accounting.read')
   budgetVsActual(
     @Query(createZodPipe(budgetVsActualQuerySchema)) query: BudgetVsActualQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.accountingService.budgetVsActual(query, branchId);
+    return this.accountingService.budgetVsActual(query, scope);
   }
 }

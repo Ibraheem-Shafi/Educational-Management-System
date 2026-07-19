@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -19,7 +20,7 @@ import { TransportGpsWebhookGuard } from './transport-gps-webhook.guard';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   bulkTransportAttendanceSchema,
@@ -70,15 +71,15 @@ export class TransportController {
   @Permissions('transport.read')
   findAllVehicles(
     @Query(createZodPipe(listTransportVehiclesQuerySchema)) query: ListTransportVehiclesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.findAllVehicles(query, branchId);
+    return this.transportService.findAllVehicles(query, scope);
   }
 
   @Get('vehicles/:id')
   @Permissions('transport.read')
-  findOneVehicle(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.transportService.findOneVehicle(id, branchId);
+  findOneVehicle(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.transportService.findOneVehicle(id, scope);
   }
 
   @Post('vehicles')
@@ -97,9 +98,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(updateTransportVehicleSchema)) body: UpdateTransportVehicleInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.updateVehicle(id, body, user, branchId);
+    return this.transportService.updateVehicle(id, body, user, scope);
   }
 
   @Delete('vehicles/:id')
@@ -107,9 +108,9 @@ export class TransportController {
   removeVehicle(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.removeVehicle(id, user, branchId);
+    return this.transportService.removeVehicle(id, user, scope);
   }
 
   @Post('vehicles/:id/documents')
@@ -119,9 +120,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(createTransportVehicleDocumentSchema)) body: CreateTransportVehicleDocumentInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.addVehicleDocument(id, body, user, branchId);
+    return this.transportService.addVehicleDocument(id, body, user, scope);
   }
 
   @Delete('vehicles/:vehicleId/documents/:documentId')
@@ -129,9 +130,9 @@ export class TransportController {
   removeVehicleDocument(
     @Param('documentId') documentId: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.removeVehicleDocument(documentId, user, branchId);
+    return this.transportService.removeVehicleDocument(documentId, user, scope);
   }
 
   // --- Routes ---
@@ -140,15 +141,15 @@ export class TransportController {
   @Permissions('transport.read')
   findAllRoutes(
     @Query(createZodPipe(listTransportRoutesQuerySchema)) query: ListTransportRoutesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.findAllRoutes(query, branchId);
+    return this.transportService.findAllRoutes(query, scope);
   }
 
   @Get('routes/:id')
   @Permissions('transport.read')
-  findOneRoute(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.transportService.findOneRoute(id, branchId);
+  findOneRoute(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.transportService.findOneRoute(id, scope);
   }
 
   @Post('routes')
@@ -167,9 +168,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(updateTransportRouteSchema)) body: UpdateTransportRouteInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.updateRoute(id, body, user, branchId);
+    return this.transportService.updateRoute(id, body, user, scope);
   }
 
   @Delete('routes/:id')
@@ -177,9 +178,9 @@ export class TransportController {
   removeRoute(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.removeRoute(id, user, branchId);
+    return this.transportService.removeRoute(id, user, scope);
   }
 
   // --- Student assignments ---
@@ -188,9 +189,9 @@ export class TransportController {
   @Permissions('transport.read')
   findAllStudentAssignments(
     @Query(createZodPipe(listStudentTransportQuerySchema)) query: ListStudentTransportQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.findAllStudentAssignments(query, branchId);
+    return this.transportService.findAllStudentAssignments(query, scope);
   }
 
   @Post('student-assignments')
@@ -209,9 +210,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(updateStudentTransportSchema)) body: UpdateStudentTransportInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.updateStudentAssignment(id, body, user, branchId);
+    return this.transportService.updateStudentAssignment(id, body, user, scope);
   }
 
   @Delete('student-assignments/:id')
@@ -219,9 +220,9 @@ export class TransportController {
   removeStudentAssignment(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.removeStudentAssignment(id, user, branchId);
+    return this.transportService.removeStudentAssignment(id, user, scope);
   }
 
   // --- Trips ---
@@ -230,15 +231,15 @@ export class TransportController {
   @Permissions('transport.read')
   findAllTrips(
     @Query(createZodPipe(listTransportTripsQuerySchema)) query: ListTransportTripsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.findAllTrips(query, branchId);
+    return this.transportService.findAllTrips(query, scope);
   }
 
   @Get('trips/:id')
   @Permissions('transport.read')
-  findOneTrip(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.transportService.findOneTrip(id, branchId);
+  findOneTrip(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.transportService.findOneTrip(id, scope);
   }
 
   @Post('trips')
@@ -257,9 +258,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(updateTransportTripSchema)) body: UpdateTransportTripInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.updateTrip(id, body, user, branchId);
+    return this.transportService.updateTrip(id, body, user, scope);
   }
 
   @Post('trips/:id/attendance/bulk')
@@ -268,9 +269,9 @@ export class TransportController {
     @Param('id') id: string,
     @Body(createZodPipe(bulkTransportAttendanceSchema)) body: BulkTransportAttendanceInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.transportService.bulkMarkTripAttendance(id, body, user, branchId);
+    return this.transportService.bulkMarkTripAttendance(id, body, user, scope);
   }
 
   // --- GPS ---

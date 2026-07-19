@@ -4,11 +4,11 @@ import { PortalService } from './auth.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createEmployeeLeaveRequestSchema, listLeaveRequestsQuerySchema, reviewLeaveSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateEmployeeLeaveRequestInput, ListLeaveRequestsQuery, ReviewLeaveInput } from '@eims/shared';
+import type { BranchScope, CreateEmployeeLeaveRequestInput, ListLeaveRequestsQuery, ReviewLeaveInput } from '@eims/shared';
 
 @ApiTags('leave-requests')
 @ApiBearerAuth()
@@ -20,10 +20,10 @@ export class LeaveRequestsController {
   @Get()
   @Permissions('leave.read')
   list(
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @Query(createZodPipe(listLeaveRequestsQuerySchema)) query: ListLeaveRequestsQuery,
   ) {
-    return this.portalService.listStaffLeaveRequests(branchId, query.kind, query.page, query.limit);
+    return this.portalService.listStaffLeaveRequests(scope, query.kind, query.page, query.limit);
   }
 
   @Get('mine')

@@ -1,3 +1,5 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -64,8 +66,8 @@ export class AiAttendanceService {
     return this.toResponse(session);
   }
 
-  async analyze(id: string, input: AnalyzeOcrSessionInput, user: AuthUser, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async analyze(id: string, input: AnalyzeOcrSessionInput, user: AuthUser, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     if (session.status === 'confirmed') {
       throw new BadRequestException('Session already confirmed');
     }
@@ -156,8 +158,8 @@ export class AiAttendanceService {
     return this.toResponse(updated);
   }
 
-  async confirm(id: string, input: ConfirmOcrSessionInput, user: AuthUser, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async confirm(id: string, input: ConfirmOcrSessionInput, user: AuthUser, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     if (session.status === 'confirmed') {
       throw new BadRequestException('Session already confirmed');
     }
@@ -191,13 +193,13 @@ export class AiAttendanceService {
     return { session: this.toResponse(updated), attendance: result };
   }
 
-  async findOne(id: string, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async findOne(id: string, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     return this.toResponse(session);
   }
 
-  async list(query: ListOcrSessionsQuery, branchId: string | null) {
-    const where = branchId ? { branchId } : {};
+  async list(query: ListOcrSessionsQuery, scope: BranchScope) {
+    const where = prismaBranchFilter(scope);
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 
@@ -213,9 +215,9 @@ export class AiAttendanceService {
     return paginatedResult(sessions.map((s) => this.toResponse(s)), total, page, limit);
   }
 
-  private async findSession(id: string, branchId: string | null) {
+  private async findSession(id: string, scope: BranchScope) {
     const session = await this.prisma.attendanceOcrSession.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!session) throw new NotFoundException('OCR session not found');
     return session;

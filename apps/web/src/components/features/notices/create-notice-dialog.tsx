@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
@@ -69,6 +70,8 @@ export function CreateNoticeDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const isEdit = Boolean(notice);
   const createFormErrors = useFormErrors(createNoticeSchema);
   const updateFormErrors = useFormErrors(updateNoticeSchema);
@@ -78,6 +81,7 @@ export function CreateNoticeDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       clearAll();
     } else if (notice) {
       setForm({
@@ -150,7 +154,7 @@ export function CreateNoticeDialog({
     }
 
     const payload = {
-      branchId,
+      branchId: effectiveBranchId,
       title: form.title.trim(),
       body: form.body.trim(),
       audience: form.audience,
@@ -183,6 +187,17 @@ export function CreateNoticeDialog({
 
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!isEdit && !branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>
               <input

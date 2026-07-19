@@ -8,6 +8,8 @@ import type { DashboardBranchPerformanceResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
@@ -80,11 +82,16 @@ export function BranchPerformanceCard({
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
 
+  const scope = usePageBranchScopeOptional();
+  const scopeKey = scope?.scopeKey ?? 'all';
+
   const { data, isLoading: queryLoading } = useQuery({
-    queryKey: [...queryKeys.dashboardBranchPerformance, page, limit],
+    queryKey: [...queryKeys.dashboardBranchPerformance, scopeKey, page, limit],
     queryFn: () =>
       apiClient<DashboardBranchPerformanceResponse>(
-        `/dashboard/branch-performance?page=${page}&limit=${limit}`,
+        scope
+          ? withBranchScope('/dashboard/branch-performance', scope.effectiveScope, { page, limit })
+          : `/dashboard/branch-performance?page=${page}&limit=${limit}`,
         { token },
       ),
     enabled: !!token && !isLoadingProp,

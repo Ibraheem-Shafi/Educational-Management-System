@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { HrService } from './hr.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createContractSchema,
@@ -47,15 +48,15 @@ export class HrController {
   @Permissions('hr.read')
   findContracts(
     @Query(createZodPipe(listContractsQuerySchema)) query: ListContractsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.findContracts(query, branchId);
+    return this.hrService.findContracts(query, scope);
   }
 
   @Get('contracts/:id')
   @Permissions('hr.read')
-  findContract(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.hrService.findContract(id, branchId);
+  findContract(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.hrService.findContract(id, scope);
   }
 
   @Post('contracts')
@@ -74,9 +75,9 @@ export class HrController {
     @Param('id') id: string,
     @Body(createZodPipe(updateContractSchema)) body: UpdateContractInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.updateContract(id, body, user, branchId);
+    return this.hrService.updateContract(id, body, user, scope);
   }
 
   @Delete('contracts/:id')
@@ -84,24 +85,24 @@ export class HrController {
   removeContract(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.removeContract(id, user, branchId);
+    return this.hrService.removeContract(id, user, scope);
   }
 
   @Get('reviews')
   @Permissions('hr.read')
   findReviews(
     @Query(createZodPipe(listReviewsQuerySchema)) query: ListReviewsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.findReviews(query, branchId);
+    return this.hrService.findReviews(query, scope);
   }
 
   @Get('reviews/:id')
   @Permissions('hr.read')
-  findReview(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.hrService.findReview(id, branchId);
+  findReview(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.hrService.findReview(id, scope);
   }
 
   @Post('reviews')
@@ -120,9 +121,9 @@ export class HrController {
     @Param('id') id: string,
     @Body(createZodPipe(updateReviewSchema)) body: UpdateReviewInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.updateReview(id, body, user, branchId);
+    return this.hrService.updateReview(id, body, user, scope);
   }
 
   @Delete('reviews/:id')
@@ -130,8 +131,8 @@ export class HrController {
   removeReview(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.hrService.removeReview(id, user, branchId);
+    return this.hrService.removeReview(id, user, scope);
   }
 }

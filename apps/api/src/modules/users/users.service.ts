@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -85,36 +87,36 @@ export class UsersService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<UsersStatsResponse> {
-    const cacheKey = `users:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<UsersStatsResponse> {
+    const cacheKey = `users:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<UsersStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildStats(branchId);
+    const result = await this.buildStats(scope);
     this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
     return result;
   }
 
-  async findAll(query: ListUsersQuery, branchId: string | null): Promise<PaginatedResponse<StaffListRow>> {
-    const effectiveBranchId = branchId ?? query.branchId ?? null;
+  async findAll(query: ListUsersQuery, scope: BranchScope): Promise<PaginatedResponse<StaffListRow>> {
+    const effective = narrowScope(scope, query.branchId);
 
     if (query.status === 'invited') {
-      return this.findInvitationsPaginated(query, effectiveBranchId);
+      return this.findInvitationsPaginated(query, effective);
     }
 
     if (query.status === 'active' || query.status === 'inactive') {
-      return this.findUsersPaginated(query, effectiveBranchId, query.status);
+      return this.findUsersPaginated(query, effective, query.status);
     }
 
-    return this.findStaffCombined(query, effectiveBranchId);
+    return this.findStaffCombined(query, effective);
   }
 
   private async findUsersPaginated(
     query: ListUsersQuery,
-    effectiveBranchId: string | null,
+    effective: BranchScope,
     status: 'active' | 'inactive',
   ): Promise<PaginatedResponse<StaffListRow>> {
-    const where = this.buildUserWhere(query, effectiveBranchId, status);
+    const where = this.buildUserWhere(query, effective, status);
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -143,12 +145,12 @@ export class UsersService {
 
   private async findInvitationsPaginated(
     query: ListUsersQuery,
-    effectiveBranchId: string | null,
+    effective: BranchScope,
   ): Promise<PaginatedResponse<StaffListRow>> {
     const where = {
       acceptedAt: null,
       expiresAt: { gt: new Date() },
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.roleId ? { roleId: query.roleId } : {}),
       ...(query.search
         ? {
@@ -206,13 +208,13 @@ export class UsersService {
 
   private async findStaffCombined(
     query: ListUsersQuery,
-    effectiveBranchId: string | null,
+    effective: BranchScope,
   ): Promise<PaginatedResponse<StaffListRow>> {
-    const userWhere = this.buildUserWhere(query, effectiveBranchId);
+    const userWhere = this.buildUserWhere(query, effective);
     const invitationWhere = {
       acceptedAt: null,
       expiresAt: { gt: new Date() },
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.roleId ? { roleId: query.roleId } : {}),
       ...(query.search
         ? {
@@ -302,12 +304,12 @@ export class UsersService {
 
   private buildUserWhere(
     query: ListUsersQuery,
-    effectiveBranchId: string | null,
+    effective: BranchScope,
     status?: 'active' | 'inactive',
   ) {
     return {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(status === 'active' ? { isActive: true } : {}),
       ...(status === 'inactive' ? { isActive: false } : {}),
       ...(query.roleId ? { userRoles: { some: { roleId: query.roleId } } } : {}),
@@ -325,12 +327,12 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string, branchId: string | null): Promise<UserDetailResponse> {
+  async findOne(id: string, scope: BranchScope): Promise<UserDetailResponse> {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       include: userDetailInclude,
     });
@@ -342,10 +344,10 @@ export class UsersService {
     id: string,
     input: UpdateUserInput,
     actor: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<UserDetailResponse> {
     const existing = await this.prisma.user.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { userRoles: { include: { role: { select: { code: true } } } } },
     });
     if (!existing) throw new NotFoundException('User not found');
@@ -395,12 +397,12 @@ export class UsersService {
     return { data: roles };
   }
 
-  async listInvitations(branchId: string | null) {
+  async listInvitations(scope: BranchScope) {
     const invitations = await this.prisma.invitation.findMany({
       where: {
         acceptedAt: null,
         expiresAt: { gt: new Date() },
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -493,14 +495,14 @@ export class UsersService {
     this.ttlCache.deleteByPrefix('users:stats:');
   }
 
-  private async buildStats(branchId: string | null): Promise<UsersStatsResponse> {
+  private async buildStats(scope: BranchScope): Promise<UsersStatsResponse> {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
 
     const userWhere = {
       deletedAt: null,
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
     };
     const userWherePrevious = {
       ...userWhere,
@@ -513,7 +515,7 @@ export class UsersService {
     const invitationWhere = {
       acceptedAt: null,
       expiresAt: { gt: new Date() },
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
     };
 
     const [

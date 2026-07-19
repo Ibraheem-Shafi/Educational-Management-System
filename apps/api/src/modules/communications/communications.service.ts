@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -106,8 +109,14 @@ export class CommunicationsService {
     return { log, result };
   }
 
-  async sendFeeReminders(input: FeeReminderInput, user: AuthUser, branchId: string | null) {
-    const { data: defaulters } = await this.reports.getFeeDefaulters(branchId ?? input.branchId ?? null);
+  async sendFeeReminders(input: FeeReminderInput, user: AuthUser, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : input.branchId
+          ? selectedBranchScope([input.branchId])
+          : scope;
+    const { data: defaulters } = await this.reports.getFeeDefaulters(effective);
     const results = [];
 
     for (const inv of defaulters) {
@@ -214,9 +223,9 @@ export class CommunicationsService {
     };
   }
 
-  async broadcastNotice(input: NoticeBroadcastInput, user: AuthUser, branchId: string | null) {
+  async broadcastNotice(input: NoticeBroadcastInput, user: AuthUser, scope: BranchScope) {
     const notice = await this.prisma.notice.findFirst({
-      where: { id: input.noticeId, ...(branchId ? { branchId } : {}) },
+      where: { id: input.noticeId, ...prismaBranchFilter(scope) },
     });
     if (!notice) throw new NotFoundException('Notice not found');
 
@@ -232,7 +241,7 @@ export class CommunicationsService {
 
     if (input.audience === 'students' || input.audience === 'all') {
       const students = await this.prisma.student.findMany({
-        where: { deletedAt: null, phone: { not: null }, ...(branchId ? { branchId } : {}) },
+        where: { deletedAt: null, phone: { not: null }, ...prismaBranchFilter(scope) },
         select: { phone: true },
       });
       recipients.push(...students.map((s) => s.phone!).filter(Boolean));

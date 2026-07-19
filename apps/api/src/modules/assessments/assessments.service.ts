@@ -1,3 +1,6 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { allBranchScope, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -36,12 +39,12 @@ export class AssessmentsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<AssessmentsStatsResponse> {
-    const cacheKey = `assessments:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<AssessmentsStatsResponse> {
+    const cacheKey = `assessments:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<AssessmentsStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyAgo = thirtyDaysAgo();
     const now = new Date();
 
@@ -217,10 +220,15 @@ export class AssessmentsService {
     };
   }
 
-  async findAll(query: ListAssessmentsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAll(query: ListAssessmentsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.typeId ? { typeId: query.typeId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.publishedOnly ? { status: 'published' as const } : {}),
@@ -252,9 +260,9 @@ export class AssessmentsService {
     );
   }
 
-  async findOne(id: string, branchId: string | null) {
+  async findOne(id: string, scope: BranchScope) {
     const assessment = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!assessment) throw new NotFoundException('Assessment not found');
     const type = await this.prisma.assessmentType.findUnique({ where: { id: assessment.typeId } });
@@ -287,12 +295,12 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
-    return this.findOne(assessment.id, null);
+    return this.findOne(assessment.id, allBranchScope());
   }
 
-  async update(id: string, input: UpdateAssessmentInput, user: AuthUser, branchId: string | null) {
+  async update(id: string, input: UpdateAssessmentInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Assessment not found');
     if (existing.status === 'published') {
@@ -329,12 +337,12 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
-    return this.findOne(assessment.id, branchId);
+    return this.findOne(assessment.id, scope);
   }
 
-  async submitReview(id: string, user: AuthUser, branchId: string | null) {
+  async submitReview(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Assessment not found');
     if (existing.status !== 'draft') {
@@ -355,12 +363,12 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
-    return this.findOne(assessment.id, branchId);
+    return this.findOne(assessment.id, scope);
   }
 
-  async publish(id: string, user: AuthUser, branchId: string | null) {
+  async publish(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Assessment not found');
     if (existing.status !== 'draft' && existing.status !== 'in_review') {
@@ -385,12 +393,12 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
-    return this.findOne(assessment.id, branchId);
+    return this.findOne(assessment.id, scope);
   }
 
-  async unpublish(id: string, user: AuthUser, branchId: string | null) {
+  async unpublish(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Assessment not found');
     if (existing.status !== 'published') {
@@ -415,11 +423,11 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
-    return this.findOne(assessment.id, branchId);
+    return this.findOne(assessment.id, scope);
   }
 
-  async getMarksSheet(id: string, query: MarksSheetQuery, branchId: string | null) {
-    const assessment = await this.findOne(id, branchId);
+  async getMarksSheet(id: string, query: MarksSheetQuery, scope: BranchScope) {
+    const assessment = await this.findOne(id, scope);
     const batch = await this.prisma.batch.findFirst({
       where: { id: query.batchId, branchId: assessment.branchId, deletedAt: null },
     });
@@ -474,8 +482,8 @@ export class AssessmentsService {
     };
   }
 
-  async exportMarksCsv(id: string, query: MarksSheetQuery, branchId: string | null) {
-    const sheet = await this.getMarksSheet(id, query, branchId);
+  async exportMarksCsv(id: string, query: MarksSheetQuery, scope: BranchScope) {
+    const sheet = await this.getMarksSheet(id, query, scope);
     const escape = (v: string | number | null | undefined) => {
       const s = v == null ? '' : String(v);
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -510,9 +518,9 @@ export class AssessmentsService {
     return { csv, filename };
   }
 
-  async bulkMarks(id: string, input: BulkMarksInput, user: AuthUser, branchId: string | null) {
+  async bulkMarks(id: string, input: BulkMarksInput, user: AuthUser, scope: BranchScope) {
     const assessment = await this.prisma.assessment.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!assessment) throw new NotFoundException('Assessment not found');
     if (assessment.status === 'published') {
@@ -602,11 +610,11 @@ export class AssessmentsService {
 
   async getStudentRecords(
     studentId: string,
-    branchId: string | null,
+    scope: BranchScope,
     publishedOnly = false,
   ) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!student) throw new NotFoundException('Student not found');
 
@@ -652,12 +660,12 @@ export class AssessmentsService {
     };
   }
 
-  async getReportCard(query: ReportCardsQuery, branchId: string | null) {
+  async getReportCard(query: ReportCardsQuery, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
       where: {
         id: query.studentId,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       include: {
         batch: { select: { id: true, name: true } },

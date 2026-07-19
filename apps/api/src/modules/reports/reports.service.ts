@@ -3,8 +3,14 @@ import { PrismaService } from '../../prisma/prisma.module';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 import { paginatedResult } from '../../common/utils/pagination.util';
+import {
+  prismaBranchFilter,
+  scopeCacheKey,
+  sqlBranchFilter,
+} from '../../common/utils/branch-scope.util';
+import { getSingleBranchId } from '@eims/shared';
+import type { BranchScope, PaginationQuery } from '@eims/shared';
 import type { PaginatedResponse } from '@eims/types';
-import type { PaginationQuery } from '@eims/shared';
 
 const OVERVIEW_CACHE_TTL_MS = 45_000;
 
@@ -15,18 +21,20 @@ export class ReportsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getOverview(branchId: string | null) {
-    const cacheKey = `reports:overview:${branchId ?? 'all'}`;
+  async getOverview(scope: BranchScope) {
+    const cacheKey = `reports:overview:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<Awaited<ReturnType<ReportsService['buildOverview']>>>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildOverview(branchId);
+    const result = await this.buildOverview(scope);
     this.ttlCache.set(cacheKey, result, OVERVIEW_CACHE_TTL_MS);
     return result;
   }
 
-  private async buildOverview(branchId: string | null) {
-    const branchFilter = branchId ? { branchId } : {};
+  private async buildOverview(scope: BranchScope) {
+    const branchFilter = prismaBranchFilter(scope);
+    const hasBranchFilter = scope.kind === 'selected';
+    const sqlFilter = sqlBranchFilter(scope, '"branchId"');
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
@@ -39,18 +47,18 @@ export class ReportsService {
     const weekAgo = new Date(today);
     weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
 
-    const parentWhere = branchId
+    const parentWhere = hasBranchFilter
       ? {
           deletedAt: null,
-          studentParents: { some: { student: { branchId, deletedAt: null } } },
+          studentParents: { some: { student: { ...branchFilter, deletedAt: null } } },
         }
       : { deletedAt: null };
 
-    const parentWherePrevious = branchId
+    const parentWherePrevious = hasBranchFilter
       ? {
           deletedAt: null,
           createdAt: { lte: thirtyDaysAgo },
-          studentParents: { some: { student: { branchId, deletedAt: null } } },
+          studentParents: { some: { student: { ...branchFilter, deletedAt: null } } },
         }
       : { deletedAt: null, createdAt: { lte: thirtyDaysAgo } };
 
@@ -79,68 +87,38 @@ export class ReportsService {
       this.prisma.parent.count({ where: parentWhere }),
       this.prisma.parent.count({ where: parentWherePrevious }),
       this.prisma.user.count({ where: { ...branchFilter, deletedAt: null, isActive: true } }),
-      branchId
-        ? this.prisma.$queryRaw<
-            Array<{
-              pending_count: bigint;
-              paid_count: bigint;
-              pending_amount: unknown;
-              collected_amount: unknown;
-            }>
-          >`
-            SELECT
-              COUNT(*) FILTER (WHERE "paidAt" IS NULL)::bigint AS pending_count,
-              COUNT(*) FILTER (WHERE "paidAt" IS NOT NULL)::bigint AS paid_count,
-              COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NULL), 0) AS pending_amount,
-              COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NOT NULL), 0) AS collected_amount
-            FROM "FeeInvoice"
-            WHERE "branchId" = ${branchId}
-          `
-        : this.prisma.$queryRaw<
-            Array<{
-              pending_count: bigint;
-              paid_count: bigint;
-              pending_amount: unknown;
-              collected_amount: unknown;
-            }>
-          >`
-            SELECT
-              COUNT(*) FILTER (WHERE "paidAt" IS NULL)::bigint AS pending_count,
-              COUNT(*) FILTER (WHERE "paidAt" IS NOT NULL)::bigint AS paid_count,
-              COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NULL), 0) AS pending_amount,
-              COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NOT NULL), 0) AS collected_amount
-            FROM "FeeInvoice"
-          `,
-      branchId
-        ? this.prisma.$queryRaw<Array<{ total: unknown }>>`
-            SELECT COALESCE(SUM("netAmount"), 0) AS total
-            FROM "FeeInvoice"
-            WHERE "branchId" = ${branchId}
-              AND "paidAt" IS NOT NULL
-              AND "paidAt" >= ${thirtyDaysAgo}
-          `
-        : this.prisma.$queryRaw<Array<{ total: unknown }>>`
-            SELECT COALESCE(SUM("netAmount"), 0) AS total
-            FROM "FeeInvoice"
-            WHERE "paidAt" IS NOT NULL
-              AND "paidAt" >= ${thirtyDaysAgo}
-          `,
-      branchId
-        ? this.prisma.$queryRaw<Array<{ total: unknown }>>`
-            SELECT COALESCE(SUM("netAmount"), 0) AS total
-            FROM "FeeInvoice"
-            WHERE "branchId" = ${branchId}
-              AND "paidAt" IS NOT NULL
-              AND "paidAt" >= ${sixtyDaysAgo}
-              AND "paidAt" < ${thirtyDaysAgo}
-          `
-        : this.prisma.$queryRaw<Array<{ total: unknown }>>`
-            SELECT COALESCE(SUM("netAmount"), 0) AS total
-            FROM "FeeInvoice"
-            WHERE "paidAt" IS NOT NULL
-              AND "paidAt" >= ${sixtyDaysAgo}
-              AND "paidAt" < ${thirtyDaysAgo}
-          `,
+      this.prisma.$queryRaw<
+        Array<{
+          pending_count: bigint;
+          paid_count: bigint;
+          pending_amount: unknown;
+          collected_amount: unknown;
+        }>
+      >`
+        SELECT
+          COUNT(*) FILTER (WHERE "paidAt" IS NULL)::bigint AS pending_count,
+          COUNT(*) FILTER (WHERE "paidAt" IS NOT NULL)::bigint AS paid_count,
+          COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NULL), 0) AS pending_amount,
+          COALESCE(SUM("netAmount") FILTER (WHERE "paidAt" IS NOT NULL), 0) AS collected_amount
+        FROM "FeeInvoice"
+        WHERE TRUE
+          ${sqlFilter}
+      `,
+      this.prisma.$queryRaw<Array<{ total: unknown }>>`
+        SELECT COALESCE(SUM("netAmount"), 0) AS total
+        FROM "FeeInvoice"
+        WHERE "paidAt" IS NOT NULL
+          AND "paidAt" >= ${thirtyDaysAgo}
+          ${sqlFilter}
+      `,
+      this.prisma.$queryRaw<Array<{ total: unknown }>>`
+        SELECT COALESCE(SUM("netAmount"), 0) AS total
+        FROM "FeeInvoice"
+        WHERE "paidAt" IS NOT NULL
+          AND "paidAt" >= ${sixtyDaysAgo}
+          AND "paidAt" < ${thirtyDaysAgo}
+          ${sqlFilter}
+      `,
     ]);
 
     const fees = feeRow[0] ?? {
@@ -154,7 +132,7 @@ export class ReportsService {
     const collectedPrevious30 = Number(feesCollectedPrevious30[0]?.total ?? 0);
 
     return {
-      branchId,
+      branchId: getSingleBranchId(scope),
       students: {
         total: studentCount,
         changePercent: computeChangePercent(studentCount, studentCountPrevious),
@@ -180,7 +158,7 @@ export class ReportsService {
   }
 
   async getFeeDefaulters(
-    branchId: string | null,
+    scope: BranchScope,
     query: PaginationQuery = { page: 1, limit: 8 },
   ): Promise<PaginatedResponse<{
     id: string;
@@ -190,7 +168,7 @@ export class ReportsService {
     dueDate: string | null;
     createdAt: string;
   }>> {
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const today = new Date();
     const where = {
       ...branchFilter,

@@ -30,6 +30,8 @@ A white-label ERP for schools, colleges, and coaching centers in Pakistan. Built
 
 ## Documentation Index
 
+**Agent handoffs:** [Engineering](docs/engineering-handoff.md) (architecture, stack, naming, progress tracking) · [Design system](docs/design-system-handoff.md) (UI tokens, tables, charts)
+
 | # | Document | Description |
 |---|----------|-------------|
 | — | [ERP Requirements (client brief)](docs/ERP-Requirements.docx) | Original Nexium Academy v1.0 scope |
@@ -98,7 +100,7 @@ npm run dev -w @eims/web
 
 ## Progress
 
-See [progress/README.md](progress/README.md) for feature completion status.
+See [progress/README.md](progress/README.md) for feature completion status. Agents: follow [progress/HOW-TO-UPDATE.md](progress/HOW-TO-UPDATE.md) and the progress section in [docs/engineering-handoff.md](docs/engineering-handoff.md).
 
 ## License
 

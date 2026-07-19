@@ -4,7 +4,7 @@ import { CommunicationsService } from './communications.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   absenceAlertSchema,
@@ -13,9 +13,11 @@ import {
   noticeBroadcastSchema,
   sendMessageSchema,
 } from '@eims/shared';
+import { getSingleBranchId } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
   AbsenceAlertInput,
+  BranchScope,
   FeeReminderInput,
   ListCommunicationLogsQuery,
   NoticeBroadcastInput,
@@ -57,9 +59,9 @@ export class CommunicationsController {
   feeReminders(
     @Body(createZodPipe(feeReminderSchema)) body: FeeReminderInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.service.sendFeeReminders(body, user, branchId);
+    return this.service.sendFeeReminders(body, user, scope);
   }
 
   @Post('absence-alerts')
@@ -67,10 +69,10 @@ export class CommunicationsController {
   absenceAlerts(
     @Body(createZodPipe(absenceAlertSchema)) body: AbsenceAlertInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
     return this.service.sendAbsenceAlerts(
-      { ...body, branchId: branchId ?? body.branchId },
+      { ...body, branchId: getSingleBranchId(scope) ?? body.branchId },
       user,
     );
   }
@@ -80,8 +82,8 @@ export class CommunicationsController {
   noticeBroadcast(
     @Body(createZodPipe(noticeBroadcastSchema)) body: NoticeBroadcastInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.service.broadcastNotice(body, user, branchId);
+    return this.service.broadcastNotice(body, user, scope);
   }
 }

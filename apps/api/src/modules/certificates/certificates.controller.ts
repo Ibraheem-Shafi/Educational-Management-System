@@ -14,7 +14,7 @@ import { CertificatesService } from './certificates.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   issueCertificateSchema,
@@ -22,7 +22,7 @@ import {
   listTemplatesQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { IssueCertificateInput, ListIssuesQuery, ListTemplatesQuery } from '@eims/shared';
+import type { BranchScope, IssueCertificateInput, ListIssuesQuery, ListTemplatesQuery } from '@eims/shared';
 
 @ApiTags('certificates')
 @ApiBearerAuth()
@@ -35,33 +35,33 @@ export class CertificatesController {
   @Permissions('certificates.read')
   findTemplates(
     @Query(createZodPipe(listTemplatesQuerySchema)) query: ListTemplatesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.certificatesService.findAllTemplates(query, branchId);
+    return this.certificatesService.findAllTemplates(query, scope);
   }
 
   @Get('issues')
   @Permissions('certificates.read')
   findIssues(
     @Query(createZodPipe(listIssuesQuerySchema)) query: ListIssuesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.certificatesService.findAllIssues(query, branchId);
+    return this.certificatesService.findAllIssues(query, scope);
   }
 
   @Get('issues/:id/print-data')
   @Permissions('certificates.read')
-  getPrintData(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.certificatesService.getPrintData(id, branchId);
+  getPrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.certificatesService.getPrintData(id, scope);
   }
 
   @Get('id-cards/:studentId/print-data')
   @Permissions('certificates.read')
   getIdCardPrintData(
     @Param('studentId') studentId: string,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.certificatesService.getIdCardPrintData(studentId, branchId);
+    return this.certificatesService.getIdCardPrintData(studentId, scope);
   }
 
   @Post('issue')

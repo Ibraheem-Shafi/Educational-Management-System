@@ -2,6 +2,8 @@
 
 Manual markdown tracking for the EIMS project. No automation — update files by hand when features ship.
 
+For full agent context (architecture, stack, naming, and this tracker), see [docs/engineering-handoff.md](../docs/engineering-handoff.md) §9.
+
 ## Status values
 
 | Status | When to use |

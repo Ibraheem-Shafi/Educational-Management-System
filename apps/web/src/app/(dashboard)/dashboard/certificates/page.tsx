@@ -9,7 +9,9 @@ import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { queryKeys } from '@/lib/query-keys';
 import {
   PageHeader,
@@ -40,7 +42,7 @@ interface IssueRow {
 }
 
 export default function CertificatesPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const canIssue = can(PERMISSIONS.CERTIFICATES_ISSUE);
@@ -48,25 +50,20 @@ export default function CertificatesPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
     setPage(1);
   }, []);
 
-  const queryParams = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
-  });
-  if (effectiveBranchId) queryParams.set('branchId', effectiveBranchId);
-
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.certificateIssues(effectiveBranchId, { page, limit, search }),
+    queryKey: queryKeys.certificateIssues(scopeKey, { page, limit, search }),
     queryFn: () =>
-      apiClient<PaginatedResponse<IssueRow>>(`/certificates/issues?${queryParams.toString()}`, {
-        token,
-      }),
+      apiClient<PaginatedResponse<IssueRow>>(
+        withBranchScope('/certificates/issues', effectiveScope, { page, limit }),
+        { token },
+      ),
     enabled: !!token,
     placeholderData: (previous) => previous,
   });
@@ -80,7 +77,7 @@ export default function CertificatesPage() {
         title="Certificates"
         description="Issue and print student certificates"
         actions={
-          canIssue && effectiveBranchId ? (
+          canIssue && singleBranchId ? (
             <button type="button" onClick={() => setIssueOpen(true)} className={pageHeaderActionClassName}>
               <PageHeaderActionIcon />
               Issue certificate
@@ -88,6 +85,10 @@ export default function CertificatesPage() {
           ) : undefined
         }
       />
+
+      <div className="flex justify-end">
+        <PageBranchScopeControl />
+      </div>
 
       <ContentPanel
         title={`Issuance history (${data?.meta.total ?? 0})`}
@@ -164,11 +165,11 @@ export default function CertificatesPage() {
         )}
       </ContentPanel>
 
-      {canIssue && effectiveBranchId && (
+      {canIssue && singleBranchId && (
         <IssueCertificateDialog
           open={issueOpen}
           onOpenChange={setIssueOpen}
-          branchId={effectiveBranchId}
+          branchId={singleBranchId}
         />
       )}
     </div>

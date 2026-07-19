@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -32,11 +35,16 @@ export class FrontOfficeService {
 
   // --- Inquiries ---
 
-  async findAllInquiries(query: ListInquiriesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllInquiries(query: ListInquiriesQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {
@@ -64,9 +72,9 @@ export class FrontOfficeService {
     return paginatedResult(inquiries, total, page, limit);
   }
 
-  async findOneInquiry(id: string, branchId: string | null) {
+  async findOneInquiry(id: string, scope: BranchScope) {
     const inquiry = await this.prisma.admissionInquiry.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!inquiry) throw new NotFoundException('Inquiry not found');
     return inquiry;
@@ -156,10 +164,10 @@ export class FrontOfficeService {
     id: string,
     input: UpdateInquiryInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.admissionInquiry.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Inquiry not found');
 
@@ -201,9 +209,9 @@ export class FrontOfficeService {
     return inquiry;
   }
 
-  async removeInquiry(id: string, user: AuthUser, branchId: string | null) {
+  async removeInquiry(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.admissionInquiry.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Inquiry not found');
 
@@ -232,8 +240,8 @@ export class FrontOfficeService {
     return { deleted: true };
   }
 
-  async getConvertPayload(id: string, branchId: string | null) {
-    const inquiry = await this.findOneInquiry(id, branchId);
+  async getConvertPayload(id: string, scope: BranchScope) {
+    const inquiry = await this.findOneInquiry(id, scope);
     return { inquiry };
   }
 
@@ -241,10 +249,10 @@ export class FrontOfficeService {
     id: string,
     input: ConvertInquiryInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.admissionInquiry.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Inquiry not found');
 
@@ -293,11 +301,16 @@ export class FrontOfficeService {
 
   // --- Visitors ---
 
-  async findAllVisitors(query: ListVisitorsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllVisitors(query: ListVisitorsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.checkedInOnly ? { checkedOutAt: null } : {}),
       ...(query.search
         ? {
@@ -325,9 +338,9 @@ export class FrontOfficeService {
     return paginatedResult(visitors, total, page, limit);
   }
 
-  async findOneVisitor(id: string, branchId: string | null) {
+  async findOneVisitor(id: string, scope: BranchScope) {
     const visitor = await this.prisma.visitor.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!visitor) throw new NotFoundException('Visitor not found');
     return visitor;
@@ -370,10 +383,10 @@ export class FrontOfficeService {
     id: string,
     input: UpdateVisitorInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.visitor.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Visitor not found');
 
@@ -414,9 +427,9 @@ export class FrontOfficeService {
     return visitor;
   }
 
-  async removeVisitor(id: string, user: AuthUser, branchId: string | null) {
+  async removeVisitor(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.visitor.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Visitor not found');
 
@@ -447,11 +460,16 @@ export class FrontOfficeService {
 
   // --- Complaints ---
 
-  async findAllComplaints(query: ListComplaintsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllComplaints(query: ListComplaintsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.type ? { type: query.type } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
@@ -481,9 +499,9 @@ export class FrontOfficeService {
     return paginatedResult(complaints, total, page, limit);
   }
 
-  async findOneComplaint(id: string, branchId: string | null) {
+  async findOneComplaint(id: string, scope: BranchScope) {
     const complaint = await this.prisma.complaintRequest.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!complaint) throw new NotFoundException('Complaint not found');
     return complaint;
@@ -529,10 +547,10 @@ export class FrontOfficeService {
     id: string,
     input: UpdateComplaintInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.complaintRequest.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Complaint not found');
 
@@ -580,9 +598,9 @@ export class FrontOfficeService {
     return complaint;
   }
 
-  async removeComplaint(id: string, user: AuthUser, branchId: string | null) {
+  async removeComplaint(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.complaintRequest.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Complaint not found');
 
@@ -613,11 +631,16 @@ export class FrontOfficeService {
 
   // --- Reception activities ---
 
-  async findAllActivities(query: ListActivitiesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllActivities(query: ListActivitiesQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const activities = await this.prisma.receptionActivity.findMany({
       where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(effective),
         ...(query.entityType ? { entityType: query.entityType } : {}),
         ...(query.entityId ? { entityId: query.entityId } : {}),
       },

@@ -16,6 +16,9 @@ import { seedLibrary } from './steps/11-library';
 import { seedTransport } from './steps/12-transport';
 import { seedPayroll } from './steps/13-payroll';
 import { seedBiometric } from './steps/14-biometric';
+import { seedHrAndLeave } from './steps/15-hr-leave';
+import { seedAccounting } from './steps/16-accounting';
+import { seedAiOperations } from './steps/17-ai-operations';
 import { DEMO_SEED_VERSION, type RunDemoSeedOptions } from './types';
 
 async function getDemoSeedVersion(prisma: PrismaClient): Promise<string | null> {
@@ -59,8 +62,12 @@ export async function runDemoSeed(
     return;
   }
 
-  if (force) {
-    console.log('Force demo: removing demo-tagged records…');
+  if (force || (currentVersion && currentVersion !== config.version)) {
+    console.log(
+      force
+        ? 'Force demo: removing demo-tagged records…'
+        : `Upgrading demo ${currentVersion} → ${config.version}: cleaning prior demo records…`,
+    );
     await cleanupDemoData(prisma, config);
   }
 
@@ -96,12 +103,19 @@ export async function runDemoSeed(
   await seedPayroll(prisma, ctx);
   console.log('  → biometric');
   await seedBiometric(prisma, ctx);
+  console.log('  → HR & leave');
+  await seedHrAndLeave(prisma, ctx);
+  console.log('  → accounting');
+  await seedAccounting(prisma, ctx);
+  console.log('  → AI operations');
+  await seedAiOperations(prisma, ctx);
 
   await setDemoSeedVersion(prisma, config.version, config.institution);
 
   console.log('');
   console.log('Demo dataset ready:');
   console.log(`  • ${ctx.studentIds.size} students across ${ctx.config.batches.length} batches`);
+  console.log(`  • Branches: ${[...ctx.branchMap.keys()].join(', ')}`);
   console.log(`  • Run npm run db:seed:auth for Supabase login accounts (password in nexium.institution.json)`);
 }
 

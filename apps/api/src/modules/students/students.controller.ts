@@ -1,10 +1,11 @@
+import type { BranchScope } from '@eims/shared';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { StudentsService } from './students.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createStudentSchema, listStudentsQuerySchema, updateStudentSchema, setStudentSubjectsSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -21,21 +22,21 @@ export class StudentsController {
   @Permissions('students.read')
   findAll(
     @Query(createZodPipe(listStudentsQuerySchema)) query: ListStudentsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.studentsService.findAll(query, branchId);
+    return this.studentsService.findAll(query, scope);
   }
 
   @Get('stats')
   @Permissions('students.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.studentsService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.studentsService.getStats(scope);
   }
 
   @Get(':id/subjects')
   @Permissions('students.read')
-  listSubjects(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.studentsService.listSubjects(id, branchId);
+  listSubjects(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.studentsService.listSubjects(id, scope);
   }
 
   @Put(':id/subjects')
@@ -44,9 +45,9 @@ export class StudentsController {
     @Param('id') id: string,
     @Body(createZodPipe(setStudentSubjectsSchema)) body: SetStudentSubjectsInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.studentsService.setSubjects(id, body.subjectIds, user, branchId);
+    return this.studentsService.setSubjects(id, body.subjectIds, user, scope);
   }
 
   @Get(':id')
@@ -54,9 +55,9 @@ export class StudentsController {
   findOne(
     @Param('id') id: string,
     @Query('include') include: string | undefined,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.studentsService.findOne(id, branchId, include === 'subjects');
+    return this.studentsService.findOne(id, scope, include === 'subjects');
   }
 
   @Post()
@@ -75,9 +76,9 @@ export class StudentsController {
     @Param('id') id: string,
     @Body(createZodPipe(updateStudentSchema)) body: UpdateStudentInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.studentsService.update(id, body, user, branchId);
+    return this.studentsService.update(id, body, user, scope);
   }
 
   @Delete(':id')
@@ -86,8 +87,8 @@ export class StudentsController {
   remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.studentsService.remove(id, user, branchId);
+    return this.studentsService.remove(id, user, scope);
   }
 }

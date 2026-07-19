@@ -8,7 +8,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { DocumentsStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -61,7 +63,7 @@ function categoryLabel(value: string): string {
 }
 
 export default function DocumentsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -73,7 +75,8 @@ export default function DocumentsPage() {
   const [limit, setLimit] = useState(8);
   const [deleteTarget, setDeleteTarget] = useState<DocumentRow | null>(null);
 
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } =
+    useEffectiveBranchScope();
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -81,14 +84,17 @@ export default function DocumentsPage() {
   }, []);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.documentsStats,
-    queryFn: () => apiClient<DocumentsStatsResponse>('/documents/stats', { token }),
+    queryKey: [...queryKeys.documentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<DocumentsStatsResponse>(withBranchScope('/documents/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const queryString = (() => {
     const p = new URLSearchParams();
-    if (effectiveBranchId) p.set('branchId', effectiveBranchId);
+    appendToSearchParams(p);
     if (search) p.set('search', search);
     if (category) p.set('category', category);
     p.set('page', String(page));
@@ -97,9 +103,9 @@ export default function DocumentsPage() {
   })();
 
   const { data: documents, isLoading, error } = useQuery({
-    queryKey: ['documents', effectiveBranchId, search, category, page, limit],
+    queryKey: ['documents', scopeKey, search, category, page, limit],
     queryFn: () => apiClient<PaginatedResponse<DocumentRow>>(`/documents?${queryString}`, { token }),
-    enabled: !!token && !!effectiveBranchId,
+    enabled: !!token,
     placeholderData: (previous) => previous,
   });
 
@@ -162,7 +168,7 @@ export default function DocumentsPage() {
         <UploadDocumentDialog
           open={uploadOpen}
           onOpenChange={setUploadOpen}
-          branchId={effectiveBranchId}
+          branchId={singleBranchId ?? ''}
         />
       )}
 
@@ -234,6 +240,7 @@ export default function DocumentsPage() {
             Clear filters
           </Button>
         )}
+        <PageBranchScopeControl />
       </FilterBar>
 
       <div className="bg-white">

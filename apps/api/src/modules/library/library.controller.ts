@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { LibraryService } from './library.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createLibraryBookSchema,
@@ -67,9 +68,9 @@ export class LibraryController {
   @Permissions('library.read')
   getStats(
     @Query(createZodPipe(libraryStatsQuerySchema)) _query: LibraryStatsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.getStats(branchId);
+    return this.libraryService.getStats(scope);
   }
 
   // --- Categories ---
@@ -78,15 +79,15 @@ export class LibraryController {
   @Permissions('library.read')
   findAllCategories(
     @Query(createZodPipe(listLibraryCategoriesQuerySchema)) query: ListLibraryCategoriesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.findAllCategories(query, branchId);
+    return this.libraryService.findAllCategories(query, scope);
   }
 
   @Get('categories/:id')
   @Permissions('library.read')
-  findOneCategory(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.libraryService.findOneCategory(id, branchId);
+  findOneCategory(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.libraryService.findOneCategory(id, scope);
   }
 
   @Post('categories')
@@ -105,9 +106,9 @@ export class LibraryController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLibraryCategorySchema)) body: UpdateLibraryCategoryInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.updateCategory(id, body, user, branchId);
+    return this.libraryService.updateCategory(id, body, user, scope);
   }
 
   @Delete('categories/:id')
@@ -115,9 +116,9 @@ export class LibraryController {
   removeCategory(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.removeCategory(id, user, branchId);
+    return this.libraryService.removeCategory(id, user, scope);
   }
 
   // --- Books ---
@@ -126,15 +127,15 @@ export class LibraryController {
   @Permissions('library.read')
   findAllBooks(
     @Query(createZodPipe(listLibraryBooksQuerySchema)) query: ListLibraryBooksQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.findAllBooks(query, branchId);
+    return this.libraryService.findAllBooks(query, scope);
   }
 
   @Get('books/:id')
   @Permissions('library.read')
-  findOneBook(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.libraryService.findOneBook(id, branchId);
+  findOneBook(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.libraryService.findOneBook(id, scope);
   }
 
   @Post('books')
@@ -153,9 +154,9 @@ export class LibraryController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLibraryBookSchema)) body: UpdateLibraryBookInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.updateBook(id, body, user, branchId);
+    return this.libraryService.updateBook(id, body, user, scope);
   }
 
   @Delete('books/:id')
@@ -163,9 +164,9 @@ export class LibraryController {
   removeBook(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.removeBook(id, user, branchId);
+    return this.libraryService.removeBook(id, user, scope);
   }
 
   // --- Copies ---
@@ -176,9 +177,9 @@ export class LibraryController {
   createCopy(
     @Body(createZodPipe(createLibraryCopySchema)) body: CreateLibraryCopyInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.createCopy(body, user, branchId);
+    return this.libraryService.createCopy(body, user, scope);
   }
 
   @Patch('copies/:id')
@@ -187,9 +188,9 @@ export class LibraryController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLibraryCopySchema)) body: UpdateLibraryCopyInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.updateCopy(id, body, user, branchId);
+    return this.libraryService.updateCopy(id, body, user, scope);
   }
 
   // --- Loans ---
@@ -198,9 +199,9 @@ export class LibraryController {
   @Permissions('library.read')
   findAllLoans(
     @Query(createZodPipe(listLibraryLoansQuerySchema)) query: ListLibraryLoansQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.findAllLoans(query, branchId);
+    return this.libraryService.findAllLoans(query, scope);
   }
 
   @Post('loans/issue')
@@ -218,9 +219,9 @@ export class LibraryController {
   returnLoan(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.returnLoan(id, user, branchId);
+    return this.libraryService.returnLoan(id, user, scope);
   }
 
   @Post('loans/:id/renew')
@@ -228,9 +229,9 @@ export class LibraryController {
   renewLoan(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.renewLoan(id, user, branchId);
+    return this.libraryService.renewLoan(id, user, scope);
   }
 
   // --- Reservations ---
@@ -239,9 +240,9 @@ export class LibraryController {
   @Permissions('library.read')
   findAllReservations(
     @Query(createZodPipe(listLibraryReservationsQuerySchema)) query: ListLibraryReservationsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.findAllReservations(query, branchId);
+    return this.libraryService.findAllReservations(query, scope);
   }
 
   @Post('reservations')
@@ -260,9 +261,9 @@ export class LibraryController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLibraryReservationSchema)) body: UpdateLibraryReservationInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.updateReservation(id, body, user, branchId);
+    return this.libraryService.updateReservation(id, body, user, scope);
   }
 
   @Delete('reservations/:id')
@@ -270,9 +271,9 @@ export class LibraryController {
   removeReservation(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.removeReservation(id, user, branchId);
+    return this.libraryService.removeReservation(id, user, scope);
   }
 
   // --- Fines ---
@@ -281,9 +282,9 @@ export class LibraryController {
   @Permissions('library.read')
   findAllFines(
     @Query(createZodPipe(listLibraryFinesQuerySchema)) query: ListLibraryFinesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.findAllFines(query, branchId);
+    return this.libraryService.findAllFines(query, scope);
   }
 
   @Patch('fines/:id')
@@ -292,8 +293,8 @@ export class LibraryController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLibraryFineSchema)) body: UpdateLibraryFineInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.libraryService.updateFine(id, body, user, branchId);
+    return this.libraryService.updateFine(id, body, user, scope);
   }
 }

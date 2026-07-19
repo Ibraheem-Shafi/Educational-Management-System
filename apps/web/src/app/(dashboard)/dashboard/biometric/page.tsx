@@ -2,16 +2,14 @@
 
 import { useState } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { PageHeader } from '@/components/layout/page-header';
-import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { Tabs } from '@/components/ui/tabs';
 import { DevicesPanel } from '@/components/features/biometric/devices-panel';
 import { MappingsPanel } from '@/components/features/biometric/mappings-panel';
 import { PunchLogPanel } from '@/components/features/biometric/punch-log-panel';
 import { IntegrationPanel } from '@/components/features/biometric/integration-panel';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 
 const TABS = [
   { id: 'devices', label: 'Devices' },
@@ -23,20 +21,9 @@ const TABS = [
 type BiometricTab = (typeof TABS)[number]['id'];
 
 export default function BiometricPage() {
-  const { session, user } = useAuth();
-  const token = session?.access_token;
   const [tab, setTab] = useState<BiometricTab>('devices');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
-
-  const { effectiveBranchId, branches, branchesLoading } = useEffectiveBranchId(
-    token,
-    user?.branchId,
-    branchId,
-  );
-
-  if (branchesLoading && !effectiveBranchId) {
-    return <PortalPageSkeleton />;
-  }
+  const { singleBranchId } = useEffectiveBranchScope();
+  const branchId = singleBranchId ?? '';
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -53,32 +40,21 @@ export default function BiometricPage() {
           onValueChange={(id) => setTab(id as BiometricTab)}
           aria-label="Biometric sections"
         />
-
-        {!user?.branchId && (branches?.data.length ?? 0) > 1 ? (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Select branch"
-            value={branchId || effectiveBranchId}
-            onValueChange={setBranchId}
-            options={(branches?.data ?? []).map((b) => ({
-              value: b.id,
-              label: b.name,
-            }))}
-            className="w-full sm:w-[220px]"
-          />
-        ) : null}
+        <PageBranchScopeControl />
       </div>
 
-      {!effectiveBranchId ? (
-        <p className="text-sm text-[var(--text-sub-500)]">Select a branch to continue.</p>
+      {!branchId ? (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to manage biometric devices and logs.
+        </p>
       ) : tab === 'devices' ? (
-        <DevicesPanel branchId={effectiveBranchId} />
+        <DevicesPanel branchId={branchId} />
       ) : tab === 'mappings' ? (
-        <MappingsPanel branchId={effectiveBranchId} />
+        <MappingsPanel branchId={branchId} />
       ) : tab === 'punch-log' ? (
-        <PunchLogPanel branchId={effectiveBranchId} />
+        <PunchLogPanel branchId={branchId} />
       ) : (
-        <IntegrationPanel branchId={effectiveBranchId} />
+        <IntegrationPanel branchId={branchId} />
       )}
     </div>
   );

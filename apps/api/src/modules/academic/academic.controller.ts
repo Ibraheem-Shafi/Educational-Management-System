@@ -22,7 +22,7 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createProgramSchema,
@@ -41,6 +41,7 @@ import {
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
+  BranchScope,
   CreateProgramInput,
   UpdateProgramInput,
   ListProgramsQuery,
@@ -67,15 +68,15 @@ export class ProgramsController {
   @Permissions('academic.read')
   findAll(
     @Query(createZodPipe(listProgramsQuerySchema)) query: ListProgramsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.programsService.findAll(query, branchId);
+    return this.programsService.findAll(query, scope);
   }
 
   @Get(':id')
   @Permissions('academic.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.programsService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.programsService.findOne(id, scope);
   }
 
   @Post()
@@ -93,10 +94,10 @@ export class ProgramsController {
   update(
     @Param('id') id: string,
     @Body(createZodPipe(updateProgramSchema)) body: UpdateProgramInput,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.programsService.update(id, body, branchId, user);
+    return this.programsService.update(id, body, scope, user);
   }
 }
 
@@ -114,15 +115,15 @@ export class BatchesController {
   @Permissions('academic.read')
   findAll(
     @Query(createZodPipe(listBatchesQuerySchema)) query: ListBatchesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.batchesService.findAll(query, branchId);
+    return this.batchesService.findAll(query, scope);
   }
 
   @Get(':id/subjects')
   @Permissions('academic.read')
-  listSubjects(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.batchSubjectsService.list(id, branchId);
+  listSubjects(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.batchSubjectsService.list(id, scope);
   }
 
   @Put(':id/subjects')
@@ -130,16 +131,16 @@ export class BatchesController {
   setSubjects(
     @Param('id') id: string,
     @Body(createZodPipe(setBatchSubjectsSchema)) body: SetBatchSubjectsInput,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.batchSubjectsService.set(id, body.subjectIds, branchId, user);
+    return this.batchSubjectsService.set(id, body.subjectIds, scope, user);
   }
 
   @Get(':id')
   @Permissions('academic.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.batchesService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.batchesService.findOne(id, scope);
   }
 
   @Post()
@@ -157,10 +158,10 @@ export class BatchesController {
   update(
     @Param('id') id: string,
     @Body(createZodPipe(updateBatchSchema)) body: UpdateBatchInput,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.batchesService.update(id, body, branchId, user);
+    return this.batchesService.update(id, body, scope, user);
   }
 }
 

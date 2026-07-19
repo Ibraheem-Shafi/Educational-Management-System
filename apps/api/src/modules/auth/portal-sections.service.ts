@@ -1,3 +1,5 @@
+import { prismaBranchFilter, prismaBranchIdFilter, scopeCacheKey, requireSingleBranchId, sqlBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   ForbiddenException,
@@ -10,7 +12,7 @@ import { LearningService } from '../learning/learning.service';
 import { DocumentsService } from '../documents/documents.service';
 import { AiInsightsService } from '../ai-insights/ai-insights.service';
 import type { AuthUser, PaginatedResponse } from '@eims/types';
-import { ATTENDANCE_ENTITY_STUDENT } from '@eims/shared';
+import { ATTENDANCE_ENTITY_STUDENT, selectedBranchScope } from '@eims/shared';
 import type {
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
@@ -213,9 +215,10 @@ export class PortalSectionsService {
   async getStudentFees(student: { id: string; branchId: string }, query: PortalSectionQuery) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
+    const studentScope = selectedBranchScope([student.branchId]);
     const [fees, invoicePage] = await Promise.all([
-      this.feesService.getStudentFees(student.id, student.branchId),
-      this.feesService.findAll({ studentId: student.id, page, limit }, student.branchId),
+      this.feesService.getStudentFees(student.id, studentScope),
+      this.feesService.findAll({ studentId: student.id, page, limit }, studentScope),
     ]);
     return {
       outstanding: fees.outstanding,
@@ -235,12 +238,12 @@ export class PortalSectionsService {
     };
   }
 
-  async getStudentNotices(user: AuthUser, branchId: string | null, query: PortalSectionQuery) {
+  async getStudentNotices(user: AuthUser, scope: BranchScope, query: PortalSectionQuery) {
     const audiences: string[] = ['all', 'students'];
     const where = {
       isPublished: true,
       audience: { in: audiences },
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
       ...(query.search
         ? {
             OR: [
@@ -275,12 +278,12 @@ export class PortalSectionsService {
     );
   }
 
-  async getParentNotices(user: AuthUser, branchId: string | null, query: PortalSectionQuery) {
+  async getParentNotices(user: AuthUser, scope: BranchScope, query: PortalSectionQuery) {
     const audiences: string[] = ['all', 'parents'];
     const where = {
       isPublished: true,
       audience: { in: audiences },
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
       ...(query.search
         ? {
             OR: [
@@ -368,7 +371,7 @@ export class PortalSectionsService {
     const limit = query.limit ?? 8;
     const result = await this.documentsService.findAll(
       { studentId: student.id, page, limit },
-      student.branchId,
+      selectedBranchScope([student.branchId]),
     );
     return paginatedResult(
       result.data.map((d) => ({
@@ -386,7 +389,7 @@ export class PortalSectionsService {
   }
 
   async getDocumentSignedUrl(documentId: string, branchId: string) {
-    return this.documentsService.getSignedUrl(documentId, branchId);
+    return this.documentsService.getSignedUrl(documentId, selectedBranchScope([branchId]));
   }
 
   async getStudentCalendar(
@@ -476,7 +479,10 @@ export class PortalSectionsService {
   }
 
   async getStudentInsights(student: { id: string; branchId: string }) {
-    const summary = await this.aiInsightsService.getStudentSummary(student.id, student.branchId);
+    const summary = await this.aiInsightsService.getStudentSummary(
+      student.id,
+      selectedBranchScope([student.branchId]),
+    );
     return {
       student: summary.student,
       overallPercentage: summary.overallPercentage,
@@ -655,18 +661,19 @@ export class PortalSectionsService {
   }
 
   async listStaffLeaveRequests(
-    branchId: string | null,
+    scope: BranchScope,
     kind?: string,
     page = 1,
     limit = 8,
   ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const branchFilter = prismaBranchFilter(scope);
     const where = {
       ...(kind ? { kind } : {}),
-      ...(branchId
+      ...(scope.kind === 'selected'
         ? {
             OR: [
-              { kind: 'student', student: { branchId } },
-              { kind: 'employee', user: { branchId } },
+              { kind: 'student', student: { ...branchFilter } },
+              { kind: 'employee', user: { ...branchFilter } },
               { kind: 'employee', userId: { not: null }, user: { branchId: null } },
             ],
           }

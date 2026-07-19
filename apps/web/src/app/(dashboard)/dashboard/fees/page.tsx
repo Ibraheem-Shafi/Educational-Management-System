@@ -6,7 +6,9 @@ import { Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
 import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import {
@@ -51,7 +53,7 @@ function formatCount(value: number): string {
 }
 
 export default function FeesPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -64,32 +66,38 @@ export default function FeesPage() {
   const [defaulterLimit, setDefaulterLimit] = useState(8);
   const [tab, setTab] = useState<'fees' | 'defaulters'>('fees');
 
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.feesStats,
-    queryFn: () => apiClient<FeesStatsResponse>('/fees/stats', { token }),
+    queryKey: [...queryKeys.feesStats, scopeKey],
+    queryFn: () => apiClient<FeesStatsResponse>(withBranchScope('/fees/stats', effectiveScope), { token }),
     enabled: !!token,
   });
 
   const { data: trend, isLoading: trendLoading } = useQuery({
-    queryKey: queryKeys.feesRevenueTrend,
-    queryFn: () => apiClient<FeesRevenueTrendResponse>('/fees/revenue-trend', { token }),
+    queryKey: [...queryKeys.feesRevenueTrend, scopeKey],
+    queryFn: () =>
+      apiClient<FeesRevenueTrendResponse>(withBranchScope('/fees/revenue-trend', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: invoices, isLoading, error } = useQuery({
-    queryKey: ['fee-invoices', effectiveBranchId, invoicePage, invoiceLimit],
+    queryKey: ['fee-invoices', scopeKey, invoicePage, invoiceLimit],
     queryFn: () =>
       apiClient<PaginatedResponse<Invoice>>(
-        `/fee-invoices?branchId=${effectiveBranchId}&page=${invoicePage}&limit=${invoiceLimit}`,
+        withBranchScope('/fee-invoices', effectiveScope, {
+          page: invoicePage,
+          limit: invoiceLimit,
+        }),
         { token },
       ),
-    enabled: !!token && !!effectiveBranchId,
+    enabled: !!token,
   });
 
   const { data: defaulters, isLoading: defaultersLoading, error: defaultersError } = useQuery({
-    queryKey: ['fee-defaulters', effectiveBranchId, defaulterPage, defaulterLimit],
+    queryKey: ['fee-defaulters', scopeKey, defaulterPage, defaulterLimit],
     queryFn: () =>
       apiClient<{
         data: Array<{
@@ -100,7 +108,13 @@ export default function FeesPage() {
         }>;
         total: number;
         meta: { total: number; page: number; limit: number; totalPages: number };
-      }>(`/reports/fee-defaulters?page=${defaulterPage}&limit=${defaulterLimit}`, { token }),
+      }>(
+        withBranchScope('/reports/fee-defaulters', effectiveScope, {
+          page: defaulterPage,
+          limit: defaulterLimit,
+        }),
+        { token },
+      ),
     enabled: !!token && tab === 'defaulters',
   });
 
@@ -151,7 +165,7 @@ export default function FeesPage() {
       <CreateInvoiceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
       />
 
       <RecordPaymentDialog
@@ -196,15 +210,18 @@ export default function FeesPage() {
         gradientId="feesRevenueGradient"
       />
 
-      <Tabs
-        aria-label="Fees sections"
-        tabs={[
-          { id: 'fees', label: 'Fees' },
-          { id: 'defaulters', label: 'Fee Defaulter' },
-        ]}
-        value={tab}
-        onValueChange={(id) => setTab(id as 'fees' | 'defaulters')}
-      />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          aria-label="Fees sections"
+          tabs={[
+            { id: 'fees', label: 'Fees' },
+            { id: 'defaulters', label: 'Fee Defaulter' },
+          ]}
+          value={tab}
+          onValueChange={(id) => setTab(id as 'fees' | 'defaulters')}
+        />
+        <PageBranchScopeControl />
+      </div>
 
       {tab === 'fees' && (
         <div className="bg-white">

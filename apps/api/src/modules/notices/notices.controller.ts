@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { NoticesService } from './notices.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createNoticeSchema, updateNoticeSchema, listNoticesQuerySchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -31,23 +32,23 @@ export class NoticesController {
 
   @Get('stats')
   @Permissions('students.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.noticesService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.noticesService.getStats(scope);
   }
 
   @Get()
   @Permissions('students.read')
   findAll(
     @Query(createZodPipe(listNoticesQuerySchema)) query: ListNoticesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.noticesService.findAll(query, branchId);
+    return this.noticesService.findAll(query, scope);
   }
 
   @Get(':id')
   @Permissions('students.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.noticesService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.noticesService.findOne(id, scope);
   }
 
   @Post()
@@ -66,9 +67,9 @@ export class NoticesController {
     @Param('id') id: string,
     @Body(createZodPipe(updateNoticeSchema)) body: UpdateNoticeInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.noticesService.update(id, body, user, branchId);
+    return this.noticesService.update(id, body, user, scope);
   }
 
   @Delete(':id')
@@ -76,8 +77,8 @@ export class NoticesController {
   remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.noticesService.remove(id, user, branchId);
+    return this.noticesService.remove(id, user, scope);
   }
 }

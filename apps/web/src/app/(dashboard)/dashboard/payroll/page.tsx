@@ -3,15 +3,13 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Banknote } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { PageHeader } from '@/components/layout/page-header';
-import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { Tabs } from '@/components/ui/tabs';
 import { StructuresPanel } from '@/components/features/payroll/structures-panel';
 import { RunsPanel } from '@/components/features/payroll/runs-panel';
 import { HistoryPanel } from '@/components/features/payroll/history-panel';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 
 const TABS = [
   { id: 'structures', label: 'Structures' },
@@ -30,20 +28,9 @@ export default function PayrollPage() {
       ? 'structures'
       : 'structures') as PayrollTab;
 
-  const { session, user } = useAuth();
-  const token = session?.access_token;
   const [tab, setTab] = useState<PayrollTab>(initialTab);
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
-
-  const { effectiveBranchId, branches, branchesLoading } = useEffectiveBranchId(
-    token,
-    user?.branchId,
-    branchId,
-  );
-
-  if (branchesLoading && !effectiveBranchId) {
-    return <PortalPageSkeleton />;
-  }
+  const { singleBranchId } = useEffectiveBranchScope();
+  const branchId = singleBranchId ?? '';
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -60,30 +47,19 @@ export default function PayrollPage() {
           onValueChange={(id) => setTab(id as PayrollTab)}
           aria-label="Payroll sections"
         />
-
-        {!user?.branchId && (branches?.data.length ?? 0) > 1 ? (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Select branch"
-            value={branchId || effectiveBranchId}
-            onValueChange={setBranchId}
-            options={(branches?.data ?? []).map((b) => ({
-              value: b.id,
-              label: b.name,
-            }))}
-            className="w-full sm:w-[220px]"
-          />
-        ) : null}
+        <PageBranchScopeControl />
       </div>
 
-      {!effectiveBranchId ? (
-        <p className="text-sm text-[var(--text-sub-500)]">Select a branch to continue.</p>
+      {!branchId ? (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to manage payroll.
+        </p>
       ) : tab === 'structures' ? (
-        <StructuresPanel branchId={effectiveBranchId} userId={userIdFilter} />
+        <StructuresPanel branchId={branchId} userId={userIdFilter} />
       ) : tab === 'runs' ? (
-        <RunsPanel branchId={effectiveBranchId} />
+        <RunsPanel branchId={branchId} />
       ) : (
-        <HistoryPanel branchId={effectiveBranchId} />
+        <HistoryPanel branchId={branchId} />
       )}
     </div>
   );

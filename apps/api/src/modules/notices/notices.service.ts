@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -16,14 +18,14 @@ export class NoticesService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<NoticesStatsResponse> {
+  async getStats(scope: BranchScope): Promise<NoticesStatsResponse> {
     await this.promoteDueScheduledNotices();
 
-    const cacheKey = `notices:stats:${branchId ?? 'all'}`;
+    const cacheKey = `notices:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<NoticesStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyAgo = thirtyDaysAgo();
     const now = new Date();
 
@@ -66,10 +68,9 @@ export class NoticesService {
     return result;
   }
 
-  async findAll(query: ListNoticesQuery, branchId: string | null) {
+  async findAll(query: ListNoticesQuery, scope: BranchScope) {
     await this.promoteDueScheduledNotices();
 
-    const effectiveBranchId = branchId ?? query.branchId;
     const now = new Date();
 
     const statusWhere =
@@ -82,7 +83,7 @@ export class NoticesService {
             : {};
 
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.audience ? { audience: query.audience } : {}),
       ...(query.publishedOnly ? { isPublished: true } : {}),
       ...statusWhere,
@@ -121,11 +122,11 @@ export class NoticesService {
     };
   }
 
-  async findOne(id: string, branchId: string | null) {
+  async findOne(id: string, scope: BranchScope) {
     await this.promoteDueScheduledNotices();
 
     const notice = await this.prisma.notice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!notice) throw new NotFoundException('Notice not found');
     return this.toResponse(notice);
@@ -156,9 +157,9 @@ export class NoticesService {
     return this.toResponse(notice);
   }
 
-  async update(id: string, input: UpdateNoticeInput, user: AuthUser, branchId: string | null) {
+  async update(id: string, input: UpdateNoticeInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.notice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Notice not found');
 
@@ -199,9 +200,9 @@ export class NoticesService {
     return this.toResponse(notice);
   }
 
-  async remove(id: string, user: AuthUser, branchId: string | null) {
+  async remove(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.notice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Notice not found');
 
@@ -249,7 +250,7 @@ export class NoticesService {
     return scheduledAt;
   }
 
-  async getPortalNotices(user: AuthUser, branchId: string | null) {
+  async getPortalNotices(user: AuthUser, scope: BranchScope) {
     await this.promoteDueScheduledNotices();
 
     const audiences: string[] = ['all'];
@@ -264,7 +265,7 @@ export class NoticesService {
       where: {
         isPublished: true,
         audience: { in: audiences },
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       orderBy: { publishedAt: 'desc' },
       take: 20,

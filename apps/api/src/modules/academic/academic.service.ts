@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { allBranchScope, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -46,11 +49,16 @@ export class ProgramsService {
     private readonly audit: AuditService,
   ) {}
 
-  async findAll(query: ListProgramsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAll(query: ListProgramsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
     };
     const page = query.page ?? 1;
@@ -75,12 +83,12 @@ export class ProgramsService {
     return paginatedResult(programs.map((p) => this.toListResponse(p)), total, page, limit);
   }
 
-  async findOne(id: string, branchId: string | null) {
+  async findOne(id: string, scope: BranchScope) {
     const program = await this.prisma.program.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       include: {
         batches: {
@@ -150,12 +158,12 @@ export class ProgramsService {
       newValue: { ...input, id: programId },
     });
 
-    return this.findOne(programId, null);
+    return this.findOne(programId, allBranchScope());
   }
 
-  async update(id: string, input: UpdateProgramInput, branchId: string | null, user: AuthUser) {
+  async update(id: string, input: UpdateProgramInput, scope: BranchScope, user: AuthUser) {
     const existing = await this.prisma.program.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Program not found');
 
@@ -194,7 +202,7 @@ export class ProgramsService {
       newValue: input,
     });
 
-    return this.findOne(id, branchId);
+    return this.findOne(id, scope);
   }
 
   private async syncProgramBatches(
@@ -305,11 +313,16 @@ export class BatchesService {
     private readonly audit: AuditService,
   ) {}
 
-  async findAll(query: ListBatchesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAll(query: ListBatchesQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.programId ? { programId: query.programId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
     };
@@ -346,9 +359,9 @@ export class BatchesService {
     );
   }
 
-  async findOne(id: string, branchId: string | null) {
+  async findOne(id: string, scope: BranchScope) {
     const batch = await this.prisma.batch.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { program: { select: { id: true, name: true } } },
     });
     if (!batch) throw new NotFoundException('Batch not found');
@@ -405,12 +418,12 @@ export class BatchesService {
       newValue: input,
     });
 
-    return this.findOne(batchId, null);
+    return this.findOne(batchId, allBranchScope());
   }
 
-  async update(id: string, input: UpdateBatchInput, branchId: string | null, user: AuthUser) {
+  async update(id: string, input: UpdateBatchInput, scope: BranchScope, user: AuthUser) {
     const existing = await this.prisma.batch.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Batch not found');
 
@@ -450,7 +463,7 @@ export class BatchesService {
       newValue: input,
     });
 
-    return this.findOne(id, branchId);
+    return this.findOne(id, scope);
   }
 }
 
@@ -690,9 +703,9 @@ export class BatchSubjectsService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(batchId: string, branchId: string | null) {
+  async list(batchId: string, scope: BranchScope) {
     const batch = await this.prisma.batch.findFirst({
-      where: { id: batchId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: batchId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!batch) throw new NotFoundException('Batch not found');
 
@@ -712,9 +725,9 @@ export class BatchSubjectsService {
     };
   }
 
-  async set(batchId: string, subjectIds: string[], branchId: string | null, user: AuthUser) {
+  async set(batchId: string, subjectIds: string[], scope: BranchScope, user: AuthUser) {
     const batch = await this.prisma.batch.findFirst({
-      where: { id: batchId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: batchId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!batch) throw new NotFoundException('Batch not found');
 
@@ -740,6 +753,6 @@ export class BatchSubjectsService {
       newValue: { subjectIds },
     });
 
-    return this.list(batchId, branchId);
+    return this.list(batchId, scope);
   }
 }

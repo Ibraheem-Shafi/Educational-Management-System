@@ -8,6 +8,7 @@ import type { LeaveRequestResponse, PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { queryKeys } from '@/lib/query-keys';
 import { hasPermission } from '@/lib/permissions';
 import {
@@ -19,6 +20,7 @@ import { StatusBadge } from '@/components/layout/status-badge';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { RequestLeaveDialog } from '@/components/features/leave-requests/request-leave-dialog';
 import {
@@ -58,17 +60,19 @@ export default function LeaveRequestsPage() {
   }, [canRead, canRequest]);
 
   const listKind = tab === 'student' || tab === 'employee' ? tab : undefined;
+  const { scopeKey, appendToSearchParams } = useEffectiveBranchScope();
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('limit', String(limit));
     if (listKind) params.set('kind', listKind);
+    if (tab !== 'mine') appendToSearchParams(params);
     return params.toString();
-  }, [page, limit, listKind]);
+  }, [page, limit, listKind, tab, appendToSearchParams]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.leaveRequests, tab, page, limit],
+    queryKey: [...queryKeys.leaveRequests, tab === 'mine' ? 'mine' : scopeKey, tab, page, limit],
     queryFn: () => {
       if (tab === 'mine') {
         return apiClient<PaginatedResponse<LeaveRequestResponse>>(
@@ -126,14 +130,19 @@ export default function LeaveRequestsPage() {
         }
       />
 
-      {tabs.length > 1 && (
-        <Tabs
-          aria-label="Leave request views"
-          tabs={tabs}
-          value={tab}
-          onValueChange={handleTabChange}
-        />
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {tabs.length > 1 ? (
+          <Tabs
+            aria-label="Leave request views"
+            tabs={tabs}
+            value={tab}
+            onValueChange={handleTabChange}
+          />
+        ) : (
+          <div />
+        )}
+        {tab !== 'mine' ? <PageBranchScopeControl /> : null}
+      </div>
 
       <div className="overflow-hidden rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
         <div className={dataTableWrapperClass}>

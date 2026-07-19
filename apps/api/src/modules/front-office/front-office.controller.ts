@@ -16,7 +16,7 @@ import { FrontOfficeService } from './front-office.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   convertInquirySchema,
@@ -35,6 +35,7 @@ import {
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
+  BranchScope,
   ConvertInquiryInput,
   CreateActivityNoteInput,
   CreateComplaintInput,
@@ -76,21 +77,21 @@ export class FrontOfficeController {
   @Permissions('front_office.read')
   findAllInquiries(
     @Query(createZodPipe(listInquiriesQuerySchema)) query: ListInquiriesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.findAllInquiries(query, branchId);
+    return this.frontOfficeService.findAllInquiries(query, scope);
   }
 
   @Get('inquiries/:id/convert')
   @Permissions('front_office.read')
-  getConvertPayload(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.frontOfficeService.getConvertPayload(id, branchId);
+  getConvertPayload(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.frontOfficeService.getConvertPayload(id, scope);
   }
 
   @Get('inquiries/:id')
   @Permissions('front_office.read')
-  findOneInquiry(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.frontOfficeService.findOneInquiry(id, branchId);
+  findOneInquiry(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.frontOfficeService.findOneInquiry(id, scope);
   }
 
   @Post('inquiries')
@@ -109,9 +110,9 @@ export class FrontOfficeController {
     @Param('id') id: string,
     @Body(createZodPipe(updateInquirySchema)) body: UpdateInquiryInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.updateInquiry(id, body, user, branchId);
+    return this.frontOfficeService.updateInquiry(id, body, user, scope);
   }
 
   @Post('inquiries/:id/convert')
@@ -120,9 +121,9 @@ export class FrontOfficeController {
     @Param('id') id: string,
     @Body(createZodPipe(convertInquirySchema)) body: ConvertInquiryInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.convertInquiry(id, body, user, branchId);
+    return this.frontOfficeService.convertInquiry(id, body, user, scope);
   }
 
   @Delete('inquiries/:id')
@@ -130,9 +131,9 @@ export class FrontOfficeController {
   removeInquiry(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.removeInquiry(id, user, branchId);
+    return this.frontOfficeService.removeInquiry(id, user, scope);
   }
 
   // --- Visitors ---
@@ -141,15 +142,15 @@ export class FrontOfficeController {
   @Permissions('front_office.read')
   findAllVisitors(
     @Query(createZodPipe(listVisitorsQuerySchema)) query: ListVisitorsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.findAllVisitors(query, branchId);
+    return this.frontOfficeService.findAllVisitors(query, scope);
   }
 
   @Get('visitors/:id')
   @Permissions('front_office.read')
-  findOneVisitor(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.frontOfficeService.findOneVisitor(id, branchId);
+  findOneVisitor(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.frontOfficeService.findOneVisitor(id, scope);
   }
 
   @Post('visitors')
@@ -168,9 +169,9 @@ export class FrontOfficeController {
     @Param('id') id: string,
     @Body(createZodPipe(updateVisitorSchema)) body: UpdateVisitorInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.updateVisitor(id, body, user, branchId);
+    return this.frontOfficeService.updateVisitor(id, body, user, scope);
   }
 
   @Delete('visitors/:id')
@@ -178,9 +179,9 @@ export class FrontOfficeController {
   removeVisitor(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.removeVisitor(id, user, branchId);
+    return this.frontOfficeService.removeVisitor(id, user, scope);
   }
 
   // --- Complaints ---
@@ -189,15 +190,15 @@ export class FrontOfficeController {
   @Permissions('front_office.read')
   findAllComplaints(
     @Query(createZodPipe(listComplaintsQuerySchema)) query: ListComplaintsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.findAllComplaints(query, branchId);
+    return this.frontOfficeService.findAllComplaints(query, scope);
   }
 
   @Get('complaints/:id')
   @Permissions('front_office.read')
-  findOneComplaint(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.frontOfficeService.findOneComplaint(id, branchId);
+  findOneComplaint(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.frontOfficeService.findOneComplaint(id, scope);
   }
 
   @Post('complaints')
@@ -216,9 +217,9 @@ export class FrontOfficeController {
     @Param('id') id: string,
     @Body(createZodPipe(updateComplaintSchema)) body: UpdateComplaintInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.updateComplaint(id, body, user, branchId);
+    return this.frontOfficeService.updateComplaint(id, body, user, scope);
   }
 
   @Delete('complaints/:id')
@@ -226,9 +227,9 @@ export class FrontOfficeController {
   removeComplaint(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.removeComplaint(id, user, branchId);
+    return this.frontOfficeService.removeComplaint(id, user, scope);
   }
 
   // --- Reception activities ---
@@ -237,9 +238,9 @@ export class FrontOfficeController {
   @Permissions('front_office.read')
   findAllActivities(
     @Query(createZodPipe(listActivitiesQuerySchema)) query: ListActivitiesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.frontOfficeService.findAllActivities(query, branchId);
+    return this.frontOfficeService.findAllActivities(query, scope);
   }
 
   @Post('reception/activities')

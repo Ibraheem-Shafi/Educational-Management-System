@@ -9,6 +9,7 @@ import { ChevronRight, GraduationCap, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { createStudentSchema, updateStudentSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { apiClient, ApiClientError } from '@/lib/api-client';
 import {
   normalizePakistanPhone,
@@ -137,7 +138,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  // Preselect the scoped branch when the effective scope is a single branch;
+  // otherwise require an explicit pick (no first-branch fallback).
+  const pageScope = usePageBranchScopeOptional();
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
+  const effectiveBranchId = branchId || user?.branchId || scopedSingleBranchId || '';
 
   const { data: programs } = useQuery({
     queryKey: ['programs', effectiveBranchId],
@@ -595,7 +600,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   fullWidth
                   aria-label="Branch"
                   placeholder="Select branch"
-                  value={branchId}
+                  value={branchId || scopedSingleBranchId || ''}
                   onValueChange={(value) => {
                     setBranchId(value);
                     setProgramId('');

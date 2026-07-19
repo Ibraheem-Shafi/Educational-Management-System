@@ -6,7 +6,9 @@ import { Download, FileBarChart } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { useBatches } from '@/hooks/use-batches';
 import { downloadCsv } from '@/lib/download-csv';
 import { formatCurrency, PERMISSIONS } from '@eims/shared';
@@ -42,7 +44,7 @@ interface CorrelationStudent {
 }
 
 export default function ReportsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const canViewReports = can(PERMISSIONS.REPORTS_VIEW);
@@ -51,31 +53,29 @@ export default function ReportsPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
 
-  const defaultersQueryParams = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
-  }).toString();
-
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: queryKeys.reportsOverview,
-    queryFn: () => apiClient<ReportsOverviewResponse>('/reports/overview', { token }),
+    queryKey: [...queryKeys.reportsOverview, scopeKey],
+    queryFn: () =>
+      apiClient<ReportsOverviewResponse>(withBranchScope('/reports/overview', effectiveScope), {
+        token,
+      }),
     enabled: !!token && canViewReports,
   });
 
   const { data: defaulters, isLoading: defaultersLoading } = useQuery({
-    queryKey: queryKeys.reportsFeeDefaulters({ page, limit }),
+    queryKey: queryKeys.reportsFeeDefaulters({ scopeKey, page, limit }),
     queryFn: () =>
       apiClient<PaginatedResponse<FeeDefaulter>>(
-        `/reports/fee-defaulters?${defaultersQueryParams}`,
+        withBranchScope('/reports/fee-defaulters', effectiveScope, { page, limit }),
         { token },
       ),
     enabled: !!token && canViewReports,
     placeholderData: (previous) => previous,
   });
 
-  const { data: batches } = useBatches(token, effectiveBranchId, undefined, !!canViewAnalytics);
+  const { data: batches } = useBatches(token, singleBranchId ?? '', undefined, !!canViewAnalytics);
 
   const { data: correlation, isLoading: correlationLoading } = useQuery({
     queryKey: ['analytics-correlation', correlationBatchId],
@@ -129,6 +129,10 @@ export default function ReportsPage() {
         title="Reports"
         description="Overview, fee collection, and performance insights"
       />
+
+      <div className="flex justify-end">
+        <PageBranchScopeControl />
+      </div>
 
       <MainStatsSection
         isLoading={overviewLoading}

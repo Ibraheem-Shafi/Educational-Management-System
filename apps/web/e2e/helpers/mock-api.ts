@@ -20,21 +20,55 @@ export const MOCK_STAFF_USER = {
   ],
 };
 
+export const MOCK_SUPER_ADMIN_USER = {
+  id: 'user-super-1',
+  supabaseUserId: 'sb-user-1',
+  email: 'super@test.pk',
+  fullName: 'Test Super Admin',
+  branchId: null,
+  roles: ['super_admin'],
+  permissions: [
+    'students.create',
+    'students.read',
+    'attendance.mark',
+    'attendance.read',
+    'fees.collect',
+    'fees.read',
+    'users.manage',
+    'reports.view',
+    'analytics.read',
+    'branches.manage',
+    'branches.read',
+  ],
+};
+
 const MOCK_BRANCH = { id: 'branch-1', name: 'Main Campus', code: 'MAIN' };
+export const MOCK_BRANCHES = [
+  MOCK_BRANCH,
+  { id: 'branch-2', name: 'Lahore Campus', code: 'LHR' },
+];
 const MOCK_ROLE = { id: 'role-1', code: 'teacher', name: 'Teacher' };
 const MOCK_STATUS = { id: 'status-1', code: 'active', label: 'Active' };
 const MOCK_STUDENT = { id: 'student-1', fullName: 'Ali Khan' };
 const MOCK_FEE_TYPE = { id: 'fee-1', name: 'Tuition' };
 const MOCK_BATCH = { id: 'batch-1', name: 'Batch A', branchId: 'branch-1', programId: 'prog-1' };
 
+interface MockApiOptions {
+  user?: typeof MOCK_STAFF_USER | typeof MOCK_SUPER_ADMIN_USER;
+  branches?: Array<{ id: string; name: string; code: string }>;
+}
+
 /** Mock API responses for authenticated staff dashboard flows (no live backend). */
-export async function setupMockStaffApi(page: Page): Promise<void> {
+export async function setupMockStaffApi(page: Page, options: MockApiOptions = {}): Promise<void> {
+  const mockUser = options.user ?? MOCK_STAFF_USER;
+  const mockBranches = options.branches ?? [MOCK_BRANCH];
+
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api\/v1/, '') || '/';
 
     if (path === '/auth/me' && route.request().method() === 'GET') {
-      return route.fulfill({ json: { user: MOCK_STAFF_USER } });
+      return route.fulfill({ json: { user: mockUser } });
     }
 
     if (path === '/users/roles' && route.request().method() === 'GET') {
@@ -43,7 +77,7 @@ export async function setupMockStaffApi(page: Page): Promise<void> {
 
     if (path === '/users' && route.request().method() === 'GET') {
       return route.fulfill({
-        json: { data: [MOCK_STAFF_USER], meta: { total: 1, page: 1, limit: 20 } },
+        json: { data: [mockUser], meta: { total: 1, page: 1, limit: 20 } },
       });
     }
 
@@ -59,7 +93,7 @@ export async function setupMockStaffApi(page: Page): Promise<void> {
     }
 
     if (path === '/branches' && route.request().method() === 'GET') {
-      return route.fulfill({ json: { data: [MOCK_BRANCH] } });
+      return route.fulfill({ json: { data: mockBranches } });
     }
 
     if (path.startsWith('/batches') && route.request().method() === 'GET') {
@@ -286,5 +320,16 @@ export async function injectMockSession(page: Page): Promise<void> {
 
 export async function setupMockStaffSession(page: Page): Promise<void> {
   await setupMockStaffApi(page);
+  await injectMockSession(page);
+}
+
+/** Super admin (no assigned branch) with a two-branch catalog for branch scope tests. */
+export async function setupMockSuperAdminSession(page: Page): Promise<void> {
+  await setupMockStaffApi(page, { user: MOCK_SUPER_ADMIN_USER, branches: MOCK_BRANCHES });
+  // When the app runs with NEXT_PUBLIC_E2E_SKIP_AUTH=1, AuthProvider reads this
+  // localStorage key to swap the default mock staff user for a super admin.
+  await page.addInitScript((user) => {
+    localStorage.setItem('e2e:mock-user', JSON.stringify(user));
+  }, MOCK_SUPER_ADMIN_USER);
   await injectMockSession(page);
 }

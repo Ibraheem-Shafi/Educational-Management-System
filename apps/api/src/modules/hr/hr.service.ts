@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { paginatedResult } from '../../common/utils/pagination.util';
@@ -19,12 +21,11 @@ export class HrService {
     private readonly audit: AuditService,
   ) {}
 
-  async findContracts(query: ListContractsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findContracts(query: ListContractsQuery, scope: BranchScope) {
     const where = {
       userId: query.userId,
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
@@ -42,9 +43,9 @@ export class HrService {
     return paginatedResult(contracts.map(this.toContractResponse), total, page, limit);
   }
 
-  async findContract(id: string, branchId: string | null) {
+  async findContract(id: string, scope: BranchScope) {
     const contract = await this.prisma.employmentContract.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!contract) throw new NotFoundException('Contract not found');
     return this.toContractResponse(contract);
@@ -81,10 +82,10 @@ export class HrService {
     id: string,
     input: UpdateContractInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.employmentContract.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Contract not found');
 
@@ -116,9 +117,9 @@ export class HrService {
     return this.toContractResponse(contract);
   }
 
-  async removeContract(id: string, user: AuthUser, branchId: string | null) {
+  async removeContract(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.employmentContract.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Contract not found');
 
@@ -138,12 +139,11 @@ export class HrService {
     return { success: true };
   }
 
-  async findReviews(query: ListReviewsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findReviews(query: ListReviewsQuery, scope: BranchScope) {
     const where = {
       userId: query.userId,
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
@@ -164,9 +164,9 @@ export class HrService {
     return paginatedResult(reviews.map(this.toReviewResponse), total, page, limit);
   }
 
-  async findReview(id: string, branchId: string | null) {
+  async findReview(id: string, scope: BranchScope) {
     const review = await this.prisma.performanceReview.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
         reviewedBy: { select: { id: true, fullName: true } },
       },
@@ -208,10 +208,10 @@ export class HrService {
     id: string,
     input: UpdateReviewInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.performanceReview.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Review not found');
 
@@ -243,9 +243,9 @@ export class HrService {
     return this.toReviewResponse(review);
   }
 
-  async removeReview(id: string, user: AuthUser, branchId: string | null) {
+  async removeReview(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.performanceReview.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Review not found');
 

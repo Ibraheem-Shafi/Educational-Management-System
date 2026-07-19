@@ -1,5 +1,8 @@
 import { cn } from '@/lib/utils';
 
+const SIZE = 104;
+const STROKE = 9;
+
 export function AttendanceDonut({
   rate,
   color,
@@ -9,37 +12,35 @@ export function AttendanceDonut({
   color: string;
   className?: string;
 }) {
-  const size = 104;
-  const stroke = 9;
-  const radius = (size - stroke) / 2;
+  const radius = (SIZE - STROKE) / 2;
   const circumference = 2 * Math.PI * radius;
   const clampedRate = Math.max(0, Math.min(100, rate));
   const progress = (clampedRate / 100) * circumference;
 
   return (
-    <div className={cn('relative mx-auto', className)} style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+    <div className={cn('relative mx-auto aspect-square w-full max-w-[104px]', className)}>
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-full w-full -rotate-90" aria-hidden>
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={SIZE / 2}
+          cy={SIZE / 2}
           r={radius}
           fill="none"
           stroke="var(--stroke-soft-200, #E2E4E9)"
-          strokeWidth={stroke}
+          strokeWidth={STROKE}
         />
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={SIZE / 2}
+          cy={SIZE / 2}
           r={radius}
           fill="none"
           stroke={color}
-          strokeWidth={stroke}
+          strokeWidth={STROKE}
           strokeDasharray={`${progress} ${circumference - progress}`}
           strokeLinecap="round"
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-lg font-semibold leading-7 tracking-[-0.02em] text-[var(--text-main-900)]">
+        <span className="text-sm font-semibold tracking-[-0.02em] text-[var(--text-main-900)] sm:text-lg sm:leading-7">
           {clampedRate}%
         </span>
       </div>

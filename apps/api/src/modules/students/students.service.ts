@@ -1,3 +1,5 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
@@ -19,18 +21,18 @@ export class StudentsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<StudentsStatsResponse> {
-    const cacheKey = `students:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<StudentsStatsResponse> {
+    const cacheKey = `students:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<StudentsStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildStats(branchId);
+    const result = await this.buildStats(scope);
     this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
     return result;
   }
 
-  private async buildStats(branchId: string | null): Promise<StudentsStatsResponse> {
-    const branchFilter = branchId ? { branchId } : {};
+  private async buildStats(scope: BranchScope): Promise<StudentsStatsResponse> {
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
@@ -99,11 +101,11 @@ export class StudentsService {
 
   async findAll(
     query: ListStudentsQuery,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<PaginatedResponse<Record<string, unknown>>> {
     const where = {
       deletedAt: null,
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
       ...(query.batchId ? { batchId: query.batchId } : {}),
       ...(query.statusId ? { statusId: query.statusId } : {}),
       ...(query.search
@@ -239,12 +241,12 @@ export class StudentsService {
     return this.toResponse(student);
   }
 
-  async findOne(id: string, branchId: string | null, includeSubjects = false) {
+  async findOne(id: string, scope: BranchScope, includeSubjects = false) {
     const student = await this.prisma.student.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       select: {
         id: true,
@@ -288,9 +290,9 @@ export class StudentsService {
     };
   }
 
-  async update(id: string, input: UpdateStudentInput, user: AuthUser, branchId: string | null) {
+  async update(id: string, input: UpdateStudentInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.student.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Student not found');
 
@@ -334,9 +336,9 @@ export class StudentsService {
     return this.toResponse(student);
   }
 
-  async remove(id: string, user: AuthUser, branchId: string | null) {
+  async remove(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.student.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Student not found');
 
@@ -408,9 +410,9 @@ export class StudentsService {
     };
   }
 
-  async listSubjects(studentId: string, branchId: string | null) {
+  async listSubjects(studentId: string, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!student) throw new NotFoundException('Student not found');
 
@@ -434,10 +436,10 @@ export class StudentsService {
     studentId: string,
     subjectIds: string[],
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!student) throw new NotFoundException('Student not found');
 
@@ -463,6 +465,6 @@ export class StudentsService {
       newValue: { subjectIds },
     });
 
-    return this.listSubjects(studentId, branchId);
+    return this.listSubjects(studentId, scope);
   }
 }

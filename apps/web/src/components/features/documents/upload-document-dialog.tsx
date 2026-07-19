@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
@@ -56,6 +57,8 @@ export function UploadDocumentDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const [file, setFile] = useState<File | null>(null);
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors, setFieldError } =
     useFormErrors(createDocumentSchema);
@@ -69,6 +72,7 @@ export function UploadDocumentDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       setFile(null);
       clearAll();
     }
@@ -110,7 +114,7 @@ export function UploadDocumentDialog({
       return;
     }
     const payload = {
-      branchId,
+      branchId: effectiveBranchId,
       studentId: form.studentId,
       category: form.category,
       title: form.title.trim(),
@@ -145,6 +149,17 @@ export function UploadDocumentDialog({
 
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>
               <input

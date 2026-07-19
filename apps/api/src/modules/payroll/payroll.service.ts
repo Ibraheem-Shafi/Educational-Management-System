@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -73,11 +75,10 @@ export class PayrollService {
 
   // --- Salary structures ---
 
-  async findStructures(query: ListSalaryStructuresQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findStructures(query: ListSalaryStructuresQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.userId ? { userId: query.userId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.search
@@ -111,9 +112,9 @@ export class PayrollService {
     return paginatedResult(structures.map(this.toStructureResponse), total, page, limit);
   }
 
-  async findStructure(id: string, branchId: string | null) {
+  async findStructure(id: string, scope: BranchScope) {
     const structure = await this.prisma.salaryStructure.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
         user: { select: { id: true, fullName: true } },
         components: { orderBy: { kind: 'asc' } },
@@ -164,10 +165,10 @@ export class PayrollService {
     id: string,
     input: UpdateSalaryStructureInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.salaryStructure.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { components: true },
     });
     if (!existing) throw new NotFoundException('Salary structure not found');
@@ -227,9 +228,9 @@ export class PayrollService {
     return this.toStructureResponse(structure);
   }
 
-  async removeStructure(id: string, user: AuthUser, branchId: string | null) {
+  async removeStructure(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.salaryStructure.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Salary structure not found');
 
@@ -251,10 +252,9 @@ export class PayrollService {
 
   // --- Payroll runs ---
 
-  async findRuns(query: ListPayrollRunsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findRuns(query: ListPayrollRunsQuery, scope: BranchScope) {
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.year !== undefined ? { year: query.year } : {}),
       ...(query.month !== undefined ? { month: query.month } : {}),
       ...(query.status ? { status: query.status } : {}),
@@ -278,9 +278,9 @@ export class PayrollService {
     return paginatedResult(runs.map(this.toRunSummary), total, page, limit);
   }
 
-  async findRun(id: string, branchId: string | null) {
+  async findRun(id: string, scope: BranchScope) {
     const run = await this.prisma.payrollRun.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: {
         lines: {
           include: {
@@ -329,8 +329,8 @@ export class PayrollService {
     return this.toRunSummary(run);
   }
 
-  async generateRun(id: string, user: AuthUser, branchId: string | null) {
-    const run = await this.getRunOrThrow(id, branchId);
+  async generateRun(id: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
     if (run.status !== 'draft') {
       throw new BadRequestException('Only draft runs can be generated');
     }
@@ -446,17 +446,17 @@ export class PayrollService {
       newValue: { lineCount: lines.length },
     });
 
-    return this.findRun(id, branchId);
+    return this.findRun(id, scope);
   }
 
   async adjustLine(
     id: string,
     input: AdjustPayrollLineInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const line = await this.prisma.payrollLine.findFirst({
-      where: { id, run: { ...(branchId ? { branchId } : {}) } },
+      where: { id, run: { ...prismaBranchFilter(scope) } },
       include: { run: true },
     });
     if (!line) throw new NotFoundException('Payroll line not found');
@@ -502,8 +502,8 @@ export class PayrollService {
     return this.toLineResponse(updated);
   }
 
-  async submitApproval(id: string, user: AuthUser, branchId: string | null) {
-    const run = await this.getRunOrThrow(id, branchId);
+  async submitApproval(id: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
     if (run.status !== 'draft') {
       throw new BadRequestException('Only draft runs can be submitted for approval');
     }
@@ -530,8 +530,8 @@ export class PayrollService {
     return this.toRunSummary(updated);
   }
 
-  async approveRun(id: string, user: AuthUser, branchId: string | null) {
-    const run = await this.getRunOrThrow(id, branchId);
+  async approveRun(id: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
     if (run.status !== 'pending_approval') {
       throw new BadRequestException('Only pending approval runs can be approved');
     }
@@ -553,8 +553,8 @@ export class PayrollService {
     return this.toRunSummary(updated);
   }
 
-  async finalizeRun(id: string, user: AuthUser, branchId: string | null) {
-    const run = await this.getRunOrThrow(id, branchId);
+  async finalizeRun(id: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
     if (run.status !== 'approved') {
       throw new BadRequestException('Only approved runs can be finalized');
     }
@@ -582,8 +582,8 @@ export class PayrollService {
     return this.toRunSummary(updated);
   }
 
-  async exportRun(id: string, query: ExportPayrollRunQuery, branchId: string | null) {
-    const run = await this.findRun(id, branchId);
+  async exportRun(id: string, query: ExportPayrollRunQuery, scope: BranchScope) {
+    const run = await this.findRun(id, scope);
     const rows = run.lines.map((line) => ({
       staffCode: line.user ? formatStaffCode(line.user.id) : '',
       fullName: line.user?.fullName ?? '',
@@ -633,9 +633,9 @@ export class PayrollService {
     return { csv: csvLines.join('\n'), filename: `payroll-${run.year}-${String(run.month).padStart(2, '0')}.csv` };
   }
 
-  async getLinePrintData(id: string, branchId: string | null) {
+  async getLinePrintData(id: string, scope: BranchScope) {
     const line = await this.prisma.payrollLine.findFirst({
-      where: { id, run: { ...(branchId ? { branchId } : {}) } },
+      where: { id, run: { ...prismaBranchFilter(scope) } },
       include: {
         user: {
           select: {
@@ -681,9 +681,9 @@ export class PayrollService {
     return value;
   }
 
-  private async getRunOrThrow(id: string, branchId: string | null) {
+  private async getRunOrThrow(id: string, scope: BranchScope) {
     const run = await this.prisma.payrollRun.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!run) throw new NotFoundException('Payroll run not found');
     return run;

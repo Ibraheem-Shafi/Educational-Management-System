@@ -4,11 +4,11 @@ import { AiInsightsService } from './ai-insights.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { atRiskStudentsQuerySchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { AtRiskStudentsQuery } from '@eims/shared';
+import type { AtRiskStudentsQuery, BranchScope } from '@eims/shared';
 
 @ApiTags('ai-insights')
 @ApiBearerAuth()
@@ -23,16 +23,16 @@ export class AiInsightsController {
   @Permissions('ai_insights.read')
   atRisk(
     @Query(createZodPipe(atRiskStudentsQuerySchema)) query: AtRiskStudentsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.service.getAtRiskStudents(query, branchId);
+    return this.service.getAtRiskStudents(query, scope);
   }
 
   @Get('students/:id/summary')
   @UseGuards(BranchGuard)
   @Permissions('ai_insights.read')
-  studentSummary(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.service.getStudentSummary(id, branchId);
+  studentSummary(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.service.getStudentSummary(id, scope);
   }
 
   // Portal route: parents have no branch assignment, so this must not run the

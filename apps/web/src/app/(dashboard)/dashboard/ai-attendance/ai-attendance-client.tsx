@@ -9,6 +9,8 @@ import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
@@ -54,12 +56,11 @@ interface LookupStatus {
 }
 
 export default function AiAttendancePage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const canUseAi = can(PERMISSIONS.AI_ATTENDANCE_USE);
-  const branchId = user?.branchId ?? '';
 
   const [batchId, setBatchId] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -92,13 +93,8 @@ export default function AiAttendancePage() {
     limit: String(limit),
   }).toString();
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: { id: string }[] }>('/branches', { token }),
-    enabled: !!token,
-  });
-
-  const effectiveBranchId = branchId || branches?.data[0]?.id || '';
+  const { singleBranchId } = useEffectiveBranchScope();
+  const effectiveBranchId = singleBranchId ?? '';
 
   const { data: batches } = useQuery({
     queryKey: ['batches', effectiveBranchId],
@@ -268,6 +264,16 @@ export default function AiAttendancePage() {
           { label: 'Analyzed', value: stats.analyzed },
         ]}
       />
+
+      <div className="flex justify-end">
+        <PageBranchScopeControl />
+      </div>
+
+      {!effectiveBranchId && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to upload and confirm attendance registers.
+        </p>
+      )}
 
       <PermissionGate permission={PERMISSIONS.AI_ATTENDANCE_USE}>
         <ContentPanel title="1. Upload register">

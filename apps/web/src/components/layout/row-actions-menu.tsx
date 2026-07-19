@@ -88,7 +88,7 @@ export function RowActionsMenu({
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
 
-  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLDivElement>({
+  const { triggerRef, menuRef, position, closeMenu } = useDropdownMenu<HTMLDivElement>({
     open,
     onClose: close,
     align: 'right',
@@ -115,7 +115,7 @@ export function RowActionsMenu({
 
       {open && position && typeof document !== 'undefined' && (
         <>
-          <DropdownMenuBackdrop onClose={close} />
+          <DropdownMenuBackdrop onClose={closeMenu} />
           {createPortal(
             <div
               ref={menuRef}

@@ -1,6 +1,7 @@
 export * from './constants/pakistan';
 export * from './constants/auth';
 export * from './constants/permissions';
+export * from './branch-scope';
 export * from './validation/messages';
 export * from './validation/parse';
 export * from './validation/fields';

@@ -8,7 +8,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { AssessmentsStatsResponse, PaginatedResponse } from '@eims/types';
 import {
   PageHeader,
@@ -98,7 +100,7 @@ const editIcon = (
 );
 
 export default function AssessmentsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -117,7 +119,8 @@ export default function AssessmentsPage() {
     item: AssessmentSeries | AssessmentType | null;
   } | null>(null);
 
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } =
+    useEffectiveBranchScope();
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -129,9 +132,9 @@ export default function AssessmentsPage() {
       page: String(page),
       limit: String(limit),
     });
-    if (effectiveBranchId) params.set('branchId', effectiveBranchId);
+    appendToSearchParams(params);
     return params.toString();
-  }, [page, limit, effectiveBranchId]);
+  }, [page, limit, appendToSearchParams]);
 
   const typesQueryParams = useMemo(() => {
     const params = new URLSearchParams({
@@ -156,13 +159,16 @@ export default function AssessmentsPage() {
   };
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.assessmentsStats,
-    queryFn: () => apiClient<AssessmentsStatsResponse>('/assessments/stats', { token }),
+    queryKey: [...queryKeys.assessmentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<AssessmentsStatsResponse>(withBranchScope('/assessments/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: assessments, isLoading, error } = useQuery({
-    queryKey: queryKeys.assessments({ branchId: effectiveBranchId, page, limit }),
+    queryKey: queryKeys.assessments({ scopeKey, page, limit }),
     queryFn: () =>
       apiClient<PaginatedResponse<Assessment>>(`/assessments?${assessmentsQueryParams}`, { token }),
     enabled: !!token && tab === 'assessments',
@@ -289,7 +295,7 @@ export default function AssessmentsPage() {
             setEditingAssessment(null);
           }
         }}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
         assessment={editingAssessment}
       />
 
@@ -343,6 +349,7 @@ export default function AssessmentsPage() {
                 Clear filters
               </Button>
             )}
+            <PageBranchScopeControl />
           </FilterBar>
 
           <div className="bg-white">

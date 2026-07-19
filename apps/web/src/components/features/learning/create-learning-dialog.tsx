@@ -14,6 +14,7 @@ import { useBatches } from '@/hooks/use-batches';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
@@ -81,19 +82,26 @@ export function CreateLearningDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = (resource ? resource.branchId : branchId) || pickedBranchId;
 
   useEffect(() => {
     if (!open) return;
     setForm(resource ? toForm(resource) : emptyForm);
   }, [open, resource]);
 
+  useEffect(() => {
+    if (!open) setPickedBranchId('');
+  }, [open]);
+
   const { data: programs } = useQuery({
-    queryKey: ['programs', branchId],
-    queryFn: () => apiClient<{ data: Program[] }>(`/programs?branchId=${branchId}`, { token }),
-    enabled: !!token && !!branchId && open,
+    queryKey: ['programs', effectiveBranchId],
+    queryFn: () =>
+      apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+    enabled: !!token && !!effectiveBranchId && open,
   });
 
-  const { data: batches } = useBatches(token, branchId, form.programId || undefined, open);
+  const { data: batches } = useBatches(token, effectiveBranchId, form.programId || undefined, open);
 
   const { data: subjects } = useQuery({
     queryKey: ['subjects'],
@@ -115,7 +123,7 @@ export function CreateLearningDialog({
   }, [open, clearAll]);
 
   const buildPayload = () => ({
-    ...(resource ? {} : { branchId }),
+    ...(resource ? {} : { branchId: effectiveBranchId }),
     title: form.title.trim(),
     type: form.type,
     visibilityScope: form.visibilityScope,
@@ -205,6 +213,18 @@ export function CreateLearningDialog({
               </Link>
               .
             </div>
+            {!resource && !branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                  setForm((prev) => ({ ...prev, programId: '', batchId: '', subjectId: '' }));
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>
               <input

@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter, scopeCacheKey, scopeFromLegacyBranchId } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -53,8 +55,9 @@ export class LibraryService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  private invalidateStats(branchId: string | null) {
-    this.ttlCache.delete(`library:stats:${branchId ?? 'all'}`);
+  private invalidateStats(branchId: string) {
+    this.ttlCache.delete(`library:stats:${scopeCacheKey(scopeFromLegacyBranchId(branchId))}`);
+    this.ttlCache.delete(`library:stats:${scopeCacheKey({ kind: 'all' })}`);
   }
 
   private async assertBorrower(
@@ -78,11 +81,10 @@ export class LibraryService {
 
   // --- Categories ---
 
-  async findAllCategories(query: ListLibraryCategoriesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllCategories(query: ListLibraryCategoriesQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.search
         ? { name: { contains: query.search, mode: 'insensitive' as const } }
         : {}),
@@ -104,9 +106,9 @@ export class LibraryService {
     return paginatedResult(categories, total, page, limit);
   }
 
-  async findOneCategory(id: string, branchId: string | null) {
+  async findOneCategory(id: string, scope: BranchScope) {
     const category = await this.prisma.libraryCategory.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { _count: { select: { books: { where: { deletedAt: null } } } } },
     });
     if (!category) throw new NotFoundException('Category not found');
@@ -132,10 +134,10 @@ export class LibraryService {
     id: string,
     input: UpdateLibraryCategoryInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.libraryCategory.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Category not found');
 
@@ -155,9 +157,9 @@ export class LibraryService {
     return category;
   }
 
-  async removeCategory(id: string, user: AuthUser, branchId: string | null) {
+  async removeCategory(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.libraryCategory.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Category not found');
 
@@ -178,11 +180,10 @@ export class LibraryService {
 
   // --- Books ---
 
-  async findAllBooks(query: ListLibraryBooksQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllBooks(query: ListLibraryBooksQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.search
         ? {
@@ -216,9 +217,9 @@ export class LibraryService {
     return paginatedResult(books, total, page, limit);
   }
 
-  async findOneBook(id: string, branchId: string | null) {
+  async findOneBook(id: string, scope: BranchScope) {
     const book = await this.prisma.libraryBook.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
         category: { select: { id: true, name: true } },
         copies: { where: { deletedAt: null } },
@@ -264,10 +265,10 @@ export class LibraryService {
     id: string,
     input: UpdateLibraryBookInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.libraryBook.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Book not found');
 
@@ -303,9 +304,9 @@ export class LibraryService {
     return book;
   }
 
-  async removeBook(id: string, user: AuthUser, branchId: string | null) {
+  async removeBook(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.libraryBook.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Book not found');
 
@@ -336,12 +337,12 @@ export class LibraryService {
 
   // --- Copies ---
 
-  async createCopy(input: CreateLibraryCopyInput, user: AuthUser, branchId: string | null) {
+  async createCopy(input: CreateLibraryCopyInput, user: AuthUser, scope: BranchScope) {
     const book = await this.prisma.libraryBook.findFirst({
       where: {
         id: input.bookId,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
     });
     if (!book) throw new NotFoundException('Book not found');
@@ -368,13 +369,13 @@ export class LibraryService {
     id: string,
     input: UpdateLibraryCopyInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.libraryCopy.findFirst({
       where: {
         id,
         deletedAt: null,
-        book: { deletedAt: null, ...(branchId ? { branchId } : {}) },
+        book: { deletedAt: null, ...prismaBranchFilter(scope) },
       },
       include: { book: { select: { branchId: true } } },
     });
@@ -401,11 +402,10 @@ export class LibraryService {
 
   // --- Loans ---
 
-  async findAllLoans(query: ListLibraryLoansQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllLoans(query: ListLibraryLoansQuery, scope: BranchScope) {
     const now = new Date();
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.activeOnly ? { returnedAt: null } : {}),
       ...(query.borrowerType ? { borrowerType: query.borrowerType } : {}),
       ...(query.studentId ? { studentId: query.studentId } : {}),
@@ -498,12 +498,12 @@ export class LibraryService {
     return loan;
   }
 
-  async returnLoan(id: string, user: AuthUser, branchId: string | null) {
+  async returnLoan(id: string, user: AuthUser, scope: BranchScope) {
     const loan = await this.prisma.libraryLoan.findFirst({
       where: {
         id,
         returnedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
       include: { copy: true },
     });
@@ -554,12 +554,12 @@ export class LibraryService {
     return updatedLoan;
   }
 
-  async renewLoan(id: string, user: AuthUser, branchId: string | null) {
+  async renewLoan(id: string, user: AuthUser, scope: BranchScope) {
     const loan = await this.prisma.libraryLoan.findFirst({
       where: {
         id,
         returnedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
     });
     if (!loan) throw new NotFoundException('Active loan not found');
@@ -594,11 +594,10 @@ export class LibraryService {
 
   // --- Reservations ---
 
-  async findAllReservations(query: ListLibraryReservationsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllReservations(query: ListLibraryReservationsQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.status ? { status: query.status } : {}),
       ...(query.bookId ? { bookId: query.bookId } : {}),
       ...(query.studentId ? { studentId: query.studentId } : {}),
@@ -669,10 +668,10 @@ export class LibraryService {
     id: string,
     input: UpdateLibraryReservationInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.libraryReservation.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Reservation not found');
 
@@ -698,9 +697,9 @@ export class LibraryService {
     return reservation;
   }
 
-  async removeReservation(id: string, user: AuthUser, branchId: string | null) {
+  async removeReservation(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.libraryReservation.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Reservation not found');
 
@@ -722,10 +721,9 @@ export class LibraryService {
 
   // --- Fines ---
 
-  async findAllFines(query: ListLibraryFinesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllFines(query: ListLibraryFinesQuery, scope: BranchScope) {
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.status ? { status: query.status } : {}),
       ...(query.loanId ? { loanId: query.loanId } : {}),
     };
@@ -758,10 +756,10 @@ export class LibraryService {
     id: string,
     input: UpdateLibraryFineInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.libraryFine.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Fine not found');
 
@@ -796,12 +794,12 @@ export class LibraryService {
 
   // --- Stats ---
 
-  async getStats(branchId: string | null): Promise<LibraryStatsResponse> {
-    const cacheKey = `library:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<LibraryStatsResponse> {
+    const cacheKey = `library:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<LibraryStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const now = new Date();
     const thirtyAgo = thirtyDaysAgo();
 

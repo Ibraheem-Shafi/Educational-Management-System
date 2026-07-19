@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { TimetableService } from './timetable.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createTimetableSlotSchema,
@@ -39,26 +40,26 @@ export class TimetableController {
 
   @Get('stats')
   @Permissions('timetable.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.timetableService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.timetableService.getStats(scope);
   }
 
   @Get()
   @Permissions('timetable.read')
   findAll(
     @Query(createZodPipe(listTimetableQuerySchema)) query: ListTimetableQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.timetableService.findAll(query, branchId);
+    return this.timetableService.findAll(query, scope);
   }
 
   @Get('conflicts')
   @Permissions('timetable.read')
   conflicts(
     @Query(createZodPipe(listTimetableQuerySchema)) query: ListTimetableQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.timetableService.getConflicts(query, branchId);
+    return this.timetableService.getConflicts(query, scope);
   }
 
   @Post()
@@ -77,9 +78,9 @@ export class TimetableController {
     @Param('id') id: string,
     @Body(createZodPipe(updateTimetableSlotSchema)) body: UpdateTimetableSlotInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.timetableService.update(id, body, user, branchId);
+    return this.timetableService.update(id, body, user, scope);
   }
 
   @Delete(':id')
@@ -87,8 +88,8 @@ export class TimetableController {
   remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.timetableService.remove(id, user, branchId);
+    return this.timetableService.remove(id, user, scope);
   }
 }

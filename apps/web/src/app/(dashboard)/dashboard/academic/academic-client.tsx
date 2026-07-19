@@ -10,6 +10,9 @@ import type { AcademicStatsResponse, PaginatedResponse, ProgramListItem } from '
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
@@ -24,7 +27,6 @@ import {
 import { MainStatsSection, type MainStatItem } from '@/components/layout/main-stats-section';
 import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
@@ -42,11 +44,6 @@ const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 type AcademicTab = 'programs' | 'batches' | 'subjects' | 'sessions';
-
-interface Branch {
-  id: string;
-  name: string;
-}
 
 interface Subject {
   id: string;
@@ -97,13 +94,12 @@ function tabStats(tab: AcademicTab, stats?: AcademicStatsResponse): MainStatItem
 
 export default function AcademicPage() {
   const router = useRouter();
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.ACADEMIC_MANAGE);
   const [tab, setTab] = useState<AcademicTab>('programs');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
 
@@ -130,30 +126,12 @@ export default function AcademicPage() {
     clearAll: clearSessionErrors,
   } = useFormErrors(updateAcademicSessionSchema);
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: Branch[] }>('/branches', { token }),
-    enabled: !!token,
-  });
-
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
   const handleTabChange = (next: string) => {
     setTab(next as AcademicTab);
     setPage(1);
   };
-
-  const programsQueryParams = new URLSearchParams({
-    branchId: effectiveBranchId,
-    page: String(page),
-    limit: String(limit),
-  }).toString();
-
-  const batchesQueryParams = new URLSearchParams({
-    branchId: effectiveBranchId,
-    page: String(page),
-    limit: String(limit),
-  }).toString();
 
   const subjectsQueryParams = new URLSearchParams({
     page: String(page),
@@ -166,27 +144,33 @@ export default function AcademicPage() {
   }).toString();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.academicStats(tab),
-    queryFn: () => apiClient<AcademicStatsResponse>('/academic/stats', { token }),
+    queryKey: [...queryKeys.academicStats(tab), scopeKey],
+    queryFn: () =>
+      apiClient<AcademicStatsResponse>(withBranchScope('/academic/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: programs, isLoading: programsLoading } = useQuery({
-    queryKey: queryKeys.programs(effectiveBranchId, { page, limit }),
+    queryKey: queryKeys.programs(scopeKey, { page, limit }),
     queryFn: () =>
-      apiClient<PaginatedResponse<ProgramListItem>>(`/programs?${programsQueryParams}`, { token }),
-    enabled: !!token && !!effectiveBranchId && tab === 'programs',
+      apiClient<PaginatedResponse<ProgramListItem>>(
+        withBranchScope('/programs', effectiveScope, { page, limit }),
+        { token },
+      ),
+    enabled: !!token && tab === 'programs',
     placeholderData: (previous) => previous,
   });
 
   const { data: programOptionsData } = useQuery({
-    queryKey: queryKeys.programs(effectiveBranchId, { options: true, limit: 100 }),
+    queryKey: queryKeys.programs(singleBranchId ?? '', { options: true, limit: 100 }),
     queryFn: () =>
       apiClient<PaginatedResponse<ProgramListItem>>(
-        `/programs?branchId=${effectiveBranchId}&limit=100`,
+        `/programs?branchId=${singleBranchId}&limit=100`,
         { token },
       ),
-    enabled: !!token && !!effectiveBranchId && (tab === 'batches' || createBatchOpen),
+    enabled: !!token && !!singleBranchId && (tab === 'batches' || createBatchOpen),
   });
 
   const { data: subjects, isLoading: subjectsLoading } = useQuery({
@@ -198,10 +182,13 @@ export default function AcademicPage() {
   });
 
   const { data: batches, isLoading: batchesLoading } = useQuery({
-    queryKey: queryKeys.batches(effectiveBranchId, undefined, { page, limit }),
+    queryKey: queryKeys.batches(scopeKey, undefined, { page, limit }),
     queryFn: () =>
-      apiClient<PaginatedResponse<Batch>>(`/batches?${batchesQueryParams}`, { token }),
-    enabled: !!token && !!effectiveBranchId && tab === 'batches',
+      apiClient<PaginatedResponse<Batch>>(
+        withBranchScope('/batches', effectiveScope, { page, limit }),
+        { token },
+      ),
+    enabled: !!token && tab === 'batches',
     placeholderData: (previous) => previous,
   });
 
@@ -213,10 +200,6 @@ export default function AcademicPage() {
     placeholderData: (previous) => previous,
   });
 
-  const branchOptions = useMemo(
-    () => (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
-    [branches],
-  );
 
   const programOptions = useMemo(
     () => (programOptionsData?.data ?? []).map((p) => ({ value: p.id, label: p.name })),
@@ -288,18 +271,7 @@ export default function AcademicPage() {
         onValueChange={handleTabChange}
       />
 
-      {!user?.branchId && tab !== 'subjects' && tab !== 'sessions' && (
-        <SelectDropdown
-          aria-label="Branch"
-          placeholder="Select branch"
-          value={branchId}
-          onValueChange={(next) => {
-            setBranchId(next);
-            setPage(1);
-          }}
-          options={branchOptions}
-        />
-      )}
+      {tab !== 'subjects' && tab !== 'sessions' && <PageBranchScopeControl />}
 
       <MainStatsSection isLoading={statsLoading} stats={tabStats(tab, stats)} />
 
@@ -646,7 +618,7 @@ export default function AcademicPage() {
       <CreateBatchDialog
         open={createBatchOpen}
         onOpenChange={setCreateBatchOpen}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
         programOptions={programOptions}
       />
       <EditBatchDialog

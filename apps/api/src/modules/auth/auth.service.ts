@@ -17,9 +17,11 @@ import { SettingsService } from '../settings/settings.service';
 import { LearningService } from '../learning/learning.service';
 import { PortalSectionsService } from './portal-sections.service';
 import { countWithTrend } from '../../common/utils/stats.util';
+import { allBranchScope, selectedBranchScope } from '@eims/shared';
 import type { AuthUser, PortalParentStatsResponse, PortalStudentStatsResponse } from '@eims/types';
 import type {
   AcceptInvitationInput,
+  BranchScope,
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
   PortalSectionQuery,
@@ -356,12 +358,13 @@ export class PortalService {
         from.setDate(from.getDate() - 30);
         const fromStr = from.toISOString().slice(0, 10);
 
+        const childScope = selectedBranchScope([sp.student.branchId]);
         const [assessments, fees, attendance, timetableSlots] = await Promise.all([
-          this.assessmentsService.getStudentRecords(sp.student.id, sp.student.branchId, true),
-          this.feesService.getStudentFees(sp.student.id, sp.student.branchId),
+          this.assessmentsService.getStudentRecords(sp.student.id, childScope, true),
+          this.feesService.getStudentFees(sp.student.id, childScope),
           this.attendanceService.getHistory(
             { studentId: sp.student.id, from: fromStr, to },
-            sp.student.branchId,
+            childScope,
           ),
           sp.student.batchId
             ? this.prisma.timetableSlot.findMany({
@@ -404,7 +407,10 @@ export class PortalService {
       }),
     );
 
-    const notices = await this.noticesService.getPortalNotices(user, user.branchId);
+    const notices = await this.noticesService.getPortalNotices(
+      user,
+      user.branchId ? selectedBranchScope([user.branchId]) : allBranchScope(),
+    );
 
     return {
       parent: { id: parent.id, fullName: parent.fullName, email: parent.email },
@@ -436,14 +442,15 @@ export class PortalService {
     from.setDate(from.getDate() - 30);
     const fromStr = from.toISOString().slice(0, 10);
 
+    const studentScope = selectedBranchScope([student.branchId]);
     const [attendance, assessments, fees, notices, timetableSlots] = await Promise.all([
       this.attendanceService.getHistory(
         { studentId: student.id, from: fromStr, to },
-        student.branchId,
+        studentScope,
       ),
-      this.assessmentsService.getStudentRecords(student.id, student.branchId, true),
-      this.feesService.getStudentFees(student.id, student.branchId),
-      this.noticesService.getPortalNotices(user, student.branchId),
+      this.assessmentsService.getStudentRecords(student.id, studentScope, true),
+      this.feesService.getStudentFees(student.id, studentScope),
+      this.noticesService.getPortalNotices(user, studentScope),
       student.batchId
         ? this.prisma.timetableSlot.findMany({
             where: { batchId: student.batchId, branchId: student.branchId, isActive: true },
@@ -610,7 +617,11 @@ export class PortalService {
     } else {
       throw new ForbiddenException('Portal access only');
     }
-    return this.learningService.getAttachmentSignedUrl(resourceId, attachmentId, branchId);
+    return this.learningService.getAttachmentSignedUrl(
+      resourceId,
+      attachmentId,
+      selectedBranchScope([branchId]),
+    );
   }
 
   async getStudentAttendance(user: AuthUser, query: PortalSectionQuery) {
@@ -655,13 +666,21 @@ export class PortalService {
 
   async getStudentNotices(user: AuthUser, query: PortalSectionQuery) {
     const student = await this.resolveStudentContext(user);
-    return this.portalSections.getStudentNotices(user, student.branchId, query);
+    return this.portalSections.getStudentNotices(
+      user,
+      selectedBranchScope([student.branchId]),
+      query,
+    );
   }
 
   async getParentNotices(user: AuthUser, query: PortalSectionQuery) {
     await this.assertPortalEnabled('parentPortal');
     if (!user.roles.includes('parent')) throw new ForbiddenException('Parent portal access only');
-    return this.portalSections.getParentNotices(user, user.branchId, query);
+    return this.portalSections.getParentNotices(
+      user,
+      user.branchId ? selectedBranchScope([user.branchId]) : allBranchScope(),
+      query,
+    );
   }
 
   async getStudentDocuments(user: AuthUser, query: PortalSectionQuery) {
@@ -730,12 +749,12 @@ export class PortalService {
   }
 
   async listStaffLeaveRequests(
-    branchId: string | null,
+    scope: BranchScope,
     kind?: string,
     page = 1,
     limit = 8,
   ) {
-    return this.portalSections.listStaffLeaveRequests(branchId, kind, page, limit);
+    return this.portalSections.listStaffLeaveRequests(scope, kind, page, limit);
   }
 
   async createEmployeeLeaveRequest(user: AuthUser, input: CreateEmployeeLeaveRequestInput) {

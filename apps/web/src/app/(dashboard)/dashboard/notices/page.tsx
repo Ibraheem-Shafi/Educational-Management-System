@@ -9,7 +9,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { NoticesStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -87,7 +89,7 @@ function getNoticeStatus(notice: Notice): { label: string; code: string } {
 }
 
 export default function NoticesPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -97,7 +99,6 @@ export default function NoticesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editNotice, setEditNotice] = useState<EditableNotice | null>(null);
   const [viewNotice, setViewNotice] = useState<Notice | null>(null);
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
   const [search, setSearch] = useState('');
   const [audience, setAudience] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -106,7 +107,8 @@ export default function NoticesPage() {
 
   useNoticesRealtime(NOTICES_KEYS);
 
-  const { effectiveBranchId, branches } = useEffectiveBranchId(token, user?.branchId, branchId);
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } =
+    useEffectiveBranchScope();
 
   useEffect(() => {
     if (!canMutate) return;
@@ -121,14 +123,17 @@ export default function NoticesPage() {
   }, []);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.noticesStats,
-    queryFn: () => apiClient<NoticesStatsResponse>('/notices/stats', { token }),
+    queryKey: [...queryKeys.noticesStats, scopeKey],
+    queryFn: () =>
+      apiClient<NoticesStatsResponse>(withBranchScope('/notices/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const queryString = (() => {
     const p = new URLSearchParams();
-    if (effectiveBranchId) p.set('branchId', effectiveBranchId);
+    appendToSearchParams(p);
     if (search) p.set('search', search);
     if (audience) p.set('audience', audience);
     if (statusFilter) p.set('status', statusFilter);
@@ -138,9 +143,9 @@ export default function NoticesPage() {
   })();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['notices', effectiveBranchId, search, audience, statusFilter, page, limit],
+    queryKey: ['notices', scopeKey, search, audience, statusFilter, page, limit],
     queryFn: () => apiClient<PaginatedResponse<Notice>>(`/notices?${queryString}`, { token }),
-    enabled: !!token && !!effectiveBranchId,
+    enabled: !!token,
     placeholderData: (previous) => previous,
   });
 
@@ -204,7 +209,7 @@ export default function NoticesPage() {
             setEditNotice(null);
           }
         }}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
         notice={editNotice}
       />
 
@@ -285,18 +290,7 @@ export default function NoticesPage() {
             { value: 'draft', label: 'Draft' },
           ]}
         />
-        {!user?.branchId && branches?.data && branches.data.length > 1 && (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Select branch"
-            value={branchId}
-            onValueChange={(value) => {
-              setBranchId(value);
-              setPage(1);
-            }}
-            options={branches.data.map((b) => ({ value: b.id, label: b.name }))}
-          />
-        )}
+        <PageBranchScopeControl />
         {(search || audience || statusFilter) && (
           <Button
             variant="ghost"

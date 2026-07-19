@@ -2,16 +2,15 @@
 
 import { useState } from 'react';
 import { Headset } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { getSingleBranchId } from '@eims/shared';
 import { PageHeader } from '@/components/layout/page-header';
-import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { Tabs } from '@/components/ui/tabs';
 import { InquiriesPanel } from '@/components/features/front-office/inquiries-panel';
 import { VisitorsPanel } from '@/components/features/front-office/visitors-panel';
 import { ComplaintsPanel } from '@/components/features/front-office/complaints-panel';
 import { ActivityPanel } from '@/components/features/front-office/activity-panel';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 
 const TABS = [
   { id: 'inquiries', label: 'Inquiries' },
@@ -23,20 +22,9 @@ const TABS = [
 type FrontOfficeTab = (typeof TABS)[number]['id'];
 
 export default function FrontOfficePage() {
-  const { session, user } = useAuth();
-  const token = session?.access_token;
   const [tab, setTab] = useState<FrontOfficeTab>('inquiries');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
-
-  const { effectiveBranchId, branches, branchesLoading } = useEffectiveBranchId(
-    token,
-    user?.branchId,
-    branchId,
-  );
-
-  if (branchesLoading && !effectiveBranchId) {
-    return <PortalPageSkeleton />;
-  }
+  const { effectiveScope, canSelect, isLocked, singleBranchId } = useEffectiveBranchScope();
+  const branchId = singleBranchId ?? getSingleBranchId(effectiveScope);
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -53,32 +41,22 @@ export default function FrontOfficePage() {
           onValueChange={(id) => setTab(id as FrontOfficeTab)}
           aria-label="Front office sections"
         />
-
-        {!user?.branchId && (branches?.data.length ?? 0) > 1 ? (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Select branch"
-            value={branchId || effectiveBranchId}
-            onValueChange={setBranchId}
-            options={(branches?.data ?? []).map((b) => ({
-              value: b.id,
-              label: b.name,
-            }))}
-            className="w-full sm:w-[220px]"
-          />
-        ) : null}
+        {(canSelect || isLocked) && <PageBranchScopeControl />}
       </div>
 
-      {!effectiveBranchId ? (
-        <p className="text-sm text-[var(--text-sub-500)]">Select a branch to continue.</p>
+      {!branchId ? (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (use the page override or app selector) to manage front-office
+          records. Create and edit actions require exactly one branch.
+        </p>
       ) : tab === 'inquiries' ? (
-        <InquiriesPanel branchId={effectiveBranchId} />
+        <InquiriesPanel branchId={branchId} />
       ) : tab === 'visitors' ? (
-        <VisitorsPanel branchId={effectiveBranchId} />
+        <VisitorsPanel branchId={branchId} />
       ) : tab === 'complaints' ? (
-        <ComplaintsPanel branchId={effectiveBranchId} />
+        <ComplaintsPanel branchId={branchId} />
       ) : (
-        <ActivityPanel branchId={effectiveBranchId} />
+        <ActivityPanel branchId={branchId} />
       )}
     </div>
   );

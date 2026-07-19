@@ -1,3 +1,6 @@
+import { narrowScope, prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -90,11 +93,10 @@ export class TransportService {
 
   // --- Vehicles ---
 
-  async findAllVehicles(query: ListTransportVehiclesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllVehicles(query: ListTransportVehiclesQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {
@@ -130,9 +132,9 @@ export class TransportService {
     return paginatedResult(data, total, page, limit);
   }
 
-  async findOneVehicle(id: string, branchId: string | null) {
+  async findOneVehicle(id: string, scope: BranchScope) {
     const vehicle = await this.prisma.transportVehicle.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: vehicleInclude,
     });
     if (!vehicle) throw new NotFoundException('Vehicle not found');
@@ -158,7 +160,7 @@ export class TransportService {
 
     await this.replaceVehicleStaff(vehicle.id, input.staff);
 
-    const withStaff = await this.findOneVehicle(vehicle.id, input.branchId);
+    const withStaff = await this.findOneVehicle(vehicle.id, selectedBranchScope([input.branchId]));
 
     await this.audit.log({
       userId: user.id,
@@ -175,10 +177,10 @@ export class TransportService {
     id: string,
     input: UpdateTransportVehicleInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.transportVehicle.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Vehicle not found');
 
@@ -195,7 +197,7 @@ export class TransportService {
 
     await this.replaceVehicleStaff(id, input.staff);
 
-    const updated = await this.findOneVehicle(id, existing.branchId);
+    const updated = await this.findOneVehicle(id, selectedBranchScope([existing.branchId]));
 
     await this.audit.log({
       userId: user.id,
@@ -209,9 +211,9 @@ export class TransportService {
     return updated;
   }
 
-  async removeVehicle(id: string, user: AuthUser, branchId: string | null) {
+  async removeVehicle(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.transportVehicle.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Vehicle not found');
 
@@ -235,10 +237,10 @@ export class TransportService {
     vehicleId: string,
     input: CreateTransportVehicleDocumentInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const vehicle = await this.prisma.transportVehicle.findFirst({
-      where: { id: vehicleId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: vehicleId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!vehicle) throw new NotFoundException('Vehicle not found');
 
@@ -262,13 +264,13 @@ export class TransportService {
     return document;
   }
 
-  async removeVehicleDocument(id: string, user: AuthUser, branchId: string | null) {
+  async removeVehicleDocument(id: string, user: AuthUser, scope: BranchScope) {
     const document = await this.prisma.transportVehicleDocument.findFirst({
       where: {
         id,
         vehicle: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
     });
@@ -289,11 +291,10 @@ export class TransportService {
 
   // --- Routes ---
 
-  async findAllRoutes(query: ListTransportRoutesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllRoutes(query: ListTransportRoutesQuery, scope: BranchScope) {
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.search
         ? {
@@ -322,9 +323,9 @@ export class TransportService {
     return paginatedResult(routes, total, page, limit);
   }
 
-  async findOneRoute(id: string, branchId: string | null) {
+  async findOneRoute(id: string, scope: BranchScope) {
     const route = await this.prisma.transportRoute.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: routeInclude,
     });
     if (!route) throw new NotFoundException('Route not found');
@@ -365,10 +366,10 @@ export class TransportService {
     id: string,
     input: UpdateTransportRouteInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.transportRoute.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { stops: true },
     });
     if (!existing) throw new NotFoundException('Route not found');
@@ -399,7 +400,7 @@ export class TransportService {
       }
     });
 
-    const updated = await this.findOneRoute(id, existing.branchId);
+    const updated = await this.findOneRoute(id, selectedBranchScope([existing.branchId]));
 
     await this.audit.log({
       userId: user.id,
@@ -413,9 +414,9 @@ export class TransportService {
     return updated;
   }
 
-  async removeRoute(id: string, user: AuthUser, branchId: string | null) {
+  async removeRoute(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.transportRoute.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Route not found');
 
@@ -437,18 +438,18 @@ export class TransportService {
 
   // --- Student assignments ---
 
-  async findAllStudentAssignments(query: ListStudentTransportQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllStudentAssignments(query: ListStudentTransportQuery, scope: BranchScope) {
+    const effective = narrowScope(scope, query.branchId);
     const where = {
       deletedAt: null,
       ...(query.routeId ? { routeId: query.routeId } : {}),
       ...(query.studentId ? { studentId: query.studentId } : {}),
-      route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
+      route: { deletedAt: null, ...prismaBranchFilter(effective) },
       ...(query.search
         ? {
             student: {
               fullName: { contains: query.search, mode: 'insensitive' as const },
-              ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+              ...prismaBranchFilter(effective),
             },
           }
         : {}),
@@ -517,7 +518,7 @@ export class TransportService {
     id: string,
     input: UpdateStudentTransportInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.studentTransport.findFirst({
       where: {
@@ -525,7 +526,7 @@ export class TransportService {
         deletedAt: null,
         route: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
       include: { route: true },
@@ -579,14 +580,14 @@ export class TransportService {
     return assignment;
   }
 
-  async removeStudentAssignment(id: string, user: AuthUser, branchId: string | null) {
+  async removeStudentAssignment(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.studentTransport.findFirst({
       where: {
         id,
         deletedAt: null,
         route: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
     });
@@ -610,15 +611,14 @@ export class TransportService {
 
   // --- Trips ---
 
-  async findAllTrips(query: ListTransportTripsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllTrips(query: ListTransportTripsQuery, scope: BranchScope) {
     const where = {
       ...(query.routeId ? { routeId: query.routeId } : {}),
       ...(query.vehicleId ? { vehicleId: query.vehicleId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.direction ? { direction: query.direction } : {}),
       ...(query.tripDate ? { tripDate: this.parseTripDate(query.tripDate) } : {}),
-      route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
+      route: { deletedAt: null, ...prismaBranchFilter(narrowScope(scope, query.branchId)) },
     };
 
     const page = query.page ?? 1;
@@ -642,13 +642,13 @@ export class TransportService {
     return paginatedResult(trips, total, page, limit);
   }
 
-  async findOneTrip(id: string, branchId: string | null) {
+  async findOneTrip(id: string, scope: BranchScope) {
     const trip = await this.prisma.transportTrip.findFirst({
       where: {
         id,
         route: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
       include: {
@@ -702,14 +702,14 @@ export class TransportService {
     id: string,
     input: UpdateTransportTripInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.transportTrip.findFirst({
       where: {
         id,
         route: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
       include: { route: true },
@@ -755,14 +755,14 @@ export class TransportService {
     tripId: string,
     input: BulkTransportAttendanceInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const trip = await this.prisma.transportTrip.findFirst({
       where: {
         id: tripId,
         route: {
           deletedAt: null,
-          ...(branchId ? { branchId } : {}),
+          ...prismaBranchFilter(scope),
         },
       },
       include: { route: true },

@@ -11,6 +11,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import {
   Dialog,
   DialogContent,
@@ -69,6 +70,8 @@ export function CreateAssessmentDialog({
   const queryClient = useQueryClient();
   const isEdit = Boolean(assessment);
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const assessmentSchema = useMemo(
     () =>
       (isEdit ? updateAssessmentSchema : createAssessmentSchema) as ZodSchema<
@@ -94,6 +97,7 @@ export function CreateAssessmentDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       clearAll();
       return;
     }
@@ -112,7 +116,7 @@ export function CreateAssessmentDialog({
   }, [open, assessment, clearAll]);
 
   const buildCreatePayload = () => ({
-    branchId,
+    branchId: effectiveBranchId,
     name: form.name.trim(),
     typeId: form.typeId,
     totalMarks: Number(form.totalMarks),
@@ -208,6 +212,17 @@ export function CreateAssessmentDialog({
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!isEdit && !branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Name</FormFieldLabel>
               <input

@@ -392,19 +392,17 @@ export function BranchDetailView({
                           <Icon className={cn('h-4 w-4', style.iconColor)} strokeWidth={1.75} />
                         </div>
                         <div className="min-w-0 flex-1 pt-0.5">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium leading-5 text-[var(--text-main-900)]">
-                                {activity.title}
-                              </p>
-                              <p className="truncate text-sm leading-5 text-[var(--text-sub-500,#525866)]">
-                                {activity.description}
-                              </p>
-                            </div>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <p className="min-w-0 text-sm font-medium leading-5 text-[var(--text-main-900)]">
+                              {activity.title}
+                            </p>
                             <span className="shrink-0 text-xs leading-4 text-[var(--text-soft-400,#868C98)]">
                               {formatRelativeTime(activity.occurredAt)}
                             </span>
                           </div>
+                          <p className="line-clamp-2 text-sm leading-5 text-[var(--text-sub-500,#525866)] sm:line-clamp-1">
+                            {activity.description}
+                          </p>
                         </div>
                       </li>
                     );

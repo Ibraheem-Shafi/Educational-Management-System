@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -37,17 +40,17 @@ export class BiometricService {
     private readonly audit: AuditService,
   ) {}
 
-  private async assertDeviceInBranch(deviceId: string, branchId: string | null) {
+  private async assertDeviceInBranch(deviceId: string, scope: BranchScope) {
     const device = await this.prisma.biometricDevice.findFirst({
-      where: { id: deviceId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: deviceId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!device) throw new NotFoundException('Device not found');
     return device;
   }
 
-  private async assertMappingInBranch(mappingId: string, branchId: string | null) {
+  private async assertMappingInBranch(mappingId: string, scope: BranchScope) {
     const mapping = await this.prisma.biometricExternalId.findFirst({
-      where: { id: mappingId, ...(branchId ? { branchId } : {}) },
+      where: { id: mappingId, ...prismaBranchFilter(scope) },
     });
     if (!mapping) throw new NotFoundException('Mapping not found');
     return mapping;
@@ -79,11 +82,16 @@ export class BiometricService {
 
   // --- Devices ---
 
-  async findAllDevices(query: ListBiometricDevicesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllDevices(query: ListBiometricDevicesQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.search
         ? {
@@ -114,8 +122,8 @@ export class BiometricService {
     return paginatedResult(devices, total, page, limit);
   }
 
-  async findOneDevice(id: string, branchId: string | null) {
-    const device = await this.assertDeviceInBranch(id, branchId);
+  async findOneDevice(id: string, scope: BranchScope) {
+    const device = await this.assertDeviceInBranch(id, scope);
     return {
       ...device,
       _count: await this.prisma.biometricExternalId.count({ where: { deviceId: id } }),
@@ -154,9 +162,9 @@ export class BiometricService {
     id: string,
     input: UpdateBiometricDeviceInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
-    await this.assertDeviceInBranch(id, branchId);
+    await this.assertDeviceInBranch(id, scope);
 
     if (input.deviceCode) {
       const existing = await this.prisma.biometricDevice.findFirst({
@@ -187,8 +195,8 @@ export class BiometricService {
     return device;
   }
 
-  async removeDevice(id: string, user: AuthUser, branchId: string | null) {
-    await this.assertDeviceInBranch(id, branchId);
+  async removeDevice(id: string, user: AuthUser, scope: BranchScope) {
+    await this.assertDeviceInBranch(id, scope);
     await this.prisma.biometricDevice.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
@@ -206,10 +214,15 @@ export class BiometricService {
 
   // --- Mappings ---
 
-  async findAllMappings(query: ListBiometricMappingsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllMappings(query: ListBiometricMappingsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.deviceId ? { deviceId: query.deviceId } : {}),
       ...(query.entityType ? { entityType: query.entityType } : {}),
       ...(query.search
@@ -272,7 +285,7 @@ export class BiometricService {
     await this.validateEntity(input.branchId, input.entityType, input.entityId);
 
     if (input.deviceId) {
-      await this.assertDeviceInBranch(input.deviceId, input.branchId);
+      await this.assertDeviceInBranch(input.deviceId, selectedBranchScope([input.branchId]));
     }
 
     const existing = await this.prisma.biometricExternalId.findUnique({
@@ -317,9 +330,9 @@ export class BiometricService {
     id: string,
     input: UpdateBiometricMappingInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
-    const existing = await this.assertMappingInBranch(id, branchId);
+    const existing = await this.assertMappingInBranch(id, scope);
     const effectiveBranchId = existing.branchId;
 
     if (input.entityType && input.entityId) {
@@ -331,7 +344,7 @@ export class BiometricService {
     }
 
     if (input.deviceId) {
-      await this.assertDeviceInBranch(input.deviceId, effectiveBranchId);
+      await this.assertDeviceInBranch(input.deviceId, selectedBranchScope([effectiveBranchId]));
     }
 
     if (input.externalPersonId && input.externalPersonId !== existing.externalPersonId) {
@@ -370,8 +383,8 @@ export class BiometricService {
     return mapping;
   }
 
-  async removeMapping(id: string, user: AuthUser, branchId: string | null) {
-    await this.assertMappingInBranch(id, branchId);
+  async removeMapping(id: string, user: AuthUser, scope: BranchScope) {
+    await this.assertMappingInBranch(id, scope);
     await this.prisma.biometricExternalId.delete({ where: { id } });
 
     await this.audit.log({
@@ -386,23 +399,26 @@ export class BiometricService {
 
   // --- Punch logs ---
 
-  async findAllPunchLogs(query: ListBiometricPunchLogsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllPunchLogs(query: ListBiometricPunchLogsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 
     const deviceFilter =
-      effectiveBranchId || query.deviceId
+      effective.kind === 'selected' || query.deviceId
         ? {
             device: {
               deletedAt: null,
-              ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+              ...prismaBranchFilter(effective),
               ...(query.deviceId ? { id: query.deviceId } : {}),
             },
           }
-        : query.deviceId
-          ? { deviceId: query.deviceId }
-          : {};
+        : {};
 
     const where = {
       ...deviceFilter,

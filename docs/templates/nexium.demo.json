@@ -1,5 +1,5 @@
 {
-  "version": "nexium-v1.4",
+  "version": "nexium-v1.5",
   "institution": {
     "siblingDiscountPercent": 10,
     "lateFeeAmount": 500,
@@ -58,6 +58,33 @@
       "phone": "+923551234567",
       "gender": "female",
       "cnic": "61101-6789012-6"
+    },
+    {
+      "email": "lahore.teacher@nexium.edu.pk",
+      "fullName": "Dr. Farah Siddiqui",
+      "role": "teacher",
+      "branchCode": "LAHORE",
+      "phone": "+923336667788",
+      "gender": "female",
+      "cnic": "35202-1112233-4"
+    },
+    {
+      "email": "lahore.fees@nexium.edu.pk",
+      "fullName": "Imran Qureshi",
+      "role": "accountant",
+      "branchCode": "LAHORE",
+      "phone": "+923447778899",
+      "gender": "male",
+      "cnic": "35202-2223344-5"
+    },
+    {
+      "email": "lahore.reception@nexium.edu.pk",
+      "fullName": "Nadia Sheikh",
+      "role": "receptionist",
+      "branchCode": "LAHORE",
+      "phone": "+923558889900",
+      "gender": "female",
+      "cnic": "35202-3334455-6"
     },
     {
       "email": "rashid.ahmad@nexium.edu.pk",
@@ -1655,6 +1682,51 @@
         "CHEM",
         "BIO"
       ]
+    },
+    {
+      "demoKey": "lahore-weekly-test-mdcat",
+      "branchCode": "LAHORE",
+      "name": "Lahore Weekly Test — MDCAT",
+      "typeCode": "weekly_test",
+      "seriesCode": null,
+      "totalMarks": 50,
+      "daysAgo": 10,
+      "batchCode": "MDCAT-LAHORE",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "lahore-flp-1-mdcat",
+      "branchCode": "LAHORE",
+      "name": "Lahore FLP-1 Full Length Paper",
+      "typeCode": "flp",
+      "seriesCode": "flp_1",
+      "totalMarks": 180,
+      "daysAgo": 18,
+      "batchCode": "MDCAT-LAHORE",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "BIO"
+      ]
+    },
+    {
+      "demoKey": "lahore-monthly-ecat",
+      "branchCode": "LAHORE",
+      "name": "Lahore Monthly Test — ECAT",
+      "typeCode": "monthly_test",
+      "seriesCode": null,
+      "totalMarks": 100,
+      "daysAgo": 12,
+      "batchCode": "ECAT-LAHORE",
+      "subjectCodes": [
+        "PHY",
+        "CHEM",
+        "MATH"
+      ]
     }
   ],
   "feeStructures": [
@@ -1691,6 +1763,34 @@
       "branchCode": "MAIN",
       "programCode": "MDCAT",
       "amount": 2000,
+      "dueDayOfMonth": null
+    },
+    {
+      "feeTypeCode": "monthly",
+      "branchCode": "LAHORE",
+      "programCode": "MDCAT",
+      "amount": 24000,
+      "dueDayOfMonth": 10
+    },
+    {
+      "feeTypeCode": "monthly",
+      "branchCode": "LAHORE",
+      "programCode": "ECAT",
+      "amount": 22000,
+      "dueDayOfMonth": 10
+    },
+    {
+      "feeTypeCode": "admission",
+      "branchCode": "LAHORE",
+      "programCode": "MDCAT",
+      "amount": 5000,
+      "dueDayOfMonth": null
+    },
+    {
+      "feeTypeCode": "admission",
+      "branchCode": "LAHORE",
+      "programCode": "ECAT",
+      "amount": 4500,
       "dueDayOfMonth": null
     }
   ],
@@ -1739,6 +1839,22 @@
       "branchCode": "MAIN",
       "title": "Staff Meeting — Draft",
       "body": "Internal staff meeting agenda for next week. Not yet published.",
+      "audience": "staff",
+      "published": false,
+      "daysAgo": 0
+    },
+    {
+      "branchCode": "LAHORE",
+      "title": "Lahore Fee Reminder — July 2026",
+      "body": "July monthly fee challans for Lahore campus are due on the 10th. Pay at the Gulberg accounts desk or via bank transfer.",
+      "audience": "parents",
+      "published": true,
+      "daysAgo": 1
+    },
+    {
+      "branchCode": "LAHORE",
+      "title": "Lahore Parent Orientation — Draft",
+      "body": "Draft agenda for Lahore campus parent orientation. Not published yet.",
       "audience": "staff",
       "published": false,
       "daysAgo": 0
@@ -1844,6 +1960,56 @@
       "endTime": "12:00",
       "subjectCode": "CHEM",
       "room": "Lab 1"
+    },
+    {
+      "batchCode": "MDCAT-LAHORE",
+      "branchCode": "LAHORE",
+      "teacherEmail": "lahore.teacher@nexium.edu.pk",
+      "dayOfWeek": 1,
+      "startTime": "09:00",
+      "endTime": "10:30",
+      "subjectCode": "PHY",
+      "room": "Gulberg Hall 1"
+    },
+    {
+      "batchCode": "MDCAT-LAHORE",
+      "branchCode": "LAHORE",
+      "teacherEmail": "lahore.teacher@nexium.edu.pk",
+      "dayOfWeek": 1,
+      "startTime": "10:45",
+      "endTime": "12:15",
+      "subjectCode": "CHEM",
+      "room": "Gulberg Lab"
+    },
+    {
+      "batchCode": "MDCAT-LAHORE",
+      "branchCode": "LAHORE",
+      "teacherEmail": "lahore.teacher@nexium.edu.pk",
+      "dayOfWeek": 3,
+      "startTime": "09:00",
+      "endTime": "10:30",
+      "subjectCode": "BIO",
+      "room": "Gulberg Hall 1"
+    },
+    {
+      "batchCode": "ECAT-LAHORE",
+      "branchCode": "LAHORE",
+      "teacherEmail": "lahore.teacher@nexium.edu.pk",
+      "dayOfWeek": 2,
+      "startTime": "14:00",
+      "endTime": "15:30",
+      "subjectCode": "MATH",
+      "room": "Gulberg Hall 2"
+    },
+    {
+      "batchCode": "ECAT-LAHORE",
+      "branchCode": "LAHORE",
+      "teacherEmail": "lahore.teacher@nexium.edu.pk",
+      "dayOfWeek": 4,
+      "startTime": "14:00",
+      "endTime": "15:30",
+      "subjectCode": "PHY",
+      "room": "Gulberg Hall 2"
     }
   ],
   "documents": [
@@ -1873,6 +2039,24 @@
       "storagePath": "student-documents/demo/ali-khan-admission.pdf",
       "mimeType": "application/pdf",
       "sizeBytes": 98304
+    },
+    {
+      "branchCode": "LAHORE",
+      "studentDemoKey": null,
+      "category": "policy",
+      "title": "Lahore Campus Fee Policy 2026",
+      "storagePath": "institution-assets/policies/lahore-fee-policy-2026.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 198000
+    },
+    {
+      "branchCode": "LAHORE",
+      "studentDemoKey": "ahmed-hassan",
+      "category": "admission",
+      "title": "Admission Form — Ahmed Hassan",
+      "storagePath": "student-documents/demo/ahmed-hassan-admission.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 92000
     }
   ],
   "communications": [

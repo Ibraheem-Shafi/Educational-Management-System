@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -50,7 +51,9 @@ export function CreateBatchDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [programId, setProgramId] = useState('');
+  const [pickedBranchId, setPickedBranchId] = useState('');
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
+  const effectiveBranchId = branchId || pickedBranchId;
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(createBatchSchema);
 
@@ -60,10 +63,26 @@ export function CreateBatchDialog({
     enabled: !!token && open,
   });
 
+  // Programs for an internally picked branch (when the page scope isn't a single branch).
+  const { data: pickedBranchPrograms } = useQuery({
+    queryKey: queryKeys.programs(pickedBranchId, { options: true, limit: 100 }),
+    queryFn: () =>
+      apiClient<{ data: Array<{ id: string; name: string }> }>(
+        `/programs?branchId=${pickedBranchId}&limit=100`,
+        { token },
+      ),
+    enabled: !!token && open && !branchId && !!pickedBranchId,
+  });
+
+  const effectiveProgramOptions = branchId
+    ? programOptions
+    : (pickedBranchPrograms?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+
   useEffect(() => {
     if (!open) {
       setName('');
       setProgramId('');
+      setPickedBranchId('');
       setSubjectIds([]);
       clearAll();
     }
@@ -113,7 +132,7 @@ export function CreateBatchDialog({
           onSubmit={(e) => {
             e.preventDefault();
             const payload = {
-              branchId,
+              branchId: effectiveBranchId,
               programId,
               name: name.trim(),
               subjectIds,
@@ -123,6 +142,18 @@ export function CreateBatchDialog({
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                  setProgramId('');
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Program</FormFieldLabel>
               <SelectDropdown
@@ -133,7 +164,7 @@ export function CreateBatchDialog({
                   setProgramId(value);
                   clearField('programId');
                 }}
-                options={[{ value: '', label: 'Select program' }, ...programOptions]}
+                options={[{ value: '', label: 'Select program' }, ...effectiveProgramOptions]}
                 className={fieldClassName('programId', 'w-full')}
                 fullWidth
               />

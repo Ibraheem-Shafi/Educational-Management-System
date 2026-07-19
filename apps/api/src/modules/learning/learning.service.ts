@@ -1,3 +1,6 @@
+import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -75,12 +78,12 @@ export class LearningService {
     }
   }
 
-  async getStats(branchId: string | null): Promise<LearningStatsResponse> {
-    const cacheKey = `learning:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<LearningStatsResponse> {
+    const cacheKey = `learning:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<LearningStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const base = { deletedAt: null, ...branchFilter };
     const thirtyAgo = thirtyDaysAgo();
     const dueSoonEnd = new Date();
@@ -122,12 +125,11 @@ export class LearningService {
 
   async findAll(
     query: ListLearningQuery,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<PaginatedResponse<LearningResourceResponse>> {
-    const effectiveBranchId = branchId ?? query.branchId;
     const where: Prisma.LearningResourceWhereInput = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.type ? { type: query.type } : {}),
       ...(query.batchId ? { batchId: query.batchId } : {}),
       ...(query.subjectId ? { subjectId: query.subjectId } : {}),
@@ -168,9 +170,9 @@ export class LearningService {
     };
   }
 
-  async findOne(id: string, branchId: string | null): Promise<LearningResourceResponse> {
+  async findOne(id: string, scope: BranchScope): Promise<LearningResourceResponse> {
     const resource = await this.prisma.learningResource.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { attachments: true },
     });
     if (!resource) throw new NotFoundException('Learning resource not found');
@@ -230,10 +232,10 @@ export class LearningService {
     id: string,
     input: UpdateLearningResourceInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<LearningResourceResponse> {
     const existing = await this.prisma.learningResource.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Learning resource not found');
 
@@ -295,9 +297,9 @@ export class LearningService {
     return enriched;
   }
 
-  async remove(id: string, user: AuthUser, branchId: string | null) {
+  async remove(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.learningResource.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Learning resource not found');
     if (!this.canPublishAnyScope(user) && existing.createdById !== user.id) {
@@ -323,10 +325,10 @@ export class LearningService {
     id: string,
     input: AddLearningAttachmentInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const existing = await this.prisma.learningResource.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Learning resource not found');
     await this.assertTeacherCanPublish(user, existing.batchId, existing.subjectId);
@@ -347,13 +349,13 @@ export class LearningService {
   async getAttachmentSignedUrl(
     resourceId: string,
     attachmentId: string,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const attachment = await this.prisma.learningAttachment.findFirst({
       where: {
         id: attachmentId,
         resourceId,
-        resource: { deletedAt: null, ...(branchId ? { branchId } : {}) },
+        resource: { deletedAt: null, ...prismaBranchFilter(scope) },
       },
     });
     if (!attachment) throw new NotFoundException('Attachment not found');
@@ -463,7 +465,7 @@ export class LearningService {
     const list = await this.listForStudentContext({ ...params, page: 1, limit: 200 });
     const found = list.data.find((r) => r.id === id);
     if (!found) throw new NotFoundException('Learning resource not found');
-    return this.findOne(id, params.branchId);
+    return this.findOne(id, selectedBranchScope([params.branchId]));
   }
 
   async getDueSoonForStudent(params: {

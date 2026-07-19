@@ -10,6 +10,8 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import type { PaginatedResponse, StaffListRow, UsersStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +22,7 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
@@ -39,11 +42,6 @@ const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 interface Role {
-  id: string;
-  name: string;
-}
-
-interface BranchOption {
   id: string;
   name: string;
 }
@@ -113,7 +111,6 @@ export default function UsersPage() {
 
   const [search, setSearch] = useState('');
   const [roleId, setRoleId] = useState('');
-  const [branchId, setBranchId] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
@@ -133,13 +130,15 @@ export default function UsersPage() {
     setPage(1);
   }, []);
 
+  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+
   const queryParams = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
+  appendToSearchParams(queryParams);
   if (search) queryParams.set('search', search);
   if (roleId) queryParams.set('roleId', roleId);
-  if (branchId) queryParams.set('branchId', branchId);
   if (status) queryParams.set('status', status);
 
   const { data: roles } = useQuery({
@@ -148,20 +147,15 @@ export default function UsersPage() {
     enabled: !!token,
   });
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: BranchOption[] }>('/branches', { token }),
-    enabled: !!token,
-  });
-
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.usersStats,
-    queryFn: () => apiClient<UsersStatsResponse>('/users/stats', { token }),
+    queryKey: [...queryKeys.usersStats, scopeKey],
+    queryFn: () =>
+      apiClient<UsersStatsResponse>(withBranchScope('/users/stats', effectiveScope), { token }),
     enabled: !!token,
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['users', search, roleId, branchId, status, page, limit],
+    queryKey: ['users', scopeKey, search, roleId, status, page, limit],
     queryFn: () =>
       apiClient<PaginatedResponse<StaffListRow>>(`/users?${queryParams.toString()}`, { token }),
     enabled: !!token,
@@ -272,19 +266,6 @@ export default function UsersPage() {
           ]}
         />
         <SelectDropdown
-          aria-label="Filter by branch"
-          placeholder="All Branch"
-          value={branchId}
-          onValueChange={(next) => {
-            setBranchId(next);
-            setPage(1);
-          }}
-          options={[
-            { value: '', label: 'All Branch' },
-            ...(branches?.data.map((branch) => ({ value: branch.id, label: branch.name })) ?? []),
-          ]}
-        />
-        <SelectDropdown
           aria-label="Filter by status"
           placeholder="All Status"
           value={status}
@@ -299,13 +280,13 @@ export default function UsersPage() {
             { value: 'invited', label: 'Invited' },
           ]}
         />
-        {(search || roleId || branchId || status) && (
+        <PageBranchScopeControl />
+        {(search || roleId || status) && (
           <Button
             variant="ghost"
             onClick={() => {
               setSearch('');
               setRoleId('');
-              setBranchId('');
               setStatus('');
               setPage(1);
             }}

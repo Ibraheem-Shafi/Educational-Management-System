@@ -67,7 +67,7 @@ export function SelectDropdown({
   const listId = useId();
   const isSm = size === 'sm';
 
-  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLUListElement>({
+  const { triggerRef, menuRef, position, closeMenu } = useDropdownMenu<HTMLUListElement>({
     open,
     onClose: () => setOpen(false),
     align: isSm ? 'right' : 'match',
@@ -118,7 +118,7 @@ export function SelectDropdown({
       </button>
 
       {open && position && typeof document !== 'undefined' && (
-        <DropdownMenuBackdrop onClose={() => setOpen(false)} />
+        <DropdownMenuBackdrop onClose={closeMenu} />
       )}
 
       {open &&

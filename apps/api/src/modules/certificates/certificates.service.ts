@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { branchIdsFromScope, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
@@ -55,14 +58,18 @@ export class CertificatesService {
     private readonly settings: SettingsService,
   ) {}
 
-  async findAllTemplates(query: ListTemplatesQuery, branchId: string | null) {
+  async findAllTemplates(query: ListTemplatesQuery, scope: BranchScope) {
     await this.ensureDefaultTemplates();
 
-    const effectiveBranchId = branchId ?? query.branchId ?? null;
+    const scopedBranchIds =
+      branchIdsFromScope(scope) ?? (query.branchId ? [query.branchId] : null);
     const where = {
       isActive: true,
       ...(query.type ? { type: query.type } : {}),
-      OR: [{ branchId: null }, ...(effectiveBranchId ? [{ branchId: effectiveBranchId }] : [])],
+      OR: [
+        { branchId: null },
+        ...(scopedBranchIds ? [{ branchId: { in: scopedBranchIds } }] : []),
+      ],
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
@@ -80,11 +87,16 @@ export class CertificatesService {
     return paginatedResult(templates.map(this.toTemplateResponse), total, page, limit);
   }
 
-  async findAllIssues(query: ListIssuesQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllIssues(query: ListIssuesQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.templateId ? { templateId: query.templateId } : {}),
     };
@@ -156,9 +168,9 @@ export class CertificatesService {
     return this.toIssueResponse(issue);
   }
 
-  async getPrintData(issueId: string, branchId: string | null) {
+  async getPrintData(issueId: string, scope: BranchScope) {
     const issue = await this.prisma.certificateIssue.findFirst({
-      where: { id: issueId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: issueId, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
         template: true,
         student: {
@@ -198,9 +210,9 @@ export class CertificatesService {
     };
   }
 
-  async getIdCardPrintData(studentId: string, branchId: string | null) {
+  async getIdCardPrintData(studentId: string, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
         program: { select: { name: true } },
         batch: { select: { name: true } },

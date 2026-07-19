@@ -2,17 +2,15 @@
 
 import { useState } from 'react';
 import { Bus } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
 import { PageHeader } from '@/components/layout/page-header';
-import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { Tabs } from '@/components/ui/tabs';
 import { VehiclesPanel } from '@/components/features/transport/vehicles-panel';
 import { RoutesPanel } from '@/components/features/transport/routes-panel';
 import { StudentsPanel } from '@/components/features/transport/students-panel';
 import { TripsPanel } from '@/components/features/transport/trips-panel';
 import { GpsPanel } from '@/components/features/transport/gps-panel';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 
 const TABS = [
   { id: 'vehicles', label: 'Vehicles' },
@@ -25,20 +23,9 @@ const TABS = [
 type TransportTab = (typeof TABS)[number]['id'];
 
 export default function TransportPage() {
-  const { session, user } = useAuth();
-  const token = session?.access_token;
   const [tab, setTab] = useState<TransportTab>('vehicles');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
-
-  const { effectiveBranchId, branches, branchesLoading } = useEffectiveBranchId(
-    token,
-    user?.branchId,
-    branchId,
-  );
-
-  if (branchesLoading && !effectiveBranchId) {
-    return <PortalPageSkeleton />;
-  }
+  const { singleBranchId } = useEffectiveBranchScope();
+  const branchId = singleBranchId ?? '';
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -55,34 +42,23 @@ export default function TransportPage() {
           onValueChange={(id) => setTab(id as TransportTab)}
           aria-label="Transport sections"
         />
-
-        {!user?.branchId && (branches?.data.length ?? 0) > 1 ? (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Select branch"
-            value={branchId || effectiveBranchId}
-            onValueChange={setBranchId}
-            options={(branches?.data ?? []).map((b) => ({
-              value: b.id,
-              label: b.name,
-            }))}
-            className="w-full sm:w-[220px]"
-          />
-        ) : null}
+        <PageBranchScopeControl />
       </div>
 
-      {!effectiveBranchId ? (
-        <p className="text-sm text-[var(--text-sub-500)]">Select a branch to continue.</p>
+      {!branchId ? (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to manage transport records.
+        </p>
       ) : tab === 'vehicles' ? (
-        <VehiclesPanel branchId={effectiveBranchId} />
+        <VehiclesPanel branchId={branchId} />
       ) : tab === 'routes' ? (
-        <RoutesPanel branchId={effectiveBranchId} />
+        <RoutesPanel branchId={branchId} />
       ) : tab === 'students' ? (
-        <StudentsPanel branchId={effectiveBranchId} />
+        <StudentsPanel branchId={branchId} />
       ) : tab === 'trips' ? (
-        <TripsPanel branchId={effectiveBranchId} />
+        <TripsPanel branchId={branchId} />
       ) : (
-        <GpsPanel branchId={effectiveBranchId} />
+        <GpsPanel branchId={branchId} />
       )}
     </div>
   );

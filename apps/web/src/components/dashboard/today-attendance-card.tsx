@@ -25,7 +25,7 @@ function AttendanceRing({
   return (
     <div className="flex min-w-0 flex-col items-center gap-3 text-center">
       <AttendanceDonut rate={ring.rate} color={color} />
-      <div className="space-y-0.5">
+      <div className="min-w-0 space-y-0.5">
         <p className="text-sm font-medium leading-5 text-[var(--text-sub-500)]">{label}</p>
         <p className="text-sm font-semibold leading-5 text-[var(--text-main-900)]">
           {formatCount(ring.presentCount)}
@@ -57,9 +57,9 @@ export function TodayAttendanceCard({
           </div>
           <Skeleton className="h-4 w-12" />
         </div>
-        <div className={cn('grid gap-4', studentOnly ? 'grid-cols-1' : 'grid-cols-3')}>
+        <div className={cn('grid gap-6', studentOnly ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3 sm:gap-4')}>
           {Array.from({ length: studentOnly ? 1 : 3 }).map((_, i) => (
-            <div key={i} className="flex flex-col items-center gap-3">
+            <div key={i} className="flex min-w-0 flex-col items-center gap-3">
               <Skeleton className="h-[104px] w-[104px] rounded-full" />
               <Skeleton className="h-4 w-20" />
               <Skeleton className="h-4 w-14" />
@@ -84,7 +84,12 @@ export function TodayAttendanceCard({
         </span>
       </div>
 
-      <div className={cn('grid gap-2 sm:gap-4', studentOnly ? 'grid-cols-1 place-items-center' : 'grid-cols-3')}>
+      <div
+        className={cn(
+          'grid gap-6',
+          studentOnly ? 'grid-cols-1 place-items-center' : 'grid-cols-1 sm:grid-cols-3 sm:gap-4',
+        )}
+      >
         <AttendanceRing label="Students" ring={data.students} color={RING_COLORS.students} />
         {!studentOnly && data.teachersAndStaff && data.overall && (
           <>

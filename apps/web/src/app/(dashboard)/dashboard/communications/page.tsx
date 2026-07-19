@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import type { CommunicationsStatsResponse, PaginatedResponse } from '@eims/types';
 import {
   PageHeader,
@@ -17,6 +19,7 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
@@ -69,9 +72,15 @@ export default function CommunicationsPage() {
     setLogPage(1);
   }, []);
 
+  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.communicationsStats,
-    queryFn: () => apiClient<CommunicationsStatsResponse>('/communications/stats', { token }),
+    queryKey: [...queryKeys.communicationsStats, scopeKey],
+    queryFn: () =>
+      apiClient<CommunicationsStatsResponse>(
+        withBranchScope('/communications/stats', effectiveScope),
+        { token },
+      ),
     enabled: !!token,
   });
 
@@ -79,12 +88,21 @@ export default function CommunicationsPage() {
     page: String(logPage),
     limit: String(logLimit),
   });
+  appendToSearchParams(queryParams);
   if (search) queryParams.set('search', search);
   if (channelFilter) queryParams.set('channel', channelFilter);
   if (statusFilter) queryParams.set('status', statusFilter);
 
   const { data: logs, isLoading, error } = useQuery({
-    queryKey: ['communication-logs', logPage, logLimit, search, channelFilter, statusFilter],
+    queryKey: [
+      'communication-logs',
+      scopeKey,
+      logPage,
+      logLimit,
+      search,
+      channelFilter,
+      statusFilter,
+    ],
     queryFn: () =>
       apiClient<PaginatedResponse<CommunicationLog>>(
         `/communications/logs?${queryParams.toString()}`,
@@ -210,6 +228,7 @@ export default function CommunicationsPage() {
             { value: 'queued', label: 'Queued' },
           ]}
         />
+        <PageBranchScopeControl />
         {(search || channelFilter || statusFilter) && (
           <Button
             variant="ghost"

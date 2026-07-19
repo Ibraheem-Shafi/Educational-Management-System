@@ -19,7 +19,7 @@ import { BiometricWebhookGuard } from './biometric-webhook.guard';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   biometricPunchWebhookSchema,
@@ -34,6 +34,7 @@ import {
 import type { AuthUser } from '@eims/types';
 import type {
   BiometricPunchWebhookInput,
+  BranchScope,
   CreateBiometricDeviceInput,
   CreateBiometricMappingInput,
   ListBiometricDevicesQuery,
@@ -54,15 +55,15 @@ export class BiometricController {
   @Permissions('biometric.read')
   findAllDevices(
     @Query(createZodPipe(listBiometricDevicesQuerySchema)) query: ListBiometricDevicesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.findAllDevices(query, branchId);
+    return this.biometricService.findAllDevices(query, scope);
   }
 
   @Get('devices/:id')
   @Permissions('biometric.read')
-  findOneDevice(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.biometricService.findOneDevice(id, branchId);
+  findOneDevice(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.biometricService.findOneDevice(id, scope);
   }
 
   @Post('devices')
@@ -81,9 +82,9 @@ export class BiometricController {
     @Param('id') id: string,
     @Body(createZodPipe(updateBiometricDeviceSchema)) body: UpdateBiometricDeviceInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.updateDevice(id, body, user, branchId);
+    return this.biometricService.updateDevice(id, body, user, scope);
   }
 
   @Delete('devices/:id')
@@ -91,18 +92,18 @@ export class BiometricController {
   removeDevice(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.removeDevice(id, user, branchId);
+    return this.biometricService.removeDevice(id, user, scope);
   }
 
   @Get('mappings')
   @Permissions('biometric.read')
   findAllMappings(
     @Query(createZodPipe(listBiometricMappingsQuerySchema)) query: ListBiometricMappingsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.findAllMappings(query, branchId);
+    return this.biometricService.findAllMappings(query, scope);
   }
 
   @Post('mappings')
@@ -121,9 +122,9 @@ export class BiometricController {
     @Param('id') id: string,
     @Body(createZodPipe(updateBiometricMappingSchema)) body: UpdateBiometricMappingInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.updateMapping(id, body, user, branchId);
+    return this.biometricService.updateMapping(id, body, user, scope);
   }
 
   @Delete('mappings/:id')
@@ -131,18 +132,18 @@ export class BiometricController {
   removeMapping(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.removeMapping(id, user, branchId);
+    return this.biometricService.removeMapping(id, user, scope);
   }
 
   @Get('punch-logs')
   @Permissions('biometric.read')
   findAllPunchLogs(
     @Query(createZodPipe(listBiometricPunchLogsQuerySchema)) query: ListBiometricPunchLogsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.biometricService.findAllPunchLogs(query, branchId);
+    return this.biometricService.findAllPunchLogs(query, scope);
   }
 
   @Post('webhooks/punch')

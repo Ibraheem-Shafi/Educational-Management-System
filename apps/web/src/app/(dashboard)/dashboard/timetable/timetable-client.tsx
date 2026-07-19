@@ -8,6 +8,9 @@ import { PERMISSIONS, createTimetableSlotSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
@@ -116,11 +119,10 @@ interface Slot {
 }
 
 export default function TimetablePage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const branchId = user?.branchId ?? '';
   const canManage = can(PERMISSIONS.TIMETABLE_MANAGE);
 
   const [rangeStart, setRangeStart] = useState(() => currentWeekRange().start);
@@ -172,17 +174,15 @@ export default function TimetablePage() {
     return disabled;
   }, [visibleDates]);
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
-    enabled: !!token,
-  });
-
-  const effectiveBranchId = branchId || branches?.data[0]?.id || '';
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
+  const effectiveBranchId = singleBranchId ?? '';
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.timetableStats,
-    queryFn: () => apiClient<TimetableStatsResponse>('/timetable/stats', { token }),
+    queryKey: [...queryKeys.timetableStats, scopeKey],
+    queryFn: () =>
+      apiClient<TimetableStatsResponse>(withBranchScope('/timetable/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
@@ -469,7 +469,14 @@ export default function TimetablePage() {
           options={subjectFilterOptions}
           className="min-w-[180px]"
         />
+        <PageBranchScopeControl />
       </div>
+
+      {!effectiveBranchId && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to view and manage the timetable.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white px-3 py-3">
         <div className="flex items-center gap-2">

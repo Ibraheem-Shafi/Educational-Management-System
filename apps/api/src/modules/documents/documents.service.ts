@@ -1,3 +1,6 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
@@ -47,12 +50,12 @@ export class DocumentsService implements OnModuleInit {
     }
   }
 
-  async getStats(branchId: string | null): Promise<DocumentsStatsResponse> {
-    const cacheKey = `documents:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<DocumentsStatsResponse> {
+    const cacheKey = `documents:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<DocumentsStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyAgo = thirtyDaysAgo();
     const base = { deletedAt: null, ...branchFilter };
 
@@ -84,11 +87,16 @@ export class DocumentsService implements OnModuleInit {
     return result;
   }
 
-  async findAll(query: ListDocumentsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAll(query: ListDocumentsQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const where = {
       deletedAt: null,
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.userId ? { userId: query.userId } : {}),
       ...(query.category ? { category: query.category } : {}),
@@ -176,9 +184,9 @@ export class DocumentsService implements OnModuleInit {
     return doc;
   }
 
-  async remove(id: string, user: AuthUser, branchId: string | null) {
+  async remove(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.document.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Document not found');
 
@@ -198,9 +206,9 @@ export class DocumentsService implements OnModuleInit {
     return { deleted: true };
   }
 
-  async getSignedUrl(id: string, branchId: string | null) {
+  async getSignedUrl(id: string, scope: BranchScope) {
     const doc = await this.prisma.document.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!doc) throw new NotFoundException('Document not found');
     if (!this.supabaseAdmin) {

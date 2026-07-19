@@ -8,6 +8,8 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import type { PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +20,7 @@ import {
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { FilterBar } from '@/components/layout/filter-bar';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
@@ -95,17 +98,23 @@ export default function ParentsPage() {
     setPage(1);
   }, []);
 
+  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+
   const queryParams = new URLSearchParams({ page: String(page), limit: String(limit) });
+  appendToSearchParams(queryParams);
   if (search) queryParams.set('search', search);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.parentsStats,
-    queryFn: () => apiClient<ParentsStatsResponse>('/parents/stats', { token }),
+    queryKey: [...queryKeys.parentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<ParentsStatsResponse>(withBranchScope('/parents/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['parents', search, page, limit],
+    queryKey: ['parents', scopeKey, search, page, limit],
     queryFn: () =>
       apiClient<PaginatedResponse<ParentRow>>(`/parents?${queryParams.toString()}`, { token }),
     enabled: !!token,
@@ -162,6 +171,7 @@ export default function ParentsPage() {
 
       <FilterBar className="items-center">
         <SearchInput value={search} onValueChange={handleSearchChange} placeholder="Search by name, ID, email" />
+        <PageBranchScopeControl />
         {search && (
           <Button
             variant="ghost"

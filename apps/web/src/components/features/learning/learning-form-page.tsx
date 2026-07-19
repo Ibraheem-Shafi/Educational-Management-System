@@ -18,10 +18,11 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
@@ -44,13 +45,22 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const editId = mode === 'edit' ? params?.id : undefined;
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const pageScope = usePageBranchScopeOptional();
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
 
   const { data: existing } = useQuery({
     queryKey: ['learning', 'detail', editId],
     queryFn: () => apiClient<LearningResourceResponse>(`/learning/${editId}`, { token }),
     enabled: !!token && !!editId,
   });
+
+  // Edit: locked to the resource's branch. Create: assigned branch, then
+  // explicit pick / single-branch scope (no first-branch fallback).
+  const effectiveBranchId =
+    mode === 'edit'
+      ? (existing?.branchId ?? '')
+      : user?.branchId || pickedBranchId || scopedSingleBranchId || '';
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState('homework');
@@ -198,6 +208,19 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
             submitMutation.mutate(payload);
           }}
         >
+          {mode === 'create' && !user?.branchId && (
+            <BranchSelectField
+              value={pickedBranchId || scopedSingleBranchId || ''}
+              onValueChange={(value) => {
+                setPickedBranchId(value);
+                setProgramId('');
+                setBatchId('');
+                clearField('branchId');
+              }}
+              error={errors.branchId}
+            />
+          )}
+
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>

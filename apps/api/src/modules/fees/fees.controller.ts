@@ -16,7 +16,7 @@ import { FeesService } from './fees.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createFeeInvoiceSchema,
@@ -32,6 +32,7 @@ import {
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
+  BranchScope,
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
   RecordPaymentInput,
@@ -53,14 +54,14 @@ export class FeesController {
 
   @Get('fees/stats')
   @Permissions('fees.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.feesService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getStats(scope);
   }
 
   @Get('fees/revenue-trend')
   @Permissions('fees.read')
-  getRevenueTrend(@BranchId() branchId: string | null) {
-    return this.feesService.getRevenueTrend(branchId);
+  getRevenueTrend(@BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getRevenueTrend(scope);
   }
 
   @Get('fee-types')
@@ -93,9 +94,9 @@ export class FeesController {
   @Permissions('fees.read')
   listStructures(
     @Query(createZodPipe(listFeeStructuresQuerySchema)) query: ListFeeStructuresQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.listStructures(query, branchId);
+    return this.feesService.listStructures(query, scope);
   }
 
   @Post('fee-structures')
@@ -114,9 +115,9 @@ export class FeesController {
     @Param('id') id: string,
     @Body(createZodPipe(updateFeeStructureSchema)) body: UpdateFeeStructureInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.updateStructure(id, body, user, branchId);
+    return this.feesService.updateStructure(id, body, user, scope);
   }
 
   @Delete('fee-structures/:id')
@@ -124,9 +125,9 @@ export class FeesController {
   deleteStructure(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.deleteStructure(id, user, branchId);
+    return this.feesService.deleteStructure(id, user, scope);
   }
 
   @Post('fee-structures/generate-invoices')
@@ -143,15 +144,15 @@ export class FeesController {
   @Permissions('fees.read')
   findAll(
     @Query(createZodPipe(listFeeInvoicesQuerySchema)) query: ListFeeInvoicesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.findAll(query, branchId);
+    return this.feesService.findAll(query, scope);
   }
 
   @Get('fee-invoices/:id')
   @Permissions('fees.read')
-  getInvoice(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.feesService.getInvoice(id, branchId);
+  getInvoice(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getInvoice(id, scope);
   }
 
   @Post('fee-invoices')
@@ -170,9 +171,9 @@ export class FeesController {
     @Param('id') id: string,
     @Body(createZodPipe(recordPaymentSchema)) body: RecordPaymentInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.recordPayment(id, body, user, branchId);
+    return this.feesService.recordPayment(id, body, user, scope);
   }
 
   @Post('fee-invoices/:id/payments')
@@ -182,14 +183,14 @@ export class FeesController {
     @Param('id') id: string,
     @Body(createZodPipe(recordFeePaymentSchema)) body: RecordFeePaymentInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.feesService.recordFeePayment(id, body, user, branchId);
+    return this.feesService.recordFeePayment(id, body, user, scope);
   }
 
   @Get('students/:studentId/fees')
   @Permissions('fees.read')
-  getStudentFees(@Param('studentId') studentId: string, @BranchId() branchId: string | null) {
-    return this.feesService.getStudentFees(studentId, branchId);
+  getStudentFees(@Param('studentId') studentId: string, @BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getStudentFees(studentId, scope);
   }
 }

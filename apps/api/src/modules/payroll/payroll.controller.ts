@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { PayrollService } from './payroll.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   adjustPayrollLineSchema,
@@ -49,15 +50,15 @@ export class PayrollController {
   @Permissions('payroll.read')
   findStructures(
     @Query(createZodPipe(listSalaryStructuresQuerySchema)) query: ListSalaryStructuresQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.findStructures(query, branchId);
+    return this.payrollService.findStructures(query, scope);
   }
 
   @Get('structures/:id')
   @Permissions('payroll.read')
-  findStructure(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.payrollService.findStructure(id, branchId);
+  findStructure(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.payrollService.findStructure(id, scope);
   }
 
   @Post('structures')
@@ -76,9 +77,9 @@ export class PayrollController {
     @Param('id') id: string,
     @Body(createZodPipe(updateSalaryStructureSchema)) body: UpdateSalaryStructureInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.updateStructure(id, body, user, branchId);
+    return this.payrollService.updateStructure(id, body, user, scope);
   }
 
   @Delete('structures/:id')
@@ -86,18 +87,18 @@ export class PayrollController {
   removeStructure(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.removeStructure(id, user, branchId);
+    return this.payrollService.removeStructure(id, user, scope);
   }
 
   @Get('runs')
   @Permissions('payroll.read')
   findRuns(
     @Query(createZodPipe(listPayrollRunsQuerySchema)) query: ListPayrollRunsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.findRuns(query, branchId);
+    return this.payrollService.findRuns(query, scope);
   }
 
   @Post('runs')
@@ -112,8 +113,8 @@ export class PayrollController {
 
   @Get('runs/:id')
   @Permissions('payroll.read')
-  findRun(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.payrollService.findRun(id, branchId);
+  findRun(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.payrollService.findRun(id, scope);
   }
 
   @Post('runs/:id/generate')
@@ -121,9 +122,9 @@ export class PayrollController {
   generateRun(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.generateRun(id, user, branchId);
+    return this.payrollService.generateRun(id, user, scope);
   }
 
   @Post('runs/:id/submit-approval')
@@ -131,9 +132,9 @@ export class PayrollController {
   submitApproval(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.submitApproval(id, user, branchId);
+    return this.payrollService.submitApproval(id, user, scope);
   }
 
   @Post('runs/:id/approve')
@@ -141,9 +142,9 @@ export class PayrollController {
   approveRun(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.approveRun(id, user, branchId);
+    return this.payrollService.approveRun(id, user, scope);
   }
 
   @Post('runs/:id/finalize')
@@ -151,9 +152,9 @@ export class PayrollController {
   finalizeRun(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.finalizeRun(id, user, branchId);
+    return this.payrollService.finalizeRun(id, user, scope);
   }
 
   @Get('runs/:id/export')
@@ -161,9 +162,9 @@ export class PayrollController {
   exportRun(
     @Param('id') id: string,
     @Query(createZodPipe(exportPayrollRunQuerySchema)) query: ExportPayrollRunQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.exportRun(id, query, branchId);
+    return this.payrollService.exportRun(id, query, scope);
   }
 
   @Patch('lines/:id')
@@ -172,14 +173,14 @@ export class PayrollController {
     @Param('id') id: string,
     @Body(createZodPipe(adjustPayrollLineSchema)) body: AdjustPayrollLineInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.payrollService.adjustLine(id, body, user, branchId);
+    return this.payrollService.adjustLine(id, body, user, scope);
   }
 
   @Get('lines/:id/print-data')
   @Permissions('payroll.read')
-  getLinePrintData(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.payrollService.getLinePrintData(id, branchId);
+  getLinePrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.payrollService.getLinePrintData(id, scope);
   }
 }

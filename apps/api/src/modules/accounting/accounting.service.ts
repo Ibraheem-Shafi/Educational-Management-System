@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { branchIdsFromScope, getSingleBranchId, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   Injectable,
@@ -180,9 +183,10 @@ export class AccountingService {
     };
   }
 
-  async findAllAccounts(query: ListAccountsQuery, branchId: string | null) {
+  async findAllAccounts(query: ListAccountsQuery, scope: BranchScope) {
     await this.posting.ensureDefaultChart();
-    const effectiveBranchId = branchId ?? query.branchId;
+    const scopedBranchIds =
+      branchIdsFromScope(scope) ?? (query.branchId ? [query.branchId] : null);
 
     const where = {
       deletedAt: null,
@@ -196,8 +200,8 @@ export class AccountingService {
             ],
           }
         : {}),
-      ...(effectiveBranchId
-        ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] }
+      ...(scopedBranchIds
+        ? { OR: [{ branchId: null }, { branchId: { in: scopedBranchIds } }] }
         : {}),
     };
     const page = query.page ?? 1;
@@ -221,8 +225,8 @@ export class AccountingService {
     );
   }
 
-  async createAccount(input: CreateAccountInput, user: AuthUser, branchId: string | null) {
-    const effectiveBranchId = branchId ?? input.branchId ?? null;
+  async createAccount(input: CreateAccountInput, user: AuthUser, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? input.branchId ?? null;
     if (effectiveBranchId === null && !user.permissions.includes('settings.manage')) {
       throw new BadRequestException('Branch is required for account creation');
     }
@@ -253,13 +257,15 @@ export class AccountingService {
     id: string,
     input: UpdateAccountInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const account = await this.prisma.account.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { OR: [{ branchId: null }, { branchId }] } : {}),
+        ...(scope.kind === 'selected'
+          ? { OR: [{ branchId: null }, prismaBranchFilter(scope)] }
+          : {}),
       },
     });
     if (!account) throw new NotFoundException('Account not found');
@@ -289,12 +295,12 @@ export class AccountingService {
     return this.toAccountResponse(updated);
   }
 
-  async removeAccount(id: string, user: AuthUser, branchId: string | null) {
+  async removeAccount(id: string, user: AuthUser, scope: BranchScope) {
     const account = await this.prisma.account.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
     });
     if (!account) throw new NotFoundException('Account not found');
@@ -324,12 +330,17 @@ export class AccountingService {
     return { success: true };
   }
 
-  async findAllVouchers(query: ListVouchersQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllVouchers(query: ListVouchersQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const dateFilter = this.dateRange(query.from, query.to);
 
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.status ? { status: query.status } : {}),
       ...(query.voucherType ? { voucherType: query.voucherType } : {}),
       ...(dateFilter ? { voucherDate: dateFilter } : {}),
@@ -364,17 +375,17 @@ export class AccountingService {
     );
   }
 
-  async findVoucher(id: string, branchId: string | null) {
+  async findVoucher(id: string, scope: BranchScope) {
     const voucher = await this.prisma.journalVoucher.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: voucherInclude,
     });
     if (!voucher) throw new NotFoundException('Voucher not found');
     return this.toVoucherResponse(voucher);
   }
 
-  async createVoucher(input: CreateVoucherInput, user: AuthUser, branchId: string | null) {
-    const effectiveBranchId = branchId ?? input.branchId;
+  async createVoucher(input: CreateVoucherInput, user: AuthUser, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? input.branchId;
     this.validateLinesBalance(input.lines);
 
     const accountIds = [...new Set(input.lines.map((line) => line.accountId))];
@@ -429,10 +440,10 @@ export class AccountingService {
     id: string,
     input: UpdateVoucherInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const voucher = await this.prisma.journalVoucher.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: { lines: true },
     });
     if (!voucher) throw new NotFoundException('Voucher not found');
@@ -500,9 +511,9 @@ export class AccountingService {
     return this.toVoucherResponse(updated);
   }
 
-  async removeVoucher(id: string, user: AuthUser, branchId: string | null) {
+  async removeVoucher(id: string, user: AuthUser, scope: BranchScope) {
     const voucher = await this.prisma.journalVoucher.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!voucher) throw new NotFoundException('Voucher not found');
     if (voucher.status !== 'draft') {
@@ -525,13 +536,13 @@ export class AccountingService {
     return { success: true };
   }
 
-  async postVoucher(id: string, user: AuthUser, branchId: string | null) {
+  async postVoucher(id: string, user: AuthUser, scope: BranchScope) {
     const voucher = await this.prisma.journalVoucher.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: { lines: true },
     });
     if (!voucher) throw new NotFoundException('Voucher not found');
-    if (voucher.status === 'posted') return this.findVoucher(id, branchId);
+    if (voucher.status === 'posted') return this.findVoucher(id, scope);
     if (voucher.status !== 'draft') {
       throw new BadRequestException('Only draft vouchers can be posted');
     }
@@ -561,9 +572,9 @@ export class AccountingService {
     return this.toVoucherResponse(updated);
   }
 
-  async unpostVoucher(id: string, user: AuthUser, branchId: string | null) {
+  async unpostVoucher(id: string, user: AuthUser, scope: BranchScope) {
     const voucher = await this.prisma.journalVoucher.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!voucher) throw new NotFoundException('Voucher not found');
     if (voucher.status !== 'posted') {
@@ -591,10 +602,13 @@ export class AccountingService {
     return this.toVoucherResponse(updated);
   }
 
-  async findAllBudgets(query: ListBudgetsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAllBudgets(query: ListBudgetsQuery, scope: BranchScope) {
+    const scopedBranchIds =
+      branchIdsFromScope(scope) ?? (query.branchId ? [query.branchId] : null);
     const where = {
-      ...(effectiveBranchId ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] } : {}),
+      ...(scopedBranchIds
+        ? { OR: [{ branchId: null }, { branchId: { in: scopedBranchIds } }] }
+        : {}),
       ...(query.year ? { year: query.year } : {}),
     };
     const page = query.page ?? 1;
@@ -632,8 +646,8 @@ export class AccountingService {
     );
   }
 
-  async createBudget(input: CreateBudgetInput, user: AuthUser, branchId: string | null) {
-    const effectiveBranchId = branchId ?? input.branchId ?? null;
+  async createBudget(input: CreateBudgetInput, user: AuthUser, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? input.branchId ?? null;
 
     const budget = await this.prisma.budget.create({
       data: {
@@ -678,12 +692,14 @@ export class AccountingService {
     id: string,
     input: UpdateBudgetInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
     const budget = await this.prisma.budget.findFirst({
       where: {
         id,
-        ...(branchId ? { OR: [{ branchId: null }, { branchId }] } : {}),
+        ...(scope.kind === 'selected'
+          ? { OR: [{ branchId: null }, prismaBranchFilter(scope)] }
+          : {}),
       },
     });
     if (!budget) throw new NotFoundException('Budget not found');
@@ -737,11 +753,13 @@ export class AccountingService {
     };
   }
 
-  async removeBudget(id: string, user: AuthUser, branchId: string | null) {
+  async removeBudget(id: string, user: AuthUser, scope: BranchScope) {
     const budget = await this.prisma.budget.findFirst({
       where: {
         id,
-        ...(branchId ? { OR: [{ branchId: null }, { branchId }] } : {}),
+        ...(scope.kind === 'selected'
+          ? { OR: [{ branchId: null }, prismaBranchFilter(scope)] }
+          : {}),
       },
     });
     if (!budget) throw new NotFoundException('Budget not found');
@@ -760,7 +778,7 @@ export class AccountingService {
   }
 
   private async postedLinesForBranch(
-    branchId: string | null | undefined,
+    branchId: string,
     from?: string,
     to?: string,
   ) {
@@ -769,7 +787,7 @@ export class AccountingService {
       where: {
         voucher: {
           status: 'posted',
-          ...(branchId ? { branchId } : {}),
+          branchId,
           ...(dateFilter ? { voucherDate: dateFilter } : {}),
         },
       },
@@ -781,10 +799,10 @@ export class AccountingService {
     });
   }
 
-  async trialBalance(query: TrialBalanceQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async trialBalance(query: TrialBalanceQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('Branch is required for trial balance');
+      throw new BadRequestException('A single branch is required for trial balance');
     }
 
     await this.posting.ensureDefaultChart();
@@ -843,10 +861,10 @@ export class AccountingService {
     };
   }
 
-  async incomeExpense(query: IncomeExpenseQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async incomeExpense(query: IncomeExpenseQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('Branch is required for income & expense report');
+      throw new BadRequestException('A single branch is required for income & expense report');
     }
 
     const lines = await this.postedLinesForBranch(effectiveBranchId, query.from, query.to);
@@ -896,10 +914,10 @@ export class AccountingService {
     };
   }
 
-  async accountStatement(query: AccountStatementQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async accountStatement(query: AccountStatementQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('Branch is required for account statement');
+      throw new BadRequestException('A single branch is required for account statement');
     }
 
     const account = await this.prisma.account.findFirst({
@@ -959,10 +977,10 @@ export class AccountingService {
     };
   }
 
-  async budgetVsActual(query: BudgetVsActualQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async budgetVsActual(query: BudgetVsActualQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('Branch is required for budget vs actual report');
+      throw new BadRequestException('A single branch is required for budget vs actual report');
     }
 
     const budget = query.budgetId

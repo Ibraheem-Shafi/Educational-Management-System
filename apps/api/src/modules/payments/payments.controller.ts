@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -13,7 +14,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
-import { BranchId, CurrentUser, Public } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Public } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { checkoutSchema, mockConfirmSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -31,9 +32,9 @@ export class PaymentsController {
   createCheckout(
     @Body(createZodPipe(checkoutSchema)) body: CheckoutInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.paymentsService.createCheckout(body, user, branchId);
+    return this.paymentsService.createCheckout(body, user, scope);
   }
 
   @Get(':paymentId')

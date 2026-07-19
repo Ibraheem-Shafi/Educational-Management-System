@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,8 @@ export function CreateInvoiceDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(createFeeInvoiceSchema);
 
@@ -72,6 +75,7 @@ export function CreateInvoiceDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       clearAll();
     }
   }, [open, clearAll]);
@@ -97,7 +101,7 @@ export function CreateInvoiceDialog({
 
   function buildPayload() {
     return {
-      branchId,
+      branchId: effectiveBranchId,
       studentId: form.studentId,
       feeTypeId: form.feeTypeId,
       amount: Number(form.amount),
@@ -137,6 +141,17 @@ export function CreateInvoiceDialog({
 
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown

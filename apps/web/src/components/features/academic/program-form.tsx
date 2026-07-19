@@ -10,6 +10,7 @@ import type { ZodSchema } from 'zod';
 import { createProgramSchema, updateProgramSchema } from '@eims/shared';
 import type { ProgramDetailResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
@@ -92,7 +93,11 @@ export function ProgramForm({
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  // Preselect scoped branch when scope is a single branch; require explicit
+  // pick when scope is All / multiple branches (no first-branch fallback).
+  const pageScope = usePageBranchScopeOptional();
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
+  const effectiveBranchId = branchId || user?.branchId || scopedSingleBranchId || '';
 
   const { data: subjects } = useQuery({
     queryKey: queryKeys.subjects,

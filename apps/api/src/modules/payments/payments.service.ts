@@ -1,3 +1,5 @@
+import { prismaBranchFilter, prismaBranchIdFilter, scopeCacheKey, requireSingleBranchId, sqlBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -52,14 +54,14 @@ export class PaymentsService {
     return (this.config.get<string>('NEXT_PUBLIC_WEB_URL') ?? 'http://localhost:3000').replace(/\/$/, '');
   }
 
-  async createCheckout(input: CheckoutInput, user: AuthUser, branchId: string | null) {
+  async createCheckout(input: CheckoutInput, user: AuthUser, scope: BranchScope) {
     const canCheckout =
       user.permissions.includes(PERMISSIONS.PAYMENTS_CHECKOUT) ||
       user.permissions.includes('fees.collect');
     if (!canCheckout) throw new ForbiddenException('Payment checkout not permitted');
 
     const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id: input.invoiceId, ...(branchId ? { branchId } : {}) },
+      where: { id: input.invoiceId, ...prismaBranchFilter(scope) },
       include: {
         student: { select: { id: true, fullName: true, email: true } },
         payments: { where: { status: { in: ['succeeded', 'pending'] } } },
@@ -67,7 +69,7 @@ export class PaymentsService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
-    await this.assertCanPayInvoice(user, invoice.studentId, branchId);
+    await this.assertCanPayInvoice(user, invoice.studentId, invoice.branchId);
 
     const status = await this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } });
     if (status?.code === 'waived') throw new BadRequestException('Invoice is waived');

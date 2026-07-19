@@ -1,3 +1,6 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -33,12 +36,12 @@ export class FeesService {
     private readonly accountingPosting: AccountingPostingService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<FeesStatsResponse> {
-    const cacheKey = `fees:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<FeesStatsResponse> {
+    const cacheKey = `fees:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<FeesStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyAgo = thirtyDaysAgo();
 
     const [pendingStatus, paidStatus, overdueStatus] = await Promise.all([
@@ -106,12 +109,12 @@ export class FeesService {
     return result;
   }
 
-  async getRevenueTrend(branchId: string | null): Promise<FeesRevenueTrendResponse> {
-    const cacheKey = `fees:revenue-trend:${branchId ?? 'all'}`;
+  async getRevenueTrend(scope: BranchScope): Promise<FeesRevenueTrendResponse> {
+    const cacheKey = `fees:revenue-trend:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<FeesRevenueTrendResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const now = new Date();
     const points: Array<{ label: string; value: number }> = [];
 
@@ -147,12 +150,17 @@ export class FeesService {
     return { data: types };
   }
 
-  async findAll(query: ListFeeInvoicesQuery, branchId: string | null): Promise<PaginatedResponse<Record<string, unknown>>> {
-    const effectiveBranchId = branchId ?? query.branchId;
-    await this.applyLateFeesToOverdue(effectiveBranchId ?? undefined);
+  async findAll(query: ListFeeInvoicesQuery, scope: BranchScope): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
+    await this.applyLateFeesToOverdue(effective);
 
     const where = {
-      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...prismaBranchFilter(effective),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.statusId ? { statusId: query.statusId } : {}),
     };
@@ -238,9 +246,9 @@ export class FeesService {
     return this.toResponse(invoice, feeTypeMap, statusMap);
   }
 
-  async recordPayment(id: string, input: RecordPaymentInput, user: AuthUser, branchId: string | null) {
+  async recordPayment(id: string, input: RecordPaymentInput, user: AuthUser, scope: BranchScope) {
     const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: { payments: { where: { status: 'succeeded' } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -256,7 +264,7 @@ export class FeesService {
         paidAt: input.paidAt,
       },
       user,
-      branchId,
+      scope,
       { provider: 'manual' },
     );
   }
@@ -265,11 +273,11 @@ export class FeesService {
     id: string,
     input: RecordFeePaymentInput,
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
     options?: { provider?: string; providerRef?: string; status?: string; skipAudit?: boolean },
   ) {
     const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: {
         student: { select: { id: true, fullName: true } },
         payments: { where: { status: 'succeeded' } },
@@ -382,9 +390,9 @@ export class FeesService {
     });
   }
 
-  async getInvoiceRemainingAmount(id: string, branchId: string | null): Promise<number> {
+  async getInvoiceRemainingAmount(id: string, scope: BranchScope): Promise<number> {
     const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: { payments: { where: { status: 'succeeded' } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -406,9 +414,9 @@ export class FeesService {
     return new Map(statuses.map((s) => [s.code, s.id]));
   }
 
-  async getStudentFees(studentId: string, branchId: string | null) {
+  async getStudentFees(studentId: string, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
     });
     if (!student) throw new NotFoundException('Student not found');
 
@@ -438,11 +446,16 @@ export class FeesService {
     };
   }
 
-  async listStructures(query: ListFeeStructuresQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async listStructures(query: ListFeeStructuresQuery, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
     const structures = await this.prisma.feeStructure.findMany({
       where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
         ...(query.programId ? { programId: query.programId } : {}),
         isActive: true,
@@ -496,9 +509,9 @@ export class FeesService {
     return { id: structure.id, amount: Number(structure.amount) };
   }
 
-  async updateStructure(id: string, input: UpdateFeeStructureInput, user: AuthUser, branchId: string | null) {
+  async updateStructure(id: string, input: UpdateFeeStructureInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.feeStructure.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Fee structure not found');
 
@@ -526,8 +539,8 @@ export class FeesService {
     return { id: updated.id };
   }
 
-  async deleteStructure(id: string, user: AuthUser, branchId: string | null) {
-    return this.updateStructure(id, { isActive: false }, user, branchId);
+  async deleteStructure(id: string, user: AuthUser, scope: BranchScope) {
+    return this.updateStructure(id, { isActive: false }, user, scope);
   }
 
   async generateBulkInvoices(input: GenerateBulkInvoicesInput, user: AuthUser) {
@@ -634,9 +647,9 @@ export class FeesService {
     return updated;
   }
 
-  async getInvoice(id: string, branchId: string | null) {
+  async getInvoice(id: string, scope: BranchScope) {
     const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
       include: {
         student: { select: { id: true, fullName: true, phone: true, email: true } },
       },
@@ -679,7 +692,7 @@ export class FeesService {
     return Math.round((amount * percent) / 100);
   }
 
-  private async applyLateFeesToOverdue(branchId?: string) {
+  private async applyLateFeesToOverdue(scope: BranchScope) {
     const settings = await this.prisma.institutionSettings.findFirst();
     const lateFeeAmount = settings?.lateFeeAmount ? Number(settings.lateFeeAmount) : 0;
     const daysAfterDue = settings?.lateFeeDaysAfterDue ?? 0;
@@ -698,7 +711,7 @@ export class FeesService {
 
     const overdueInvoices = await this.prisma.feeInvoice.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
         paidAt: null,
         dueDate: { lte: cutoff },
         statusId: { in: [pendingStatus.id, overdueStatus.id] },

@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { getSingleBranchId, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.module';
@@ -16,7 +19,7 @@ export class AiInsightsService {
 
   async getAtRiskStudents(
     query: AtRiskStudentsQuery,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<PaginatedResponse<{
     studentId: string;
     fullName: string;
@@ -27,8 +30,8 @@ export class AiInsightsService {
   }>> {
     const threshold = query.threshold ?? 50;
     const { alerts } = await this.analytics.getWeakSubjects(
-      { threshold, branchId: branchId ?? undefined },
-      branchId,
+      { threshold, branchId: getSingleBranchId(scope) ?? undefined },
+      scope,
     );
 
     const thirtyDaysAgo = new Date();
@@ -39,7 +42,7 @@ export class AiInsightsService {
     });
 
     const students = await this.prisma.student.findMany({
-      where: { deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { deletedAt: null, ...prismaBranchFilter(scope) },
       select: { id: true, fullName: true, batchId: true, phone: true, email: true },
     });
 
@@ -102,16 +105,16 @@ export class AiInsightsService {
     return paginatedResult(pageData, total, page, limit);
   }
 
-  async getStudentSummary(studentId: string, branchId: string | null) {
+  async getStudentSummary(studentId: string, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { batch: true, program: true },
     });
     if (!student) throw new NotFoundException('Student not found');
 
     const { students: performance } = await this.analytics.getPerformance(
       { batchId: student.batchId ?? undefined },
-      branchId,
+      scope,
     );
     const perf = performance.find((p) => p.studentId === studentId);
 
@@ -144,7 +147,10 @@ export class AiInsightsService {
 
     const children = await Promise.all(
       parent.studentParents.map(async (sp) => {
-        const summary = await this.getStudentSummary(sp.student.id, sp.student.branchId);
+        const summary = await this.getStudentSummary(
+          sp.student.id,
+          selectedBranchScope([sp.student.branchId]),
+        );
         return {
           student: sp.student,
           relationshipCode: sp.relationshipCode,

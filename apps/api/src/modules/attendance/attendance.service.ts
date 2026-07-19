@@ -1,3 +1,6 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { getSingleBranchId } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -51,13 +54,13 @@ export class AttendanceService {
     private readonly communications: CommunicationsService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<AttendanceStatsResponse> {
-    const cacheKey = `attendance:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<AttendanceStatsResponse> {
+    const cacheKey = `attendance:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<AttendanceStatsResponse>(cacheKey);
     if (cached) return cached;
 
     const today = todayStart();
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const studentFilter = { entityType: ATTENDANCE_ENTITY_STUDENT, ...branchFilter };
 
     const [presentId, absentId] = await Promise.all([
@@ -135,13 +138,13 @@ export class AttendanceService {
     return result;
   }
 
-  async getTrend(branchId: string | null, month: string): Promise<AttendanceTrendResponse> {
-    const cacheKey = `attendance:trend:${branchId ?? 'all'}:${month}`;
+  async getTrend(scope: BranchScope, month: string): Promise<AttendanceTrendResponse> {
+    const cacheKey = `attendance:trend:${scopeCacheKey(scope)}:${month}`;
     const cached = this.ttlCache.get<AttendanceTrendResponse>(cacheKey);
     if (cached) return cached;
 
     const { from, to, dates } = monthDateRange(month);
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const presentId = await this.lookupCache.getStatusId('attendance_status', 'present');
 
     const records = await this.prisma.attendanceRecord.groupBy({
@@ -186,10 +189,10 @@ export class AttendanceService {
     return result;
   }
 
-  async getSheet(query: AttendanceSheetQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getSheet(query: AttendanceSheetQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('branchId is required');
+      throw new BadRequestException('A single branchId is required');
     }
 
     const date = parseDateOnly(query.date);
@@ -376,10 +379,10 @@ export class AttendanceService {
     };
   }
 
-  async getGrid(query: AttendanceGridQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getGrid(query: AttendanceGridQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('branchId is required');
+      throw new BadRequestException('A single branchId is required');
     }
 
     const { from, to, dates } = monthDateRange(query.month);
@@ -554,12 +557,12 @@ export class AttendanceService {
     };
   }
 
-  async getHistory(query: AttendanceHistoryQuery, branchId: string | null) {
+  async getHistory(query: AttendanceHistoryQuery, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
       where: {
         id: query.studentId,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
     });
     if (!student) throw new NotFoundException('Student not found');
@@ -601,9 +604,9 @@ export class AttendanceService {
     };
   }
 
-  async getStaffSheet(query: StaffAttendanceSheetQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
-    if (!effectiveBranchId) throw new BadRequestException('branchId is required');
+  async getStaffSheet(query: StaffAttendanceSheetQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
+    if (!effectiveBranchId) throw new BadRequestException('A single branchId is required');
 
     const roleCodes =
       query.entityType === 'teacher'

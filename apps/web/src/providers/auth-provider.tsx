@@ -16,7 +16,12 @@ import { createClient } from '@/lib/supabase/client';
 import { apiClient, ApiClientError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { referenceQueryOptions } from '@/providers/query-provider';
-import { E2E_MOCK_SESSION, E2E_MOCK_USER, isE2eAuthBypass } from '@/lib/e2e-auth';
+import {
+  E2E_MOCK_SESSION,
+  E2E_MOCK_USER,
+  isE2eAuthBypass,
+  readE2eMockUserOverride,
+} from '@/lib/e2e-auth';
 import type { AuthUser } from '@eims/types';
 
 interface AuthContextValue {
@@ -56,7 +61,12 @@ export function AuthProvider({
   const inflightMe = useRef<Promise<AuthUser | null> | null>(null);
 
   useEffect(() => {
-    if (e2eBypass) return;
+    if (e2eBypass) {
+      // Apply a test-provided user override (e.g. super admin) after mount.
+      const override = readE2eMockUserOverride();
+      if (override) setUser(override);
+      return;
+    }
     setSupabase(createClient());
   }, [e2eBypass]);
 

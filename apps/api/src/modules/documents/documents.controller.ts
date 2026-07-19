@@ -15,11 +15,11 @@ import { DocumentsService } from './documents.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createDocumentSchema, listDocumentsQuerySchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
+import type { BranchScope, CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
 
 @ApiTags('documents')
 @ApiBearerAuth()
@@ -30,17 +30,17 @@ export class DocumentsController {
 
   @Get('stats')
   @Permissions('documents.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.documentsService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.documentsService.getStats(scope);
   }
 
   @Get()
   @Permissions('documents.read')
   findAll(
     @Query(createZodPipe(listDocumentsQuerySchema)) query: ListDocumentsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.documentsService.findAll(query, branchId);
+    return this.documentsService.findAll(query, scope);
   }
 
   @Post()
@@ -55,8 +55,8 @@ export class DocumentsController {
 
   @Get(':id/signed-url')
   @Permissions('documents.read')
-  signedUrl(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.documentsService.getSignedUrl(id, branchId);
+  signedUrl(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.documentsService.getSignedUrl(id, scope);
   }
 
   @Delete(':id')
@@ -64,8 +64,8 @@ export class DocumentsController {
   remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.documentsService.remove(id, user, branchId);
+    return this.documentsService.remove(id, user, scope);
   }
 }
