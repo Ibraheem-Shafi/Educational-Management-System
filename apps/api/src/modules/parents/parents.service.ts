@@ -9,7 +9,8 @@ import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, PaginatedResponse, ParentsStatsResponse } from '@eims/types';
-import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput } from '@eims/shared';
+import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput, ListParentStudentsQuery, ListStudentParentsQuery } from '@eims/shared';
+import { paginatedResult } from '../../common/utils/pagination.util';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
@@ -71,6 +72,7 @@ export class ParentsService {
               { fullName: { contains: query.search, mode: 'insensitive' as const } },
               { email: { contains: query.search, mode: 'insensitive' as const } },
               { phone: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search.replace(/^PAR-/i, ''), mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -198,25 +200,70 @@ export class ParentsService {
     return { success: true };
   }
 
-  async getStudentParents(studentId: string) {
+  async listLinkedStudents(parentId: string, query: ListParentStudentsQuery) {
+    const parent = await this.prisma.parent.findFirst({
+      where: { id: parentId, deletedAt: null },
+    });
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const where = { parentId };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [links, total] = await Promise.all([
+      this.prisma.studentParent.findMany({
+        where,
+        include: { student: { select: { id: true, fullName: true } } },
+        orderBy: { student: { fullName: 'asc' } },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.studentParent.count({ where }),
+    ]);
+
+    return paginatedResult(
+      links.map((sp) => ({
+        linkId: sp.id,
+        relationshipCode: sp.relationshipCode,
+        student: sp.student,
+      })),
+      total,
+      page,
+      limit,
+    );
+  }
+
+  async getStudentParents(studentId: string, query: ListStudentParentsQuery = { page: 1, limit: 8 }) {
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, deletedAt: null },
     });
     if (!student) throw new NotFoundException('Student not found');
 
-    const links = await this.prisma.studentParent.findMany({
-      where: { studentId },
-      include: { parent: true },
-    });
+    const where = { studentId };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return {
-      studentId,
-      parents: links.map((l) => ({
+    const [links, total] = await Promise.all([
+      this.prisma.studentParent.findMany({
+        where,
+        include: { parent: true },
+        orderBy: { parent: { fullName: 'asc' } },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.studentParent.count({ where }),
+    ]);
+
+    return paginatedResult(
+      links.map((l) => ({
         ...this.toParentSummary(l.parent),
         relationshipCode: l.relationshipCode,
         linkId: l.id,
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   private toParentSummary(parent: {

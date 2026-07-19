@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Radio, X } from 'lucide-react';
+import { noticeBroadcastSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +33,8 @@ export function BroadcastDialog({
   const queryClient = useQueryClient();
   const [noticeId, setNoticeId] = useState('');
   const [channel, setChannel] = useState<'sms' | 'whatsapp'>('sms');
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } =
+    useFormErrors(noticeBroadcastSchema);
 
   const { data: notices } = useQuery({
     queryKey: ['notices-broadcast'],
@@ -43,15 +49,16 @@ export function BroadcastDialog({
     if (!open) {
       setNoticeId('');
       setChannel('sms');
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const broadcastMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: { noticeId: string; channel: 'sms' | 'whatsapp'; audience: 'parents' }) =>
       apiClient<{ sent: number }>('/communications/notice-broadcast', {
         method: 'POST',
         token,
-        body: JSON.stringify({ noticeId, channel, audience: 'parents' }),
+        body: JSON.stringify(payload),
       }),
     onSuccess: (res) => {
       toast.success(`Broadcast sent to ${res.sent} recipients`);
@@ -59,7 +66,10 @@ export function BroadcastDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.communicationsStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const feeReminderMutation = useMutation({
@@ -76,6 +86,12 @@ export function BroadcastDialog({
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const handleBroadcast = () => {
+    const payload = { noticeId, channel, audience: 'parents' as const };
+    if (!validate(payload)) return;
+    broadcastMutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,13 +123,17 @@ export function BroadcastDialog({
               aria-label="Channel"
               placeholder="Select channel"
               value={channel}
-              onValueChange={(value) => setChannel(value as 'sms' | 'whatsapp')}
+              onValueChange={(value) => {
+                setChannel(value as 'sms' | 'whatsapp');
+                clearField('channel');
+              }}
               options={[
                 { value: 'sms', label: 'SMS' },
                 { value: 'whatsapp', label: 'WhatsApp' },
               ]}
               className="w-full"
             />
+            <FormFieldError message={errors.channel} />
           </div>
 
           <button
@@ -134,13 +154,17 @@ export function BroadcastDialog({
               aria-label="Select notice"
               placeholder="Select notice"
               value={noticeId}
-              onValueChange={setNoticeId}
+              onValueChange={(value) => {
+                setNoticeId(value);
+                clearField('noticeId');
+              }}
               options={[
                 { value: '', label: 'Select notice' },
                 ...(notices?.data.map((n) => ({ value: n.id, label: n.title })) ?? []),
               ]}
-              className="w-full"
+              className={fieldClassName('noticeId', 'w-full')}
             />
+            <FormFieldError message={errors.noticeId} />
           </div>
         </div>
 
@@ -158,8 +182,8 @@ export function BroadcastDialog({
           </button>
           <button
             type="button"
-            onClick={() => broadcastMutation.mutate()}
-            disabled={broadcastMutation.isPending || !noticeId}
+            onClick={handleBroadcast}
+            disabled={broadcastMutation.isPending}
             className={cn(
               'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
               'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

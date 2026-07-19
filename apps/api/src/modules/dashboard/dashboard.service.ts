@@ -7,6 +7,14 @@ import { StudentsService } from '../students/students.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { computeChangePercent } from '../../common/utils/metrics.util';
+import { paginatedResult } from '../../common/utils/pagination.util';
+import {
+  prismaBranchFilter,
+  prismaBranchIdFilter,
+  scopeCacheKey,
+  sqlBranchFilter,
+} from '../../common/utils/branch-scope.util';
+import type { BranchScope, PaginationQuery } from '@eims/shared';
 import type {
   AuthUser,
   DashboardAttendanceRing,
@@ -44,66 +52,71 @@ export class DashboardService {
 
   async getTodayAttendance(
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<DashboardTodayAttendanceResponse> {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const assignedBatchIds = this.shouldScopeToAssignedBatches(user)
       ? await this.getAssignedBatchIds(user.id)
       : null;
-    const scopeKey = assignedBatchIds ? `teacher:${user.id}` : (branchId ?? 'all');
+    const scopeKey = assignedBatchIds ? `teacher:${user.id}` : scopeCacheKey(scope);
     const cacheKey = `dashboard:today-attendance:${scopeKey}:${today.toISOString().slice(0, 10)}`;
     const cached = this.ttlCache.get<DashboardTodayAttendanceResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildTodayAttendance(user, branchId, today, assignedBatchIds);
+    const result = await this.buildTodayAttendance(user, scope, today, assignedBatchIds);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
 
-  async getBranchPerformance(branchId: string | null): Promise<DashboardBranchPerformanceResponse> {
+  async getBranchPerformance(
+    scope: BranchScope,
+    query: PaginationQuery = { page: 1, limit: 8 },
+  ): Promise<DashboardBranchPerformanceResponse> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const cacheKey = `dashboard:branch-performance:${branchId ?? 'all'}:${today.toISOString().slice(0, 10)}`;
+    const cacheKey = `dashboard:branch-performance:${scopeCacheKey(scope)}:${today.toISOString().slice(0, 10)}:${page}:${limit}`;
     const cached = this.ttlCache.get<DashboardBranchPerformanceResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildBranchPerformance(branchId, today);
+    const result = await this.buildBranchPerformance(scope, today, page, limit);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
 
   async getRecentActivities(
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<DashboardRecentActivitiesResponse> {
-    const cacheKey = `dashboard:recent-activities:${branchId ?? 'all'}:${user.id}`;
+    const cacheKey = `dashboard:recent-activities:${scopeCacheKey(scope)}:${user.id}`;
     const cached = this.ttlCache.get<DashboardRecentActivitiesResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildRecentActivities(user, branchId);
+    const result = await this.buildRecentActivities(user, scope);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
 
-  async getMonthlyRevenue(branchId: string | null): Promise<DashboardMonthlyRevenueResponse> {
+  async getMonthlyRevenue(scope: BranchScope): Promise<DashboardMonthlyRevenueResponse> {
     const fiscalYear = new Date().getUTCFullYear();
-    const cacheKey = `dashboard:monthly-revenue:${branchId ?? 'all'}:${fiscalYear}`;
+    const cacheKey = `dashboard:monthly-revenue:${scopeCacheKey(scope)}:${fiscalYear}`;
     const cached = this.ttlCache.get<DashboardMonthlyRevenueResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildMonthlyRevenue(branchId, fiscalYear);
+    const result = await this.buildMonthlyRevenue(scope, fiscalYear);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
 
-  async getStats(user: AuthUser, branchId: string | null): Promise<DashboardStatsResponse> {
+  async getStats(user: AuthUser, scope: BranchScope): Promise<DashboardStatsResponse> {
     const assignedScope = this.shouldScopeToAssignedBatches(user);
-    const cacheKey = `dashboard:stats:${branchId ?? 'all'}:${user.id}:${assignedScope ? 'assigned' : 'org'}`;
+    const cacheKey = `dashboard:stats:${scopeCacheKey(scope)}:${user.id}:${assignedScope ? 'assigned' : 'org'}`;
     const cached = this.ttlCache.get<DashboardStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildStats(user, branchId);
+    const result = await this.buildStats(user, scope);
     this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
     return result;
   }
@@ -121,19 +134,19 @@ export class DashboardService {
     return slots.map((slot) => slot.batchId);
   }
 
-  async getSummary(user: AuthUser, branchId: string | null) {
-    const cacheKey = `dashboard:summary:${branchId ?? 'all'}:${user.id}`;
+  async getSummary(user: AuthUser, scope: BranchScope) {
+    const cacheKey = `dashboard:summary:${scopeCacheKey(scope)}:${user.id}`;
     const cached = this.ttlCache.get<Awaited<ReturnType<DashboardService['buildSummary']>>>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildSummary(user, branchId);
+    const result = await this.buildSummary(user, scope);
     this.ttlCache.set(cacheKey, result, SUMMARY_CACHE_TTL_MS);
     return result;
   }
 
   private async buildStats(
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<DashboardStatsResponse> {
     const canManageBranches = user.permissions.includes('branches.manage');
     const canReadStudents = user.permissions.includes('students.read');
@@ -150,7 +163,7 @@ export class DashboardService {
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
 
     const assignedBatchIds = assignedScope ? await this.getAssignedBatchIds(user.id) : null;
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
 
     const result: DashboardStatsResponse = {};
 
@@ -158,7 +171,7 @@ export class DashboardService {
       const branchWhere = {
         deletedAt: null,
         isActive: true,
-        ...(branchId ? { id: branchId } : {}),
+        ...(prismaBranchIdFilter(scope)),
       };
       const [totalBranches, totalBranchesPrevious] = await Promise.all([
         this.prisma.branch.count({ where: branchWhere }),
@@ -195,7 +208,7 @@ export class DashboardService {
       const staffWhere = {
         deletedAt: null,
         isActive: true,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
         userRoles: { some: { role: { code: { in: [...STAFF_ROLE_CODES] } } } },
       };
       const [teachersAndStaff, teachersAndStaffPrevious] = await Promise.all([
@@ -234,14 +247,14 @@ export class DashboardService {
     return result;
   }
 
-  private async buildSummary(user: AuthUser, branchId: string | null) {
+  private async buildSummary(user: AuthUser, scope: BranchScope) {
     const canViewReports = user.permissions.includes('reports.view');
     const canViewAnalytics = user.permissions.includes('analytics.read');
 
     const [overview, analytics, recentStudents] = await Promise.all([
-      canViewReports ? this.reports.getOverview(branchId) : Promise.resolve(null),
-      canViewAnalytics ? this.analytics.getDashboardKpis(branchId) : Promise.resolve(null),
-      this.students.findAll({ page: 1, limit: 5, sortBy: 'createdAt', sortOrder: 'desc' }, branchId),
+      canViewReports ? this.reports.getOverview(scope) : Promise.resolve(null),
+      canViewAnalytics ? this.analytics.getDashboardKpis(scope) : Promise.resolve(null),
+      this.students.findAll({ page: 1, limit: 5, sortBy: 'createdAt', sortOrder: 'desc' }, scope),
     ]);
 
     return { overview, analytics, recentStudents };
@@ -249,12 +262,18 @@ export class DashboardService {
 
   private async buildTodayAttendance(
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
     today: Date,
     assignedBatchIds: string[] | null,
   ): Promise<DashboardTodayAttendanceResponse> {
     const presentStatusId = await this.lookupCache.getStatusId('attendance_status', 'present');
-    const branchFilter = branchId ? Prisma.sql`AND ar."branchId" = ${branchId}` : Prisma.empty;
+    const branchFilter = sqlBranchFilter(scope, 'ar."branchId"');
+    const scopedLabel =
+      scope.kind === 'selected'
+        ? scope.branchIds.length === 1
+          ? 'This branch'
+          : 'Selected branches'
+        : 'Across all branches';
     const presentCountSql = presentStatusId
       ? Prisma.sql`COUNT(*) FILTER (WHERE ar."statusId" = ${presentStatusId})::bigint`
       : Prisma.sql`0::bigint`;
@@ -308,12 +327,7 @@ export class DashboardService {
           day: 'numeric',
           timeZone: 'UTC',
         }),
-        scopeLabel:
-          assignedBatchIds !== null
-            ? 'Your assigned classes'
-            : branchId
-              ? 'This branch'
-              : 'Across all branches',
+        scopeLabel: assignedBatchIds !== null ? 'Your assigned classes' : scopedLabel,
         students,
       };
     }
@@ -342,7 +356,7 @@ export class DashboardService {
     return {
       date: today.toISOString().slice(0, 10),
       dateLabel: today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-      scopeLabel: branchId ? 'This branch' : 'Across all branches',
+      scopeLabel: scopedLabel,
       students,
       teachersAndStaff,
       overall,
@@ -358,29 +372,38 @@ export class DashboardService {
   }
 
   private async buildBranchPerformance(
-    branchId: string | null,
+    scope: BranchScope,
     today: Date,
+    page: number,
+    limit: number,
   ): Promise<DashboardBranchPerformanceResponse> {
-    const branches = await this.prisma.branch.findMany({
-      where: {
-        deletedAt: null,
-        isActive: true,
-        ...(branchId ? { id: branchId } : {}),
-      },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        city: true,
-        phone: true,
-        email: true,
-        isActive: true,
-      },
-    });
+    const where = {
+      deletedAt: null,
+      isActive: true,
+      ...(prismaBranchIdFilter(scope)),
+    };
+
+    const [total, branches] = await Promise.all([
+      this.prisma.branch.count({ where }),
+      this.prisma.branch.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          city: true,
+          phone: true,
+          email: true,
+          isActive: true,
+        },
+      }),
+    ]);
 
     if (branches.length === 0) {
-      return { branches: [] };
+      return paginatedResult([], total, page, limit);
     }
 
     const branchIds = branches.map((branch) => branch.id);
@@ -436,8 +459,8 @@ export class DashboardService {
       }
     }
 
-    return {
-      branches: branches.map((branch) => ({
+    return paginatedResult(
+      branches.map((branch) => ({
         id: branch.id,
         name: branch.name,
         addressLabel: this.formatBranchAddress(branch.city, branch.address),
@@ -448,11 +471,14 @@ export class DashboardService {
         attendanceRate: attendanceByBranch.get(branch.id) ?? 0,
         isActive: branch.isActive,
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   private async buildMonthlyRevenue(
-    branchId: string | null,
+    scope: BranchScope,
     fiscalYear: number,
   ): Promise<DashboardMonthlyRevenueResponse> {
     const yearStart = new Date(Date.UTC(fiscalYear, 0, 1));
@@ -460,7 +486,7 @@ export class DashboardService {
     const prevYearStart = new Date(Date.UTC(fiscalYear - 1, 0, 1));
     const prevYearEnd = new Date(Date.UTC(fiscalYear, 0, 1));
 
-    const branchFilter = branchId ? Prisma.sql`AND "branchId" = ${branchId}` : Prisma.empty;
+    const branchFilter = sqlBranchFilter(scope, '"branchId"');
 
     const [monthRows, totalRow, prevTotalRow] = await Promise.all([
       this.prisma.$queryRaw<Array<{ month: number; total: unknown }>>`
@@ -513,13 +539,13 @@ export class DashboardService {
 
   private async buildRecentActivities(
     user: AuthUser,
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<DashboardRecentActivitiesResponse> {
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - 30);
 
-    const branchFilter = branchId ? { branchId } : {};
-    const branchIdFilter = branchId ? { id: branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
+    const branchIdFilter = prismaBranchIdFilter(scope);
 
     const canReadStudents = user.permissions.includes('students.read');
     const canReadFees = user.permissions.includes('fees.read');
@@ -583,7 +609,7 @@ export class DashboardService {
               INNER JOIN "Student" s ON s.id = ar."entityId" AND s."deletedAt" IS NULL
               WHERE ar."entityType" = 'student'
                 AND ar."createdAt" >= ${since}
-                ${branchId ? Prisma.sql`AND ar."branchId" = ${branchId}` : Prisma.empty}
+                ${sqlBranchFilter(scope, 'ar."branchId"')}
               GROUP BY ar."branchId", s."batchId", ar.date
               ORDER BY latest_at DESC
               LIMIT 8

@@ -37,8 +37,8 @@ export function StatMetricsRow({
                 <StatMetricDivider className="hidden lg:flex" />
               </>
             )}
-            <div className="relative flex min-w-0 flex-1 flex-col gap-1 px-5 py-4 lg:px-6">
-              <div className="flex items-start justify-between gap-2">
+            <div className="relative flex min-w-0 flex-1 flex-col items-center gap-1 px-5 py-4 text-center lg:items-start lg:px-6 lg:text-left">
+              <div className="flex items-start justify-center gap-2 lg:w-full lg:justify-between">
                 <p className="text-sm font-medium leading-5 text-text-soft-400">{metric.label}</p>
                 {metric.changePercent != null && (
                   <TrendBadge changePercent={metric.changePercent} />

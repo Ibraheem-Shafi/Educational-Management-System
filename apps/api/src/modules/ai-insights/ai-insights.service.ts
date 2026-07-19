@@ -1,7 +1,13 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { getSingleBranchId, selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
+import type { AtRiskStudentsQuery } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 
 @Injectable()
 export class AiInsightsService {
@@ -11,10 +17,21 @@ export class AiInsightsService {
     private readonly config: ConfigService,
   ) {}
 
-  async getAtRiskStudents(branchId: string | null, threshold = 50) {
+  async getAtRiskStudents(
+    query: AtRiskStudentsQuery,
+    scope: BranchScope,
+  ): Promise<PaginatedResponse<{
+    studentId: string;
+    fullName: string;
+    attendanceRate: number | null;
+    averagePercentage: number | null;
+    reasons: string[];
+    riskLevel: string;
+  }>> {
+    const threshold = query.threshold ?? 50;
     const { alerts } = await this.analytics.getWeakSubjects(
-      { threshold, branchId: branchId ?? undefined },
-      branchId,
+      { threshold, branchId: getSingleBranchId(scope) ?? undefined },
+      scope,
     );
 
     const thirtyDaysAgo = new Date();
@@ -25,9 +42,8 @@ export class AiInsightsService {
     });
 
     const students = await this.prisma.student.findMany({
-      where: { deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { deletedAt: null, ...prismaBranchFilter(scope) },
       select: { id: true, fullName: true, batchId: true, phone: true, email: true },
-      take: 300,
     });
 
     const atRisk = [];
@@ -79,19 +95,26 @@ export class AiInsightsService {
     }
 
     atRisk.sort((a, b) => b.reasons.length - a.reasons.length);
-    return { students: atRisk.slice(0, 50) };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const total = atRisk.length;
+    const start = (page - 1) * limit;
+    const pageData = atRisk.slice(start, start + limit);
+
+    return paginatedResult(pageData, total, page, limit);
   }
 
-  async getStudentSummary(studentId: string, branchId: string | null) {
+  async getStudentSummary(studentId: string, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null, ...(branchId ? { branchId } : {}) },
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
       include: { batch: true, program: true },
     });
     if (!student) throw new NotFoundException('Student not found');
 
     const { students: performance } = await this.analytics.getPerformance(
       { batchId: student.batchId ?? undefined },
-      branchId,
+      scope,
     );
     const perf = performance.find((p) => p.studentId === studentId);
 
@@ -124,7 +147,10 @@ export class AiInsightsService {
 
     const children = await Promise.all(
       parent.studentParents.map(async (sp) => {
-        const summary = await this.getStudentSummary(sp.student.id, sp.student.branchId);
+        const summary = await this.getStudentSummary(
+          sp.student.id,
+          selectedBranchScope([sp.student.branchId]),
+        );
         return {
           student: sp.student,
           relationshipCode: sp.relationshipCode,

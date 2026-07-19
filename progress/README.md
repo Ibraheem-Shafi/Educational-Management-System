@@ -1,6 +1,6 @@
 # EIMS Progress Dashboard
 
-**Last updated:** 2026-07-01  
+**Last updated:** 2026-07-17  
 **Current target:** Nexium Academy — **Sprint 6 security & QA complete**  
 **Reference deployment:** coaching center profile
 
@@ -8,8 +8,9 @@ Track implementation against:
 
 - **Client scope:** [docs/ERP-Requirements.docx](../docs/ERP-Requirements.docx) → [`requirements/`](requirements/)
 - **Engineering modules:** [docs/13-feature-modules.md](../docs/13-feature-modules.md) → [`modules/`](modules/)
+- **Delivery scope (feature-details):** [docs/feature-details.md](../docs/feature-details.md) → [`delivery/`](delivery/) (Phases 4–7 remaining modules)
 
-[How to update this folder](HOW-TO-UPDATE.md)
+[How to update this folder](HOW-TO-UPDATE.md) · [Delivery tracker](delivery/README.md)
 
 ---
 

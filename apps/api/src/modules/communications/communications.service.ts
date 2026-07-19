@@ -1,3 +1,6 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -7,7 +10,13 @@ import { ReportsService } from '../reports/reports.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, CommunicationsStatsResponse } from '@eims/types';
-import type { FeeReminderInput, NoticeBroadcastInput, SendMessageInput } from '@eims/shared';
+import type {
+  AbsenceAlertInput,
+  FeeReminderInput,
+  ListCommunicationLogsQuery,
+  NoticeBroadcastInput,
+  SendMessageInput,
+} from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
@@ -100,8 +109,14 @@ export class CommunicationsService {
     return { log, result };
   }
 
-  async sendFeeReminders(input: FeeReminderInput, user: AuthUser, branchId: string | null) {
-    const { data: defaulters } = await this.reports.getFeeDefaulters(branchId ?? input.branchId ?? null);
+  async sendFeeReminders(input: FeeReminderInput, user: AuthUser, scope: BranchScope) {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : input.branchId
+          ? selectedBranchScope([input.branchId])
+          : scope;
+    const { data: defaulters } = await this.reports.getFeeDefaulters(effective);
     const results = [];
 
     for (const inv of defaulters) {
@@ -118,9 +133,99 @@ export class CommunicationsService {
     return { sent: results.filter((r) => r.sent).length, failed: results.filter((r) => !r.sent).length, results };
   }
 
-  async broadcastNotice(input: NoticeBroadcastInput, user: AuthUser, branchId: string | null) {
+  /**
+   * Notify linked parents when students are marked absent.
+   * Skips recipients already alerted for the same student+date (via CommunicationLog metadata).
+   */
+  async sendAbsenceAlerts(input: AbsenceAlertInput, user: AuthUser) {
+    const settings = await this.prisma.institutionSettings.findFirst();
+    const institutionName = settings?.name ?? 'School';
+
+    const students = await this.prisma.student.findMany({
+      where: {
+        id: { in: input.studentIds },
+        deletedAt: null,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        studentParents: {
+          include: {
+            parent: { select: { id: true, fullName: true, phone: true } },
+          },
+        },
+      },
+    });
+
+    const results: Array<{ student: string; recipient: string; sent: boolean; skipped?: boolean }> = [];
+
+    for (const student of students) {
+      const parents = student.studentParents
+        .map((sp) => sp.parent)
+        .filter((p) => p.phone);
+
+      for (const parent of parents) {
+        const phone = parent.phone!;
+        const alreadyLogs = await this.prisma.communicationLog.findMany({
+          where: {
+            channel: input.channel,
+            recipient: phone,
+            subject: 'Absence alert',
+            createdAt: { gte: new Date(`${input.date}T00:00:00.000Z`) },
+          },
+          take: 30,
+        });
+        const already = alreadyLogs.some((log) => {
+          const meta = log.metadata as { type?: string; studentId?: string; date?: string } | null;
+          return (
+            meta?.type === 'absence_alert' &&
+            meta?.studentId === student.id &&
+            meta?.date === input.date
+          );
+        });
+        if (already) {
+          results.push({ student: student.fullName, recipient: phone, sent: false, skipped: true });
+          continue;
+        }
+
+        const body = `Absence alert: ${student.fullName} was marked absent on ${input.date} at ${institutionName}. Please contact the school if this is unexpected.`;
+        const sent = await this.sendMessage(
+          { channel: input.channel, recipient: phone, body, subject: 'Absence alert' },
+          user,
+        );
+
+        // Enrich metadata for dedupe
+        await this.prisma.communicationLog.update({
+          where: { id: sent.log.id },
+          data: {
+            metadata: {
+              ...(typeof sent.log.metadata === 'object' && sent.log.metadata
+                ? (sent.log.metadata as object)
+                : {}),
+              type: 'absence_alert',
+              studentId: student.id,
+              date: input.date,
+              parentId: parent.id,
+            },
+          },
+        });
+
+        results.push({ student: student.fullName, recipient: phone, sent: !!sent.result.sent });
+      }
+    }
+
+    return {
+      sent: results.filter((r) => r.sent).length,
+      failed: results.filter((r) => !r.sent && !r.skipped).length,
+      skipped: results.filter((r) => r.skipped).length,
+      results,
+    };
+  }
+
+  async broadcastNotice(input: NoticeBroadcastInput, user: AuthUser, scope: BranchScope) {
     const notice = await this.prisma.notice.findFirst({
-      where: { id: input.noticeId, ...(branchId ? { branchId } : {}) },
+      where: { id: input.noticeId, ...prismaBranchFilter(scope) },
     });
     if (!notice) throw new NotFoundException('Notice not found');
 
@@ -136,7 +241,7 @@ export class CommunicationsService {
 
     if (input.audience === 'students' || input.audience === 'all') {
       const students = await this.prisma.student.findMany({
-        where: { deletedAt: null, phone: { not: null }, ...(branchId ? { branchId } : {}) },
+        where: { deletedAt: null, phone: { not: null }, ...prismaBranchFilter(scope) },
         select: { phone: true },
       });
       recipients.push(...students.map((s) => s.phone!).filter(Boolean));
@@ -161,11 +266,33 @@ export class CommunicationsService {
     };
   }
 
-  async listLogs() {
-    const logs = await this.prisma.communicationLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return { data: logs };
+  async listLogs(query: ListCommunicationLogsQuery) {
+    const where = {
+      ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? { recipient: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+
+    const [logs, total] = await Promise.all([
+      this.prisma.communicationLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.communicationLog.count({ where }),
+    ]);
+
+    return {
+      data: logs,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      },
+    };
   }
 }

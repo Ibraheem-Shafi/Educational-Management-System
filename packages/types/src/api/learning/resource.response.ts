@@ -21,6 +21,10 @@ export interface LearningResourceResponse {
   audience: string;
   dueAt: string | null;
   maxMarks: number | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  meetingUrl: string | null;
+  meetingPlatform: string | null;
   isPublished: boolean;
   publishedAt: string | null;
   createdById: string | null;

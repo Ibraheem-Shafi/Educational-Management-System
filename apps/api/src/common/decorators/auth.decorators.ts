@@ -1,4 +1,5 @@
 import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
+import { allBranchScope, type BranchScope } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 
 export const CurrentUser = createParamDecorator(
@@ -7,6 +8,23 @@ export const CurrentUser = createParamDecorator(
   },
 );
 
+/**
+ * Resolved branch scope from BranchGuard.
+ * - Super Admin: all | selected (one or many)
+ * - Other staff: always selected with their assigned branch
+ */
+export const BranchScopeParam = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): BranchScope => {
+    const request = ctx.switchToHttp().getRequest();
+    return (request.branchScope as BranchScope | undefined) ?? allBranchScope();
+  },
+);
+
+/**
+ * Legacy single branch id.
+ * - Single-branch scope → that id
+ * - All or multi → null (use @BranchScopeParam for multi)
+ */
 export const BranchId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string | null => {
     return ctx.switchToHttp().getRequest().branchId ?? null;

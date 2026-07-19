@@ -1,18 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, X } from 'lucide-react';
-import { LEARNING_AUDIENCES, LEARNING_RESOURCE_TYPES, LEARNING_VISIBILITY_SCOPES } from '@eims/shared';
+import { LEARNING_AUDIENCES, LEARNING_RESOURCE_TYPES, LEARNING_VISIBILITY_SCOPES, createLearningResourceSchema, updateLearningResourceSchema } from '@eims/shared';
 import type { LearningResourceResponse } from '@eims/types';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -78,19 +82,26 @@ export function CreateLearningDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = (resource ? resource.branchId : branchId) || pickedBranchId;
 
   useEffect(() => {
     if (!open) return;
     setForm(resource ? toForm(resource) : emptyForm);
   }, [open, resource]);
 
+  useEffect(() => {
+    if (!open) setPickedBranchId('');
+  }, [open]);
+
   const { data: programs } = useQuery({
-    queryKey: ['programs', branchId],
-    queryFn: () => apiClient<{ data: Program[] }>(`/programs?branchId=${branchId}`, { token }),
-    enabled: !!token && !!branchId && open,
+    queryKey: ['programs', effectiveBranchId],
+    queryFn: () =>
+      apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+    enabled: !!token && !!effectiveBranchId && open,
   });
 
-  const { data: batches } = useBatches(token, branchId, form.programId || undefined, open);
+  const { data: batches } = useBatches(token, effectiveBranchId, form.programId || undefined, open);
 
   const { data: subjects } = useQuery({
     queryKey: ['subjects'],
@@ -101,30 +112,32 @@ export function CreateLearningDialog({
   const requiresProgram = form.visibilityScope === 'program';
   const requiresBatch = form.visibilityScope === 'batch' || form.visibilityScope === 'batch_subject';
   const requiresSubject = form.visibilityScope === 'batch_subject';
+  const learningSchema = resource ? updateLearningResourceSchema : createLearningResourceSchema;
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } =
+    useFormErrors(learningSchema);
 
-  const canSubmit = useMemo(() => {
-    if (!form.title.trim() || !branchId) return false;
-    if (requiresProgram && !form.programId) return false;
-    if (requiresBatch && !form.batchId) return false;
-    if (requiresSubject && !form.subjectId) return false;
-    return true;
-  }, [branchId, form, requiresBatch, requiresProgram, requiresSubject]);
+  useEffect(() => {
+    if (!open) {
+      clearAll();
+    }
+  }, [open, clearAll]);
+
+  const buildPayload = () => ({
+    ...(resource ? {} : { branchId: effectiveBranchId }),
+    title: form.title.trim(),
+    type: form.type,
+    visibilityScope: form.visibilityScope,
+    audience: form.audience,
+    description: form.description.trim() || undefined,
+    body: form.body.trim() || undefined,
+    isPublished: form.isPublished,
+    programId: form.programId || null,
+    batchId: form.batchId || null,
+    subjectId: form.subjectId || null,
+  });
 
   const upsertMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        branchId,
-        title: form.title.trim(),
-        type: form.type,
-        visibilityScope: form.visibilityScope,
-        audience: form.audience,
-        description: form.description.trim() || undefined,
-        body: form.body.trim() || undefined,
-        isPublished: form.isPublished,
-        programId: form.programId || undefined,
-        batchId: form.batchId || undefined,
-        subjectId: form.subjectId || undefined,
-      };
+    mutationFn: async (payload: ReturnType<typeof buildPayload>) => {
       const method = resource ? 'PATCH' : 'POST';
       const path = resource ? `/learning/${resource.id}` : '/learning';
       const saved = await apiClient<LearningResourceResponse>(path, {
@@ -149,8 +162,16 @@ export function CreateLearningDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.learningStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const updateFormField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(String(key));
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -179,7 +200,9 @@ export function CreateLearningDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            upsertMutation.mutate();
+            const payload = buildPayload();
+            if (!validate(payload)) return;
+            upsertMutation.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
@@ -190,15 +213,27 @@ export function CreateLearningDialog({
               </Link>
               .
             </div>
+            {!resource && !branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                  setForm((prev) => ({ ...prev, programId: '', batchId: '', subjectId: '' }));
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('title', modalFieldClassName)}
                 placeholder="Title"
                 value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                required
+                onChange={(e) => updateFormField('title', e.target.value)}
               />
+              <FormFieldError message={errors.title} />
             </div>
 
             <div>
@@ -243,41 +278,51 @@ export function CreateLearningDialog({
                   <SelectDropdown
                     aria-label="Program"
                     value={form.programId}
-                    onValueChange={(value) =>
-                      setForm((prev) => ({ ...prev, programId: value, batchId: '', subjectId: '' }))
-                    }
+                    onValueChange={(value) => {
+                      setForm((prev) => ({ ...prev, programId: value, batchId: '', subjectId: '' }));
+                      clearField('programId');
+                    }}
                     options={[
                       { value: '', label: 'Select program' },
                       ...(programs?.data.map((p) => ({ value: p.id, label: p.name })) ?? []),
                     ]}
                     className="w-full"
                   />
+                  <FormFieldError message={errors.programId} />
                 </div>
                 <div>
                   <FormFieldLabel required={requiresBatch || requiresSubject}>Batch</FormFieldLabel>
                   <SelectDropdown
                     aria-label="Batch"
                     value={form.batchId}
-                    onValueChange={(value) => setForm((prev) => ({ ...prev, batchId: value, subjectId: '' }))}
+                    onValueChange={(value) => {
+                      setForm((prev) => ({ ...prev, batchId: value, subjectId: '' }));
+                      clearField('batchId');
+                    }}
                     options={[
                       { value: '', label: 'Select batch' },
                       ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
                     ]}
                     className="w-full"
                   />
+                  <FormFieldError message={errors.batchId} />
                 </div>
                 <div>
                   <FormFieldLabel required={requiresSubject}>Subject</FormFieldLabel>
                   <SelectDropdown
                     aria-label="Subject"
                     value={form.subjectId}
-                    onValueChange={(value) => setForm((prev) => ({ ...prev, subjectId: value }))}
+                    onValueChange={(value) => {
+                      setForm((prev) => ({ ...prev, subjectId: value }));
+                      clearField('subjectId');
+                    }}
                     options={[
                       { value: '', label: 'Select subject' },
                       ...(subjects?.data.map((s) => ({ value: s.id, label: s.name })) ?? []),
                     ]}
                     className="w-full"
                   />
+                  <FormFieldError message={errors.subjectId} />
                 </div>
               </div>
             )}
@@ -358,7 +403,7 @@ export function CreateLearningDialog({
             </button>
             <button
               type="submit"
-              disabled={upsertMutation.isPending || !canSubmit}
+              disabled={upsertMutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

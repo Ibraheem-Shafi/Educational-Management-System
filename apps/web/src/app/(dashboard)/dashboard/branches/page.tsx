@@ -200,7 +200,7 @@ export default function BranchesPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(8);
   const [addBranchOpen, setAddBranchOpen] = useState(false);
   const [editBranchId, setEditBranchId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateBranchTarget | null>(null);

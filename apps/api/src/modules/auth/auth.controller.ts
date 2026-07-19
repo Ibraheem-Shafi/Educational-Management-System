@@ -11,6 +11,7 @@ import {
   portalSectionQuerySchema,
   portalCalendarQuerySchema,
   createLeaveRequestSchema,
+  paginationQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type { AcceptInvitationInput, CreateLeaveRequestInput, UpdateProfileInput } from '@eims/shared';
@@ -50,8 +51,11 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Get('sessions')
-  listSessions(@CurrentUser() user: AuthUser) {
-    return this.authService.listSessions(user.id);
+  listSessions(
+    @CurrentUser() user: AuthUser,
+    @Query(createZodPipe(paginationQuerySchema)) query: z.infer<typeof paginationQuerySchema>,
+  ) {
+    return this.authService.listSessions(user.id, query);
   }
 
   @ApiBearerAuth()
@@ -312,8 +316,11 @@ export class PortalController {
   }
 
   @Get('parent/leave')
-  parentLeaveList(@CurrentUser() user: AuthUser, @Query('studentId') studentId?: string) {
-    return this.portalService.listParentLeaveRequests(user, studentId);
+  parentLeaveList(
+    @CurrentUser() user: AuthUser,
+    @Query(createZodPipe(portalSectionQuerySchema)) query: z.infer<typeof portalSectionQuerySchema>,
+  ) {
+    return this.portalService.listParentLeaveRequests(user, query.studentId, query);
   }
 
   @Post('parent/leave')

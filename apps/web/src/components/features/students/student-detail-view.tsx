@@ -83,15 +83,19 @@ function InfoField({ label, value }: { label: string; value: string }) {
 export function StudentDetailView({
   student,
   onEdit,
+  parentsSection,
   subjectsSection,
   documentsSection,
+  certificatesSection,
   attendanceSection,
   customFieldsSection,
 }: {
   student: StudentDetailData;
   onEdit?: () => void;
+  parentsSection?: ReactNode;
   subjectsSection?: ReactNode;
   documentsSection?: ReactNode;
+  certificatesSection?: ReactNode;
   attendanceSection?: ReactNode;
   customFieldsSection?: ReactNode;
 }) {
@@ -194,9 +198,21 @@ export function StudentDetailView({
           </DetailCard>
         )}
 
+        {parentsSection && (
+          <DetailCard title="Parents / guardians" icon={User} className="lg:col-span-2">
+            <div className="p-5">{parentsSection}</div>
+          </DetailCard>
+        )}
+
         {documentsSection && (
           <DetailCard title="Documents" icon={FileText} className="lg:col-span-2">
             <div className="p-5">{documentsSection}</div>
+          </DetailCard>
+        )}
+
+        {certificatesSection && (
+          <DetailCard title="Certificates & ID" icon={FileText} className="lg:col-span-2">
+            <div className="p-5">{certificatesSection}</div>
           </DetailCard>
         )}
 

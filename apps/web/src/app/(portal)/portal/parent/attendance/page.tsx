@@ -27,7 +27,7 @@ function ParentAttendanceContent({ childId }: { childId: string }) {
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(8);
   const params = { page, limit, studentId: childId };
 
   const { data, isLoading, error } = useQuery({

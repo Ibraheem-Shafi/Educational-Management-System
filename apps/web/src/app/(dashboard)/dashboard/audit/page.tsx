@@ -11,7 +11,7 @@ export default async function AuditPage() {
   if (token) {
     try {
       initialPage = await serverApiClient<PaginatedResponse<AuditRow>>(
-        '/audit-logs?page=1&limit=20',
+        '/audit-logs?page=1&limit=8',
         token,
       );
     } catch {

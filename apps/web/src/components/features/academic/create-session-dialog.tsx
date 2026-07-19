@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createAcademicSessionSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -38,14 +42,17 @@ export function CreateSessionDialog({
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createAcademicSessionSchema);
 
   useEffect(() => {
     if (!open) {
       setName('');
       setStartDate('');
       setEndDate('');
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const createSession = useMutation({
     mutationFn: (body: { name: string; startDate: string; endDate: string; isCurrent?: boolean }) =>
@@ -55,10 +62,11 @@ export function CreateSessionDialog({
       invalidateAcademic(queryClient);
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
-
-  const canSubmit = name.trim().length >= 2 && !!startDate && !!endDate;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,44 +93,55 @@ export function CreateSessionDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            createSession.mutate({
+            const payload = {
               name: name.trim(),
               startDate: new Date(startDate).toISOString(),
               endDate: new Date(endDate).toISOString(),
               isCurrent: true,
-            });
+            };
+            if (!validate(payload)) return;
+            createSession.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('name', modalFieldClassName)}
                 placeholder="Name (e.g. 2026)"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearField('name');
+                }}
               />
+              <FormFieldError message={errors.name} />
             </div>
             <div>
               <FormFieldLabel required>Start date</FormFieldLabel>
               <input
                 type="date"
-                className={modalFieldClassName}
+                className={fieldClassName('startDate', modalFieldClassName)}
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                required
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  clearField('startDate');
+                }}
               />
+              <FormFieldError message={errors.startDate} />
             </div>
             <div>
               <FormFieldLabel required>End date</FormFieldLabel>
               <input
                 type="date"
-                className={modalFieldClassName}
+                className={fieldClassName('endDate', modalFieldClassName)}
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                required
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  clearField('endDate');
+                }}
               />
+              <FormFieldError message={errors.endDate} />
             </div>
           </div>
 
@@ -140,7 +159,7 @@ export function CreateSessionDialog({
             </button>
             <button
               type="submit"
-              disabled={createSession.isPending || !canSubmit}
+              disabled={createSession.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

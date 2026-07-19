@@ -4,11 +4,11 @@ import { BranchesService } from './branches.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createBranchSchema, listBranchesQuerySchema, updateBranchSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateBranchInput, ListBranchesQuery, UpdateBranchInput } from '@eims/shared';
+import type { BranchScope, CreateBranchInput, ListBranchesQuery, UpdateBranchInput } from '@eims/shared';
 
 @ApiTags('branches')
 @ApiBearerAuth()
@@ -19,23 +19,23 @@ export class BranchesController {
 
   @Get('stats')
   @Permissions('branches.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.branchesService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.branchesService.getStats(scope);
   }
 
   @Get()
   @Permissions('branches.read')
   findAll(
     @Query(createZodPipe(listBranchesQuerySchema)) query: ListBranchesQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.branchesService.findAll(query, branchId);
+    return this.branchesService.findAll(query, scope);
   }
 
   @Get(':id')
   @Permissions('branches.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.branchesService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.branchesService.findOne(id, scope);
   }
 
   @Post()
@@ -53,10 +53,10 @@ export class BranchesController {
   update(
     @Param('id') id: string,
     @Body(createZodPipe(updateBranchSchema)) body: UpdateBranchInput,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.branchesService.update(id, body, branchId, user);
+    return this.branchesService.update(id, body, scope, user);
   }
 
   @Delete(':id')
@@ -64,9 +64,9 @@ export class BranchesController {
   @Permissions('branches.manage')
   deactivate(
     @Param('id') id: string,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.branchesService.deactivate(id, branchId, user);
+    return this.branchesService.deactivate(id, scope, user);
   }
 }

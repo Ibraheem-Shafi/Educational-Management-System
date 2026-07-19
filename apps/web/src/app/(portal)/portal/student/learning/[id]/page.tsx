@@ -11,6 +11,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { formatLearningDueAt, learningTypeLabel } from '@/lib/portal-learning';
+import { OnlineClassSessionMeta } from '@/components/features/learning/online-class-session';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
@@ -99,6 +100,14 @@ export default function StudentLearningDetailPage() {
           <span className="text-sm text-[var(--text-sub-500)]">Max marks: {data.maxMarks}</span>
         )}
       </div>
+
+      {data.type === 'online_class' && (
+        <OnlineClassSessionMeta
+          startsAt={data.startsAt}
+          endsAt={data.endsAt}
+          meetingUrl={data.meetingUrl}
+        />
+      )}
 
       <ContentPanel title="Details">
         <div className="space-y-4 px-5 py-4">

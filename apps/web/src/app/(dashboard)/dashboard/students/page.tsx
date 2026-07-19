@@ -8,6 +8,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { PaginatedResponse, StudentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -99,10 +102,13 @@ const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 export default function StudentsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const canCreate = can(PERMISSIONS.STUDENTS_CREATE);
+  // Batch filter requires reading academic data; teachers lack it, so hide the
+  // filter (and skip the request) rather than surfacing a 403.
+  const canReadBatches = can(PERMISSIONS.ACADEMIC_READ);
   const [search, setSearch] = useState('');
   const [batchId, setBatchId] = useState('');
   const [statusId, setStatusId] = useState('');
@@ -114,19 +120,19 @@ export default function StudentsPage() {
     setPage(1);
   }, []);
 
+  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+
   const queryParams = new URLSearchParams({ page: String(page), limit: String(limit) });
+  appendToSearchParams(queryParams);
   if (search) queryParams.set('search', search);
   if (batchId) queryParams.set('batchId', batchId);
   if (statusId) queryParams.set('statusId', statusId);
 
   const { data: batches } = useQuery({
-    queryKey: ['batches', user?.branchId],
+    queryKey: ['batches', scopeKey],
     queryFn: () =>
-      apiClient<{ data: Batch[] }>(
-        `/batches${user?.branchId ? `?branchId=${user.branchId}` : ''}`,
-        { token },
-      ),
-    enabled: !!token,
+      apiClient<{ data: Batch[] }>(withBranchScope('/batches', effectiveScope), { token }),
+    enabled: !!token && canReadBatches,
   });
 
   const { data: statuses } = useQuery({
@@ -137,17 +143,22 @@ export default function StudentsPage() {
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['students', search, batchId, statusId, page, limit],
+    queryKey: ['students', scopeKey, search, batchId, statusId, page, limit],
     queryFn: () =>
       apiClient<PaginatedResponse<StudentRow>>(`/students?${queryParams.toString()}`, {
         token,
       }),
     enabled: !!token,
+    retry: 2,
+    placeholderData: (previous) => previous,
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.studentsStats,
-    queryFn: () => apiClient<StudentsStatsResponse>('/students/stats', { token }),
+    queryKey: [...queryKeys.studentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<StudentsStatsResponse>(withBranchScope('/students/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
@@ -195,19 +206,21 @@ export default function StudentsPage() {
 
       <FilterBar className="items-center">
         <SearchInput value={search} onValueChange={handleSearchChange} />
-        <SelectDropdown
-          aria-label="Filter by batch"
-          placeholder="All batches"
-          value={batchId}
-          onValueChange={(next) => {
-            setBatchId(next);
-            setPage(1);
-          }}
-          options={[
-            { value: '', label: 'All batches' },
-            ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
-          ]}
-        />
+        {canReadBatches && (
+          <SelectDropdown
+            aria-label="Filter by batch"
+            placeholder="All batches"
+            value={batchId}
+            onValueChange={(next) => {
+              setBatchId(next);
+              setPage(1);
+            }}
+            options={[
+              { value: '', label: 'All batches' },
+              ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+            ]}
+          />
+        )}
         <SelectDropdown
           aria-label="Filter by status"
           placeholder="All statuses"
@@ -234,6 +247,7 @@ export default function StudentsPage() {
             Clear filters
           </Button>
         )}
+        <PageBranchScopeControl />
       </FilterBar>
 
       <div className="bg-white">

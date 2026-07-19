@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -13,18 +14,21 @@ import { AiAttendanceService } from './ai-attendance.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   analyzeOcrSessionSchema,
   confirmOcrSessionSchema,
   createOcrSessionSchema,
+  listOcrSessionsQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
   AnalyzeOcrSessionInput,
+  BranchScope,
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
+  ListOcrSessionsQuery,
 } from '@eims/shared';
 
 @ApiTags('ai-attendance')
@@ -36,14 +40,17 @@ export class AiAttendanceController {
 
   @Get('sessions')
   @Permissions('ai_attendance.use')
-  list(@BranchId() branchId: string | null) {
-    return this.service.list(branchId);
+  list(
+    @Query(createZodPipe(listOcrSessionsQuerySchema)) query: ListOcrSessionsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.service.list(query, scope);
   }
 
   @Get('sessions/:id')
   @Permissions('ai_attendance.use')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.service.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.service.findOne(id, scope);
   }
 
   @Post('sessions')
@@ -62,9 +69,9 @@ export class AiAttendanceController {
     @Param('id') id: string,
     @Body(createZodPipe(analyzeOcrSessionSchema)) body: AnalyzeOcrSessionInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.service.analyze(id, body, user, branchId);
+    return this.service.analyze(id, body, user, scope);
   }
 
   @Post('sessions/:id/confirm')
@@ -73,8 +80,8 @@ export class AiAttendanceController {
     @Param('id') id: string,
     @Body(createZodPipe(confirmOcrSessionSchema)) body: ConfirmOcrSessionInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.service.confirm(id, body, user, branchId);
+    return this.service.confirm(id, body, user, scope);
   }
 }

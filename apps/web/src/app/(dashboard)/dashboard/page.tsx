@@ -7,8 +7,9 @@ import { useAuth } from '@/providers/auth-provider';
 import { useInstitution } from '@/providers/institution-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import type {
-  DashboardBranchPerformanceResponse,
   DashboardMonthlyRevenueResponse,
   DashboardRecentActivitiesResponse,
   DashboardStatsResponse,
@@ -51,50 +52,57 @@ export default function DashboardPage() {
     canManageBranches || canReadStudents || canManageUsers || canReadAcademic;
   const showFeesStats = canReadFees && !canManageBranches && !canReadStudents && !canManageUsers;
 
+  const { effectiveScope, scopeKey } = useEffectiveBranchScope();
+
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.dashboardStats,
-    queryFn: () => apiClient<DashboardStatsResponse>('/dashboard/stats', { token }),
+    queryKey: [...queryKeys.dashboardStats, scopeKey],
+    queryFn: () =>
+      apiClient<DashboardStatsResponse>(withBranchScope('/dashboard/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token && showOrgStats,
   });
 
   const { data: feesStats, isLoading: feesStatsLoading } = useQuery({
-    queryKey: queryKeys.feesStats,
-    queryFn: () => apiClient<FeesStatsResponse>('/fees/stats', { token }),
+    queryKey: [...queryKeys.feesStats, scopeKey],
+    queryFn: () =>
+      apiClient<FeesStatsResponse>(withBranchScope('/fees/stats', effectiveScope), { token }),
     enabled: !!token && showFeesStats,
   });
 
   const { data: todayAttendance, isLoading: todayAttendanceLoading } = useQuery({
-    queryKey: queryKeys.dashboardTodayAttendance,
+    queryKey: [...queryKeys.dashboardTodayAttendance, scopeKey],
     queryFn: () =>
-      apiClient<DashboardTodayAttendanceResponse>('/dashboard/today-attendance', { token }),
+      apiClient<DashboardTodayAttendanceResponse>(
+        withBranchScope('/dashboard/today-attendance', effectiveScope),
+        { token },
+      ),
     enabled: !!token && canReadAttendance,
   });
 
   const { data: monthlyRevenue, isLoading: monthlyRevenueLoading } = useQuery({
-    queryKey: queryKeys.dashboardMonthlyRevenue,
+    queryKey: [...queryKeys.dashboardMonthlyRevenue, scopeKey],
     queryFn: () =>
-      apiClient<DashboardMonthlyRevenueResponse>('/dashboard/monthly-revenue', { token }),
+      apiClient<DashboardMonthlyRevenueResponse>(
+        withBranchScope('/dashboard/monthly-revenue', effectiveScope),
+        { token },
+      ),
     enabled: !!token && canReadFees,
   });
 
-  const { data: branchPerformance, isLoading: branchPerformanceLoading } = useQuery({
-    queryKey: queryKeys.dashboardBranchPerformance,
-    queryFn: () =>
-      apiClient<DashboardBranchPerformanceResponse>('/dashboard/branch-performance', { token }),
-    enabled: !!token && canReadBranches,
-  });
-
   const { data: recentActivities, isLoading: recentActivitiesLoading } = useQuery({
-    queryKey: queryKeys.dashboardRecentActivities,
+    queryKey: [...queryKeys.dashboardRecentActivities, scopeKey],
     queryFn: () =>
-      apiClient<DashboardRecentActivitiesResponse>('/dashboard/recent-activities', { token }),
+      apiClient<DashboardRecentActivitiesResponse>(
+        withBranchScope('/dashboard/recent-activities', effectiveScope),
+        { token },
+      ),
     enabled: !!token && showRecentActivities,
   });
 
   const showStatsSkeleton = !!token && (statsLoading || (showFeesStats && feesStatsLoading));
   const showChartsSkeleton =
     !!token && ((canReadAttendance && todayAttendanceLoading) || (canReadFees && monthlyRevenueLoading));
-  const showBranchPerformanceSkeleton = !!token && canReadBranches && branchPerformanceLoading;
   const showRecentActivitiesSkeleton = !!token && showRecentActivities && recentActivitiesLoading;
 
   const welcomeName = user?.fullName?.trim() || 'there';
@@ -212,11 +220,7 @@ export default function DashboardPage() {
           )}
 
           {canReadBranches && (
-            <BranchPerformanceCard
-              data={branchPerformance}
-              isLoading={showBranchPerformanceSkeleton}
-              showViewAll={canManageBranches}
-            />
+            <BranchPerformanceCard showViewAll={canManageBranches} />
           )}
 
           <div

@@ -3,7 +3,22 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Eye, MoreVertical } from 'lucide-react';
+import {
+  CircleDollarSign,
+  ClipboardPen,
+  CreditCard,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  MoreVertical,
+  Pencil,
+  Send,
+  ShieldOff,
+  Trash2,
+  Unlink,
+  UserX,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   DropdownMenuBackdrop,
   dropdownMenuStyle,
@@ -11,6 +26,59 @@ import {
   handleDropdownOptionSelect,
   useDropdownMenu,
 } from '@/hooks/use-dropdown-menu';
+
+export const rowActionIconClass = 'h-4 w-4 shrink-0 text-[var(--text-soft-400,#868C98)]';
+export const rowActionDestructiveIconClass = 'h-4 w-4 shrink-0 text-red-500';
+
+function renderActionIcon(Icon: LucideIcon, destructive = false) {
+  return (
+    <Icon
+      className={destructive ? rowActionDestructiveIconClass : rowActionIconClass}
+      strokeWidth={1.5}
+    />
+  );
+}
+
+export function getDefaultActionIcon(label: string): ReactNode | null {
+  const key = label.trim().toLowerCase();
+
+  if (key.startsWith('view')) {
+    return renderActionIcon(Eye);
+  }
+
+  const exactMatches: Record<string, ReactNode> = {
+    edit: renderActionIcon(Pencil),
+    'edit branch': renderActionIcon(Pencil),
+    open: renderActionIcon(ExternalLink),
+    remove: renderActionIcon(Trash2, true),
+    delete: renderActionIcon(Trash2, true),
+    publish: renderActionIcon(Send),
+    'publish now': renderActionIcon(Send),
+    unpublish: renderActionIcon(EyeOff),
+    deactivate: renderActionIcon(UserX, true),
+    revoke: renderActionIcon(ShieldOff, true),
+    unlink: renderActionIcon(Unlink, true),
+    'record payment': renderActionIcon(CreditCard),
+    'pay in full': renderActionIcon(CircleDollarSign),
+    'enter marks': renderActionIcon(ClipboardPen),
+    'submit for review': renderActionIcon(Send),
+  };
+
+  if (exactMatches[key]) return exactMatches[key];
+
+  if (key.includes('delete') || key.includes('remove')) return renderActionIcon(Trash2, true);
+  if (key.includes('unlink')) return renderActionIcon(Unlink, true);
+  if (key.includes('revoke')) return renderActionIcon(ShieldOff, true);
+  if (key.includes('deactivate')) return renderActionIcon(UserX, true);
+  if (key.includes('unpublish')) return renderActionIcon(EyeOff);
+  if (key.includes('publish')) return renderActionIcon(Send);
+  if (key.includes('payment')) return renderActionIcon(CreditCard);
+  if (key.includes('edit')) return renderActionIcon(Pencil);
+  if (key.includes('open')) return renderActionIcon(ExternalLink);
+  if (key.includes('marks')) return renderActionIcon(ClipboardPen);
+
+  return null;
+}
 
 export function RowActionsMenu({
   items,
@@ -20,7 +88,7 @@ export function RowActionsMenu({
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
 
-  const { triggerRef, menuRef, position } = useDropdownMenu<HTMLDivElement>({
+  const { triggerRef, menuRef, position, closeMenu } = useDropdownMenu<HTMLDivElement>({
     open,
     onClose: close,
     align: 'right',
@@ -47,7 +115,7 @@ export function RowActionsMenu({
 
       {open && position && typeof document !== 'undefined' && (
         <>
-          <DropdownMenuBackdrop onClose={close} />
+          <DropdownMenuBackdrop onClose={closeMenu} />
           {createPortal(
             <div
               ref={menuRef}
@@ -61,14 +129,10 @@ export function RowActionsMenu({
               onPointerDown={(event) => event.stopPropagation()}
             >
               {items.map((item) => {
+                const icon = item.icon ?? getDefaultActionIcon(item.label);
                 const content = (
                   <>
-                    {item.icon ?? (
-                      <Eye
-                        className="h-4 w-4 shrink-0 text-[var(--text-soft-400,#868C98)]"
-                        strokeWidth={1.5}
-                      />
-                    )}
+                    {icon}
                     <span>{item.label}</span>
                   </>
                 );

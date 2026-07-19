@@ -42,3 +42,17 @@ export const E2E_MOCK_SESSION: Session = {
 export function isE2eAuthBypass(): boolean {
   return process.env.NEXT_PUBLIC_E2E_SKIP_AUTH === '1';
 }
+
+export const E2E_MOCK_USER_STORAGE_KEY = 'e2e:mock-user';
+
+/** Tests can override the bypass user (e.g. super admin) via localStorage before load. */
+export function readE2eMockUserOverride(): AuthUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(E2E_MOCK_USER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}

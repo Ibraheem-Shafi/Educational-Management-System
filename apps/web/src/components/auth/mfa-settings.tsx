@@ -9,6 +9,10 @@ import { useAuth } from '@/providers/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { totpCodeSchema } from '@/lib/auth-form-schemas';
 
 export function MfaSettings() {
   const queryClient = useQueryClient();
@@ -18,6 +22,7 @@ export function MfaSettings() {
   const [factorId, setFactorId] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
+  const { errors, clearField, validate, fieldClassName } = useFormErrors(totpCodeSchema);
 
   const { data: factors, refetch } = useQuery({
     queryKey: ['mfa-factors'],
@@ -46,6 +51,8 @@ export function MfaSettings() {
   };
 
   const confirmEnroll = async () => {
+    if (!validate({ code: verifyCode })) return;
+
     try {
       const supabase = createClient();
       const challenge = await supabase.auth.mfa.challenge({ factorId });
@@ -111,15 +118,21 @@ export function MfaSettings() {
             <p className="text-sm text-muted-foreground">
               Scan with your authenticator app, then enter the 6-digit code.
             </p>
-            <Input
-              placeholder="000000"
-              value={verifyCode}
-              onChange={(e) => setVerifyCode(e.target.value)}
-              maxLength={6}
-            />
-            <Button onClick={confirmEnroll} disabled={verifyCode.length < 6}>
-              Verify & enable
-            </Button>
+            <div>
+              <FormFieldLabel required>Authenticator code</FormFieldLabel>
+              <Input
+                placeholder="000000"
+                value={verifyCode}
+                onChange={(e) => {
+                  setVerifyCode(e.target.value);
+                  clearField('code');
+                }}
+                maxLength={6}
+                className={fieldClassName('code', '')}
+              />
+              <FormFieldError message={errors.code} />
+            </div>
+            <Button onClick={confirmEnroll}>Verify & enable</Button>
           </div>
         ) : (
           <Button onClick={startEnroll}>Enable authenticator app (TOTP)</Button>

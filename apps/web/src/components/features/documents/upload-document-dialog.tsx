@@ -4,16 +4,21 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createDocumentSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadStudentDocument } from '@/lib/upload-document';
-import type { PaginatedResponse } from '@eims/types';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
@@ -52,7 +57,11 @@ export function UploadDocumentDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const [file, setFile] = useState<File | null>(null);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors, setFieldError } =
+    useFormErrors(createDocumentSchema);
 
   const { data: students } = useQuery({
     queryKey: ['students-docs'],
@@ -63,36 +72,57 @@ export function UploadDocumentDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       setFile(null);
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!file || !form.studentId || !form.title.trim()) throw new Error('Missing fields');
-      const uploaded = await uploadStudentDocument(file, form.studentId);
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const uploaded = await uploadStudentDocument(file!, form.studentId);
       return apiClient('/documents', {
         method: 'POST',
         token,
         body: JSON.stringify({
-          branchId,
-          studentId: form.studentId,
-          category: form.category,
-          title: form.title.trim(),
+          ...payload,
           storagePath: uploaded.path,
           mimeType: uploaded.mimeType,
           sizeBytes: uploaded.sizeBytes,
         }),
       });
     },
-    onSuccess: () => {
+    onMutate: () => ({ toastId: toast.loading('Uploading document…') }),
+    onSuccess: (_data, _vars, ctx) => {
+      toast.dismiss(ctx?.toastId);
       toast.success('Document uploaded');
       queryClient.invalidateQueries({ queryKey: ['documents'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.documentsStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error, _vars, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setFieldError('file', 'File is required');
+      return;
+    }
+    const payload = {
+      branchId: effectiveBranchId,
+      studentId: form.studentId,
+      category: form.category,
+      title: form.title.trim(),
+      storagePath: 'pending',
+    };
+    if (!validate(payload)) return;
+    uploadMutation.mutate(payload);
+  };
 
   const canSubmit = form.studentId && form.title.trim() && file;
 
@@ -117,27 +147,50 @@ export function UploadDocumentDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            uploadMutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
+            <div>
+              <FormFieldLabel required>Title</FormFieldLabel>
+              <input
+                className={fieldClassName('title', modalFieldClassName)}
+                placeholder="Title"
+                value={form.title}
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, title: e.target.value }));
+                  clearField('title');
+                }}
+              />
+              <FormFieldError message={errors.title} />
+            </div>
+
             <div>
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown
                 aria-label="Student"
                 placeholder="Select student"
                 value={form.studentId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, studentId: value }))}
+                onValueChange={(value) => {
+                  setForm((prev) => ({ ...prev, studentId: value }));
+                  clearField('studentId');
+                }}
                 options={[
                   { value: '', label: 'Select student' },
                   ...(students?.data.map((s) => ({ value: s.id, label: s.fullName })) ?? []),
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.studentId} />
             </div>
 
             <div>
@@ -146,31 +199,27 @@ export function UploadDocumentDialog({
                 aria-label="Category"
                 placeholder="Select category"
                 value={form.category}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, category: value }))}
+                onValueChange={(value) => {
+                  setForm((prev) => ({ ...prev, category: value }));
+                  clearField('category');
+                }}
                 options={CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
                 className="w-full"
               />
-            </div>
-
-            <div>
-              <FormFieldLabel required>Title</FormFieldLabel>
-              <input
-                className={modalFieldClassName}
-                placeholder="Title"
-                value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                required
-              />
+              <FormFieldError message={errors.category} />
             </div>
 
             <div>
               <FormFieldLabel required>File</FormFieldLabel>
               <input
                 type="file"
-                className={cn(modalFieldClassName, 'py-2')}
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                required
+                className={cn(fieldClassName('file', modalFieldClassName), 'py-2')}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  clearField('file');
+                }}
               />
+              <FormFieldError message={errors.file} />
             </div>
           </div>
 

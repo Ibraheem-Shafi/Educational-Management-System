@@ -1,13 +1,15 @@
 'use client';
 
 import { useCallback, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { Mail, Phone, Users } from 'lucide-react';
-import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import type { PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,11 +20,11 @@ import {
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { FilterBar } from '@/components/layout/filter-bar';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { AddParentDialog } from '@/components/features/parents/add-parent-dialog';
-import { LinkStudentDialog } from '@/components/features/parents/link-student-dialog';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -83,45 +85,40 @@ function formatCount(value: number): string {
 export default function ParentsPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
+  const router = useRouter();
   const token = session?.access_token;
-  const queryClient = useQueryClient();
   const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
   const [addOpen, setAddOpen] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
     setPage(1);
   }, []);
 
+  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+
   const queryParams = new URLSearchParams({ page: String(page), limit: String(limit) });
+  appendToSearchParams(queryParams);
   if (search) queryParams.set('search', search);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.parentsStats,
-    queryFn: () => apiClient<ParentsStatsResponse>('/parents/stats', { token }),
+    queryKey: [...queryKeys.parentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<ParentsStatsResponse>(withBranchScope('/parents/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['parents', search, page, limit],
+    queryKey: ['parents', scopeKey, search, page, limit],
     queryFn: () =>
       apiClient<PaginatedResponse<ParentRow>>(`/parents?${queryParams.toString()}`, { token }),
     enabled: !!token,
-  });
-
-  const unlinkMutation = useMutation({
-    mutationFn: ({ parentId, studentId }: { parentId: string; studentId: string }) =>
-      apiClient(`/parents/${parentId}/students/${studentId}`, { method: 'DELETE', token }),
-    onSuccess: () => {
-      toast.success('Student unlinked');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
-    },
-    onError: (err: Error) => toast.error(err.message),
+    placeholderData: (previous) => previous,
   });
 
   return (
@@ -145,15 +142,6 @@ export default function ParentsPage() {
       />
 
       <AddParentDialog open={addOpen} onOpenChange={setAddOpen} />
-
-      <LinkStudentDialog
-        open={linkTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setLinkTarget(null);
-        }}
-        parentId={linkTarget?.id ?? ''}
-        parentName={linkTarget?.name ?? ''}
-      />
 
       <MainStatsSection
         isLoading={statsLoading}
@@ -182,7 +170,8 @@ export default function ParentsPage() {
       />
 
       <FilterBar className="items-center">
-        <SearchInput value={search} onValueChange={handleSearchChange} />
+        <SearchInput value={search} onValueChange={handleSearchChange} placeholder="Search by name, ID, email" />
+        <PageBranchScopeControl />
         {search && (
           <Button
             variant="ghost"
@@ -201,6 +190,7 @@ export default function ParentsPage() {
           <table className={dataTableClass}>
             <thead>
               <tr>
+                <th className={dataTableThClass}>ID</th>
                 <th className={dataTableThClass}>Parent</th>
                 <th className={dataTableThClass}>Email / Phone</th>
                 <th className={dataTableThClass}>Linked students</th>
@@ -208,11 +198,11 @@ export default function ParentsPage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={4} rows={limit} />}
+              {isLoading && <DataTableSkeletonRows columns={5} rows={limit} />}
 
               {error && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
                     Failed to load parents
                   </td>
                 </tr>
@@ -221,7 +211,7 @@ export default function ParentsPage() {
               {!isLoading && !error && data?.data.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
                     No parents found
@@ -232,7 +222,14 @@ export default function ParentsPage() {
               {!isLoading &&
                 !error &&
                 data?.data.map((parent) => (
-                  <tr key={parent.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={parent.id}
+                    className={cn('cursor-pointer transition-colors', dataTableRowHoverClass)}
+                    onClick={() => router.push(`/dashboard/parents/${parent.id}`)}
+                  >
+                    <td className={cn(dataTableTdClass, 'font-mono text-xs text-[var(--text-sub-500,#525866)]')}>
+                      {parent.id.slice(0, 8).toUpperCase()}
+                    </td>
                     <td className={dataTableTdClass}>
                       <div className="flex min-w-0 items-center gap-2.5">
                         <UserAvatar name={parent.fullName} seed={parent.id} size="sm" />
@@ -275,26 +272,18 @@ export default function ParentsPage() {
                         '—'
                       )}
                     </td>
-                    <td className={cn(dataTableTdClass, 'text-right')}>
-                      {canUpdate ? (
-                        <RowActionsMenu
-                          items={[
-                            {
-                              label: 'Link student',
-                              onClick: () =>
-                                setLinkTarget({ id: parent.id, name: parent.fullName }),
-                            },
-                            ...parent.students.map((s) => ({
-                              label: `Unlink ${s.student.fullName}`,
-                              onClick: () =>
-                                unlinkMutation.mutate({
-                                  parentId: parent.id,
-                                  studentId: s.student.id,
-                                }),
-                            })),
-                          ]}
-                        />
-                      ) : null}
+                    <td
+                      className={cn(dataTableTdClass, 'text-right')}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: 'View details',
+                            href: `/dashboard/parents/${parent.id}`,
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -302,7 +291,7 @@ export default function ParentsPage() {
           </table>
         </div>
 
-        {data && (
+        {data?.meta && (
           <PaginationBar
             page={page}
             totalPages={data.meta.totalPages}

@@ -1,3 +1,5 @@
+import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -23,6 +25,19 @@ function timesOverlap(startA: string, endA: string, startB: string, endB: string
   return a0 < b1 && b0 < a1;
 }
 
+function roomSearchWhere(roomQuery: string) {
+  const terms = roomQuery.trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return {};
+  if (terms.length === 1) {
+    return { room: { contains: terms[0], mode: 'insensitive' as const } };
+  }
+  return {
+    AND: terms.map((term) => ({
+      room: { contains: term, mode: 'insensitive' as const },
+    })),
+  };
+}
+
 const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
@@ -33,12 +48,12 @@ export class TimetableService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<TimetableStatsResponse> {
-    const cacheKey = `timetable:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<TimetableStatsResponse> {
+    const cacheKey = `timetable:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<TimetableStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const base = { isActive: true, ...branchFilter };
     const thirtyAgo = thirtyDaysAgo();
 
@@ -70,15 +85,15 @@ export class TimetableService {
     return result;
   }
 
-  async findAll(query: ListTimetableQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async findAll(query: ListTimetableQuery, scope: BranchScope) {
     const slots = await this.prisma.timetableSlot.findMany({
       where: {
         isActive: true,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(narrowScope(scope, query.branchId)),
         ...(query.batchId ? { batchId: query.batchId } : {}),
         ...(query.teacherId ? { teacherId: query.teacherId } : {}),
-        ...(query.room ? { room: query.room } : {}),
+        ...(query.subjectId ? { subjectId: query.subjectId } : {}),
+        ...roomSearchWhere(query.room ?? ''),
       },
       orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
@@ -101,9 +116,9 @@ export class TimetableService {
     return enriched;
   }
 
-  async update(id: string, input: UpdateTimetableSlotInput, user: AuthUser, branchId: string | null) {
+  async update(id: string, input: UpdateTimetableSlotInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.timetableSlot.findFirst({
-      where: { id, isActive: true, ...(branchId ? { branchId } : {}) },
+      where: { id, isActive: true, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Timetable slot not found');
 
@@ -146,9 +161,9 @@ export class TimetableService {
     return enriched;
   }
 
-  async remove(id: string, user: AuthUser, branchId: string | null) {
+  async remove(id: string, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.timetableSlot.findFirst({
-      where: { id, isActive: true, ...(branchId ? { branchId } : {}) },
+      where: { id, isActive: true, ...prismaBranchFilter(scope) },
     });
     if (!existing) throw new NotFoundException('Timetable slot not found');
 
@@ -168,8 +183,8 @@ export class TimetableService {
     return { deleted: true };
   }
 
-  async getConflicts(query: ListTimetableQuery, branchId: string | null) {
-    const { data } = await this.findAll(query, branchId);
+  async getConflicts(query: ListTimetableQuery, scope: BranchScope) {
+    const { data } = await this.findAll(query, scope);
     const conflicts: Array<{ slotId: string; type: string; message: string }> = [];
 
     for (let i = 0; i < data.length; i++) {

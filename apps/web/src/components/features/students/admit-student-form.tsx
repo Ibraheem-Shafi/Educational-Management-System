@@ -1,13 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ZodSchema } from 'zod';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronRight, GraduationCap, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { createStudentSchema, updateStudentSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
-import { apiClient } from '@/lib/api-client';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
+import { apiClient, ApiClientError } from '@/lib/api-client';
+import {
+  normalizePakistanPhone,
+  validateSchema,
+  flattenFieldErrors,
+  mapApiDetailsToFields,
+} from '@/lib/form-validation';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadStudentPhoto } from '@/lib/upload-photo';
 import { uploadStudentDocument } from '@/lib/upload-document';
 import { DynamicFormFields } from '@/components/forms/dynamic-form-fields';
@@ -63,11 +74,28 @@ const emptyEmergency = {
   phone: '',
 };
 
-export function AdmitStudentForm() {
+export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inquiryId = searchParams.get('inquiryId');
   const { session, user } = useAuth();
   const token = session?.access_token;
   const formRef = useRef<HTMLFormElement>(null);
+  const inquiryPrefilledRef = useRef(false);
+  const isEditing = !!studentId;
+  const editPrefilledRef = useRef(false);
+  const schema = useMemo(
+    (): ZodSchema => (isEditing ? updateStudentSchema : createStudentSchema),
+    [isEditing],
+  );
+  const {
+    errors,
+    validate,
+    clearField,
+    setFieldError,
+    fieldClassName,
+    applyApiErrors,
+  } = useFormErrors(schema);
 
   const [activeSection, setActiveSection] = useState<AdmitStudentSectionId>('student-information');
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
@@ -110,7 +138,11 @@ export function AdmitStudentForm() {
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  // Preselect the scoped branch when the effective scope is a single branch;
+  // otherwise require an explicit pick (no first-branch fallback).
+  const pageScope = usePageBranchScopeOptional();
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
+  const effectiveBranchId = branchId || user?.branchId || scopedSingleBranchId || '';
 
   const { data: programs } = useQuery({
     queryKey: ['programs', effectiveBranchId],
@@ -134,6 +166,76 @@ export function AdmitStudentForm() {
     queryFn: () =>
       apiClient<{ statuses: LookupStatus[] }>('/settings/lookups/student_status'),
   });
+
+  const { data: inquiryConvert } = useQuery({
+    queryKey: ['inquiry-convert', inquiryId],
+    queryFn: () =>
+      apiClient<{
+        inquiry: {
+          id: string;
+          branchId: string;
+          fullName: string;
+          phone: string | null;
+          email: string | null;
+        };
+      }>(`/inquiries/${inquiryId}/convert`, { token }),
+    enabled: !!token && !!inquiryId,
+  });
+
+  const { data: editingStudent } = useQuery({
+    queryKey: ['student', studentId],
+    queryFn: () =>
+      apiClient<{
+        id: string;
+        fullName: string;
+        phone: string | null;
+        email: string | null;
+        cnicOrBForm: string | null;
+        address: string | null;
+        gender: string | null;
+        dateOfBirth: string | null;
+        photographUrl: string | null;
+        branchId: string;
+        programId?: string | null;
+        batchId?: string | null;
+        statusId?: string | null;
+        customFields?: Record<string, string | boolean> | null;
+      }>(`/students/${studentId}`, { token }),
+    enabled: !!token && isEditing,
+  });
+
+  useEffect(() => {
+    if (!editingStudent || editPrefilledRef.current) return;
+    setFullName(editingStudent.fullName ?? '');
+    setPhone(editingStudent.phone ?? '');
+    setEmail(editingStudent.email ?? '');
+    setCnicOrBForm(editingStudent.cnicOrBForm ?? '');
+    setAddress(editingStudent.address ?? '');
+    setGender(editingStudent.gender ?? '');
+    setDateOfBirth(editingStudent.dateOfBirth ? editingStudent.dateOfBirth.slice(0, 10) : '');
+    if (editingStudent.branchId) setBranchId(editingStudent.branchId);
+    if (editingStudent.programId) setProgramId(editingStudent.programId);
+    if (editingStudent.batchId) setBatchId(editingStudent.batchId);
+    if (editingStudent.statusId) setStatusId(editingStudent.statusId);
+    if (editingStudent.customFields) {
+      setCustomFieldValues(
+        Object.fromEntries(
+          Object.entries(editingStudent.customFields).filter(([, v]) => typeof v !== 'object'),
+        ) as Record<string, string | boolean>,
+      );
+    }
+    editPrefilledRef.current = true;
+  }, [editingStudent]);
+
+  useEffect(() => {
+    if (!inquiryConvert?.inquiry || inquiryPrefilledRef.current) return;
+    const inquiry = inquiryConvert.inquiry;
+    setFullName(inquiry.fullName);
+    setPhone(inquiry.phone ?? '');
+    setEmail(inquiry.email ?? '');
+    if (inquiry.branchId) setBranchId(inquiry.branchId);
+    inquiryPrefilledRef.current = true;
+  }, [inquiryConvert]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -187,12 +289,13 @@ export function AdmitStudentForm() {
 
   const createMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      apiClient<{ id: string }>('/students', {
-        method: 'POST',
+      apiClient<{ id: string }>(isEditing ? `/students/${studentId}` : '/students', {
+        method: isEditing ? 'PATCH' : 'POST',
         token,
         body: JSON.stringify(body),
       }),
     onSuccess: async (created) => {
+      if (isEditing) created = { id: studentId! };
       if (photoFile) {
         try {
           const url = await uploadStudentPhoto(photoFile, created.id);
@@ -224,11 +327,51 @@ export function AdmitStudentForm() {
           toast.error(err instanceof Error ? err.message : 'File upload failed');
         }
       }
-      toast.success('Student admitted successfully');
-      router.push('/dashboard/students');
+      if (inquiryId) {
+        try {
+          await apiClient(`/inquiries/${inquiryId}/convert`, {
+            method: 'POST',
+            token,
+            body: { studentId: created.id },
+          });
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : 'Student created but inquiry link failed',
+          );
+        }
+      }
+      toast.success(isEditing ? 'Student updated successfully' : 'Student admitted successfully');
+      router.push(isEditing ? `/dashboard/students/${studentId}` : '/dashboard/students');
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create student'),
+    onError: (err: Error) => {
+      if (err instanceof ApiClientError && applyApiErrors(err.details)) {
+        scrollToErrorSection(Object.keys(mapApiDetailsToFields(err.details))[0] ?? null);
+        return;
+      }
+      toast.error(err.message || (isEditing ? 'Failed to update student' : 'Failed to create student'));
+    },
   });
+
+  const scrollToErrorSection = useCallback(
+    (field: string | null) => {
+      if (!field) return;
+      if (
+        ['fullName', 'gender', 'dateOfBirth', 'cnicOrBForm', 'branchId', 'statusId'].includes(field)
+      ) {
+        scrollToSection('student-information');
+      } else if (['phone', 'email', 'address'].includes(field)) {
+        scrollToSection('contact-information');
+      } else if (
+        field.startsWith('guardian') ||
+        ['guardianFullName', 'guardianPhone', 'guardianEmail', 'guardianCnic'].includes(field)
+      ) {
+        scrollToSection('guardian-details');
+      } else if (field.startsWith('emergency') || ['emergencyFullName', 'emergencyPhone'].includes(field)) {
+        scrollToSection('emergency-contact');
+      }
+    },
+    [scrollToSection],
+  );
 
   const buildGuardians = () => {
     const guardians = [];
@@ -236,7 +379,9 @@ export function AdmitStudentForm() {
       guardians.push({
         fullName: guardian.fullName.trim(),
         relationshipCode: guardian.relationshipCode,
-        ...(guardian.phone.trim() ? { phone: guardian.phone.trim() } : {}),
+        ...(guardian.phone.trim()
+          ? { phone: normalizePakistanPhone(guardian.phone.trim()) }
+          : {}),
         ...(guardian.email.trim() ? { email: guardian.email.trim() } : {}),
         ...(guardian.cnic.trim() ? { cnic: guardian.cnic.trim() } : {}),
         ...(guardian.address.trim() ? { address: guardian.address.trim() } : {}),
@@ -246,31 +391,20 @@ export function AdmitStudentForm() {
       guardians.push({
         fullName: emergency.fullName.trim(),
         relationshipCode: 'guardian' as const,
-        ...(emergency.phone.trim() ? { phone: emergency.phone.trim() } : {}),
+        ...(emergency.phone.trim()
+          ? { phone: normalizePakistanPhone(emergency.phone.trim()) }
+          : {}),
       });
     }
     return guardians.length ? guardians : undefined;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!effectiveBranchId || !statusId || !fullName.trim()) {
-      toast.error('Please fill required student fields');
-      scrollToSection('student-information');
-      return;
-    }
-
-    if (guardian.fullName.trim() && !guardian.relationshipCode) {
-      toast.error('Select guardian relationship');
-      scrollToSection('guardian-details');
-      return;
-    }
-
-    createMutation.mutate({
-      branchId: effectiveBranchId,
+  const buildPayload = () => {
+    const guardians = buildGuardians();
+    const base: Record<string, unknown> = {
       fullName: fullName.trim(),
       statusId,
-      ...(phone.trim() ? { phone: phone.trim() } : {}),
+      ...(phone.trim() ? { phone: normalizePakistanPhone(phone.trim()) } : {}),
       ...(email.trim() ? { email: email.trim() } : {}),
       ...(cnicOrBForm.trim() ? { cnicOrBForm: cnicOrBForm.trim() } : {}),
       ...(address.trim() ? { address: address.trim() } : {}),
@@ -285,12 +419,69 @@ export function AdmitStudentForm() {
             ),
           }
         : {}),
-      ...(buildGuardians() ? { guardians: buildGuardians() } : {}),
-    });
+      ...(guardians ? { guardians } : {}),
+    };
+    if (isEditing) return base;
+    return { branchId: effectiveBranchId, ...base };
+  };
+
+  const validateCustomFields = useCallback((): boolean => {
+    const defs = formFields?.data ?? [];
+    let valid = true;
+    for (const field of defs) {
+      if (!field.isRequired) continue;
+      if (field.fieldType === 'file') {
+        if (!customFieldFiles[field.code]) {
+          setFieldError(field.code, `${field.label} is required`);
+          valid = false;
+        }
+        continue;
+      }
+      if (field.fieldType === 'checkbox') {
+        if (!customFieldValues[field.code]) {
+          setFieldError(field.code, `${field.label} is required`);
+          valid = false;
+        }
+        continue;
+      }
+      const value = String(customFieldValues[field.code] ?? '').trim();
+      if (!value) {
+        setFieldError(field.code, `${field.label} is required`);
+        valid = false;
+      }
+    }
+    return valid;
+  }, [customFieldFiles, customFieldValues, formFields?.data, setFieldError]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    const schemaValid = validate(payload);
+    const customValid = validateCustomFields();
+    if (!schemaValid || !customValid) {
+      if (!schemaValid) {
+        const result = validateSchema(schema, payload);
+        if (!result.success) {
+          scrollToErrorSection(Object.keys(flattenFieldErrors(result.fieldErrors))[0] ?? null);
+        }
+      } else {
+        scrollToSection('student-information');
+      }
+      return;
+    }
+    createMutation.mutate(payload);
   };
 
   const updateGuardian = (key: keyof typeof guardian, value: string) => {
     setGuardian((prev) => ({ ...prev, [key]: value }));
+    const fieldMap: Partial<Record<keyof typeof guardian, string>> = {
+      fullName: 'guardianFullName',
+      phone: 'guardianPhone',
+      email: 'guardianEmail',
+      cnic: 'guardianCnic',
+    };
+    const errorField = fieldMap[key];
+    if (errorField) clearField(errorField);
   };
 
   return (
@@ -306,10 +497,16 @@ export function AdmitStudentForm() {
                 Students
               </Link>
               <ChevronRight className="h-3.5 w-3.5 text-[var(--text-soft-400,#868C98)]" />
-              <span className="font-medium text-[var(--text-main-900)]">Add Student</span>
+              <span className="font-medium text-[var(--text-main-900)]">
+                {isEditing ? 'Edit Student' : 'Add Student'}
+              </span>
             </nav>
             <p className="mt-1 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)]">
-              Create a new student record.
+              {isEditing
+                ? 'Update this student record.'
+                : inquiryId
+                  ? 'Admit student from admission inquiry.'
+                  : 'Create a new student record.'}
             </p>
           </div>
         </div>
@@ -335,10 +532,26 @@ export function AdmitStudentForm() {
             )}
           >
             <Plus className="h-4 w-4" strokeWidth={2} />
-            {createMutation.isPending ? 'Adding…' : 'Add'}
+            {createMutation.isPending
+              ? isEditing
+                ? 'Saving…'
+                : 'Adding…'
+              : isEditing
+                ? 'Save changes'
+                : 'Add'}
           </button>
         </div>
       </div>
+
+      {inquiryId && inquiryConvert?.inquiry ? (
+        <div className="rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-[var(--neutral-50)] px-4 py-3 text-sm text-[var(--text-sub-500,#525866)]">
+          Prefilled from inquiry for{' '}
+          <span className="font-medium text-[var(--text-main-900)]">
+            {inquiryConvert.inquiry.fullName}
+          </span>
+          . Saving will link this student to the inquiry.
+        </div>
+      ) : null}
 
       <div className="flex items-start gap-8">
         <form ref={formRef} onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-5">
@@ -387,17 +600,19 @@ export function AdmitStudentForm() {
                   fullWidth
                   aria-label="Branch"
                   placeholder="Select branch"
-                  value={branchId}
+                  value={branchId || scopedSingleBranchId || ''}
                   onValueChange={(value) => {
                     setBranchId(value);
                     setProgramId('');
                     setBatchId('');
+                    clearField('branchId');
                   }}
                   options={[
                     { value: '', label: 'Select branch' },
                     ...(branches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
                   ]}
                 />
+                <FormFieldError message={errors.branchId} />
               </div>
             ) : null}
 
@@ -405,12 +620,15 @@ export function AdmitStudentForm() {
               <div>
                 <FormFieldLabel required>Full Name</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('fullName', modalFieldClassName)}
                   placeholder="Enter full name"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    clearField('fullName');
+                  }}
                 />
+                <FormFieldError message={errors.fullName} />
               </div>
               <div>
                 <FormFieldLabel>Gender</FormFieldLabel>
@@ -419,7 +637,10 @@ export function AdmitStudentForm() {
                   aria-label="Gender"
                   placeholder="Select gender"
                   value={gender}
-                  onValueChange={setGender}
+                  onValueChange={(value) => {
+                    setGender(value);
+                    clearField('gender');
+                  }}
                   options={[
                     { value: '', label: 'Select gender' },
                     { value: 'male', label: 'Male' },
@@ -427,24 +648,33 @@ export function AdmitStudentForm() {
                     { value: 'other', label: 'Other' },
                   ]}
                 />
+                <FormFieldError message={errors.gender} />
               </div>
               <div>
                 <FormFieldLabel>Date of Birth</FormFieldLabel>
                 <input
                   type="date"
-                  className={modalFieldClassName}
+                  className={fieldClassName('dateOfBirth', modalFieldClassName)}
                   value={dateOfBirth}
-                  onChange={(e) => setDateOfBirth(e.target.value)}
+                  onChange={(e) => {
+                    setDateOfBirth(e.target.value);
+                    clearField('dateOfBirth');
+                  }}
                 />
+                <FormFieldError message={errors.dateOfBirth} />
               </div>
               <div>
                 <FormFieldLabel>CNIC / B-Form</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('cnicOrBForm', modalFieldClassName)}
                   placeholder="XXXXX-XXXXXXX-X"
                   value={cnicOrBForm}
-                  onChange={(e) => setCnicOrBForm(e.target.value)}
+                  onChange={(e) => {
+                    setCnicOrBForm(e.target.value);
+                    clearField('cnicOrBForm');
+                  }}
                 />
+                <FormFieldError message={errors.cnicOrBForm} />
               </div>
             </AdmitFieldGrid>
 
@@ -455,12 +685,16 @@ export function AdmitStudentForm() {
                 aria-label="Status"
                 placeholder="Select status"
                 value={statusId}
-                onValueChange={setStatusId}
+                onValueChange={(value) => {
+                  setStatusId(value);
+                  clearField('statusId');
+                }}
                 options={[
                   { value: '', label: 'Select status' },
                   ...(lookups?.statuses.map((s) => ({ value: s.id, label: s.label })) ?? []),
                 ]}
               />
+              <FormFieldError message={errors.statusId} />
             </div>
           </AdmitStudentSection>
 
@@ -473,31 +707,43 @@ export function AdmitStudentForm() {
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('phone', modalFieldClassName)}
                   placeholder="03XX-XXXXXXX"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    clearField('phone');
+                  }}
                 />
+                <FormFieldError message={errors.phone} />
               </div>
               <div>
                 <FormFieldLabel>Email Address</FormFieldLabel>
                 <input
                   type="email"
-                  className={modalFieldClassName}
+                  className={fieldClassName('email', modalFieldClassName)}
                   placeholder="student@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clearField('email');
+                  }}
                 />
+                <FormFieldError message={errors.email} />
               </div>
             </AdmitFieldGrid>
             <div>
               <FormFieldLabel>Address</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('address', modalFieldClassName)}
                 placeholder="House No, Street"
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={(e) => {
+                  setAddress(e.target.value);
+                  clearField('address');
+                }}
               />
+              <FormFieldError message={errors.address} />
             </div>
           </AdmitStudentSection>
 
@@ -545,6 +791,9 @@ export function AdmitStudentForm() {
             <DynamicFormFields
               fields={formFields?.data ?? []}
               values={customFieldValues}
+              errors={errors}
+              clearField={clearField}
+              fieldClassName={fieldClassName}
               onChange={(code, value) =>
                 setCustomFieldValues((prev) => ({ ...prev, [code]: value }))
               }
@@ -568,11 +817,12 @@ export function AdmitStudentForm() {
               <div>
                 <FormFieldLabel>Guardian Name</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('guardianFullName', modalFieldClassName)}
                   placeholder="Enter guardian's full name"
                   value={guardian.fullName}
                   onChange={(e) => updateGuardian('fullName', e.target.value)}
                 />
+                <FormFieldError message={errors.guardianFullName} />
               </div>
               <div>
                 <FormFieldLabel>Relationship</FormFieldLabel>
@@ -597,30 +847,33 @@ export function AdmitStudentForm() {
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('guardianPhone', modalFieldClassName)}
                   placeholder="03XX-XXXXXXX"
                   value={guardian.phone}
                   onChange={(e) => updateGuardian('phone', e.target.value)}
                 />
+                <FormFieldError message={errors.guardianPhone} />
               </div>
               <div>
                 <FormFieldLabel>Email</FormFieldLabel>
                 <input
                   type="email"
-                  className={modalFieldClassName}
+                  className={fieldClassName('guardianEmail', modalFieldClassName)}
                   placeholder="guardian@email.com"
                   value={guardian.email}
                   onChange={(e) => updateGuardian('email', e.target.value)}
                 />
+                <FormFieldError message={errors.guardianEmail} />
               </div>
               <div>
                 <FormFieldLabel>CNIC</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('guardianCnic', modalFieldClassName)}
                   placeholder="XXXXX-XXXXXXX-X"
                   value={guardian.cnic}
                   onChange={(e) => updateGuardian('cnic', e.target.value)}
                 />
+                <FormFieldError message={errors.guardianCnic} />
               </div>
             </AdmitFieldGrid>
             <div>
@@ -643,20 +896,28 @@ export function AdmitStudentForm() {
               <div>
                 <FormFieldLabel>Contact Name</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('emergencyFullName', modalFieldClassName)}
                   placeholder="Enter contact name"
                   value={emergency.fullName}
-                  onChange={(e) => setEmergency((prev) => ({ ...prev, fullName: e.target.value }))}
+                  onChange={(e) => {
+                    setEmergency((prev) => ({ ...prev, fullName: e.target.value }));
+                    clearField('emergencyFullName');
+                  }}
                 />
+                <FormFieldError message={errors.emergencyFullName} />
               </div>
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('emergencyPhone', modalFieldClassName)}
                   placeholder="03XX-XXXXXXX"
                   value={emergency.phone}
-                  onChange={(e) => setEmergency((prev) => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => {
+                    setEmergency((prev) => ({ ...prev, phone: e.target.value }));
+                    clearField('emergencyPhone');
+                  }}
                 />
+                <FormFieldError message={errors.emergencyPhone} />
               </div>
             </AdmitFieldGrid>
           </AdmitStudentSection>
@@ -681,7 +942,13 @@ export function AdmitStudentForm() {
               )}
             >
               <Plus className="h-4 w-4" strokeWidth={2} />
-              {createMutation.isPending ? 'Adding…' : 'Add'}
+              {createMutation.isPending
+                ? isEditing
+                  ? 'Saving…'
+                  : 'Adding…'
+                : isEditing
+                  ? 'Save changes'
+                  : 'Add'}
             </button>
           </div>
         </form>

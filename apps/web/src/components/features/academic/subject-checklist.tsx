@@ -4,8 +4,12 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createSubjectSchema, updateSubjectSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -46,6 +50,19 @@ export function SubjectChecklist({
   const [newCode, setNewCode] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const {
+    errors: createErrors,
+    validate: validateCreate,
+    clearField: clearCreateField,
+    fieldClassName: createFieldClassName,
+    applyApiErrors: applyCreateApiErrors,
+  } = useFormErrors(createSubjectSchema);
+  const {
+    errors: renameErrors,
+    validate: validateRename,
+    clearField: clearRenameField,
+    applyApiErrors: applyRenameApiErrors,
+  } = useFormErrors(updateSubjectSchema);
 
   const createSubject = useMutation({
     mutationFn: (body: { name: string; code?: string }) =>
@@ -63,7 +80,10 @@ export function SubjectChecklist({
       setNewName('');
       setNewCode('');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyCreateApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const renameSubject = useMutation({
@@ -79,7 +99,10 @@ export function SubjectChecklist({
       setRenamingId(null);
       setRenameValue('');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyRenameApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const toggleSubject = (subjectId: string) => {
@@ -127,18 +150,24 @@ export function SubjectChecklist({
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       <Input
                         value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        className="h-8"
+                        onChange={(e) => {
+                          setRenameValue(e.target.value);
+                          clearRenameField('name');
+                        }}
+                        className={cn('h-8', renameErrors.name && 'border-red-500')}
                         autoFocus
                       />
+                      <FormFieldError message={renameErrors.name} />
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
-                        disabled={renameSubject.isPending || renameValue.trim().length < 2}
-                        onClick={() =>
-                          renameSubject.mutate({ id: subject.id, name: renameValue.trim() })
-                        }
+                        disabled={renameSubject.isPending}
+                        onClick={() => {
+                          const payload = { name: renameValue.trim() };
+                          if (!validateRename(payload)) return;
+                          renameSubject.mutate({ id: subject.id, name: payload.name });
+                        }}
                         aria-label="Save subject name"
                       >
                         <Check className="h-4 w-4" />
@@ -196,33 +225,42 @@ export function SubjectChecklist({
           <FormFieldLabel>New subject</FormFieldLabel>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
-              className={modalFieldClassName}
+              className={createFieldClassName('name', modalFieldClassName)}
               placeholder="Subject name"
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e) => {
+                setNewName(e.target.value);
+                clearCreateField('name');
+              }}
             />
             <input
-              className={cn(modalFieldClassName, 'sm:max-w-[140px]')}
+              className={createFieldClassName('code', cn(modalFieldClassName, 'sm:max-w-[140px]'))}
               placeholder="Code (optional)"
               value={newCode}
-              onChange={(e) => setNewCode(e.target.value)}
+              onChange={(e) => {
+                setNewCode(e.target.value);
+                clearCreateField('code');
+              }}
             />
             <Button
               type="button"
               variant="outline"
               className="shrink-0"
-              disabled={createSubject.isPending || newName.trim().length < 2}
-              onClick={() =>
-                createSubject.mutate({
+              disabled={createSubject.isPending}
+              onClick={() => {
+                const payload = {
                   name: newName.trim(),
                   ...(newCode.trim() ? { code: newCode.trim() } : {}),
-                })
-              }
+                };
+                if (!validateCreate(payload)) return;
+                createSubject.mutate(payload);
+              }}
             >
               <Plus className="mr-1 h-4 w-4" />
               Add
             </Button>
           </div>
+          <FormFieldError message={createErrors.name ?? createErrors.code} />
         </div>
       ) : null}
     </div>

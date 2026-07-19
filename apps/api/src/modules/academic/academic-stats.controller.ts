@@ -4,7 +4,8 @@ import { AcademicStatsService } from './academic-stats.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, Permissions } from '../../common/decorators/auth.decorators';
+import type { BranchScope } from '@eims/shared';
 
 @ApiTags('academic')
 @ApiBearerAuth()
@@ -15,7 +16,7 @@ export class AcademicStatsController {
 
   @Get('stats')
   @Permissions('academic.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.statsService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.statsService.getStats(scope);
   }
 }

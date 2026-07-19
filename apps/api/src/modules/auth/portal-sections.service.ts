@@ -1,3 +1,5 @@
+import { prismaBranchFilter, prismaBranchIdFilter, scopeCacheKey, requireSingleBranchId, sqlBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import {
   BadRequestException,
   ForbiddenException,
@@ -5,23 +7,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
-import { AttendanceService } from '../attendance/attendance.service';
 import { FeesService } from '../fees/fees.service';
 import { LearningService } from '../learning/learning.service';
 import { DocumentsService } from '../documents/documents.service';
 import { AiInsightsService } from '../ai-insights/ai-insights.service';
 import type { AuthUser, PaginatedResponse } from '@eims/types';
-import type { CreateLeaveRequestInput, PortalSectionQuery } from '@eims/shared';
+import { ATTENDANCE_ENTITY_STUDENT, selectedBranchScope } from '@eims/shared';
+import type {
+  CreateEmployeeLeaveRequestInput,
+  CreateLeaveRequestInput,
+  PortalSectionQuery,
+} from '@eims/shared';
+import { paginatedResult } from '../../common/utils/pagination.util';
 
-function paginate<T>(items: T[], page = 1, limit = 20): PaginatedResponse<T> {
-  const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  const safePage = Math.min(Math.max(page, 1), totalPages);
-  const start = (safePage - 1) * limit;
-  return {
-    data: items.slice(start, start + limit),
-    meta: { total, page: safePage, limit, totalPages },
-  };
+function parseDateOnly(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function defaultDateRange(from?: string, to?: string) {
@@ -54,7 +55,6 @@ function attendanceSummary(records: Array<{ status?: { label: string } | null }>
 export class PortalSectionsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly attendanceService: AttendanceService,
     private readonly feesService: FeesService,
     private readonly learningService: LearningService,
     private readonly documentsService: DocumentsService,
@@ -66,16 +66,66 @@ export class PortalSectionsService {
     query: PortalSectionQuery,
   ) {
     const range = defaultDateRange(query.from, query.to);
-    const history = await this.attendanceService.getHistory(
-      { studentId: student.id, from: range.from, to: range.to },
-      student.branchId,
-    );
-    const summary = attendanceSummary(history.records);
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
+    const from = parseDateOnly(range.from);
+    const to = parseDateOnly(range.to);
+    const where = {
+      entityType: ATTENDANCE_ENTITY_STUDENT,
+      entityId: student.id,
+      date: { gte: from, lte: to },
+    };
+
+    const summaryRecords = await this.prisma.attendanceRecord.findMany({
+      where,
+      select: { statusId: true },
+    });
+    const summaryStatusIds = [...new Set(summaryRecords.map((r) => r.statusId))];
+    const summaryStatuses = summaryStatusIds.length
+      ? await this.prisma.lookupStatus.findMany({
+          where: { id: { in: summaryStatusIds } },
+          select: { id: true, label: true },
+        })
+      : [];
+    const summaryStatusMap = new Map(summaryStatuses.map((s) => [s.id, s]));
+    const summary = attendanceSummary(
+      summaryRecords.map((r) => ({ status: summaryStatusMap.get(r.statusId) ?? null })),
+    );
+
+    const [total, records] = await Promise.all([
+      this.prisma.attendanceRecord.count({ where }),
+      this.prisma.attendanceRecord.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    const statusIds = [...new Set(records.map((r) => r.statusId))];
+    const statuses = statusIds.length
+      ? await this.prisma.lookupStatus.findMany({
+          where: { id: { in: statusIds } },
+          select: { id: true, code: true, label: true },
+        })
+      : [];
+    const statusMap = new Map(statuses.map((s) => [s.id, s]));
+
     return {
       summary,
-      records: paginate(history.records, page, limit),
+      records: paginatedResult(
+        records.map((r) => ({
+          id: r.id,
+          date: r.date.toISOString().slice(0, 10),
+          statusId: r.statusId,
+          status: statusMap.get(r.statusId) ?? null,
+          remarks: r.remarks,
+          markedAt: r.updatedAt.toISOString(),
+        })),
+        total,
+        page,
+        limit,
+      ),
     };
   }
 
@@ -83,35 +133,39 @@ export class PortalSectionsService {
     student: { id: string; branchId: string },
     query: PortalSectionQuery,
   ) {
-    const records = await this.prisma.assessmentRecord.findMany({
-      where: { studentId: student.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    const assessmentIds = [...new Set(records.map((r) => r.assessmentId))];
-    const subjectIds = [...new Set(records.map((r) => r.subjectId))];
-    const [assessments, subjects] = await Promise.all([
-      this.prisma.assessment.findMany({ where: { id: { in: assessmentIds } } }),
-      this.prisma.subject.findMany({ where: { id: { in: subjectIds } } }),
-    ]);
-    const assessmentMap = new Map(assessments.map((a) => [a.id, a]));
-    const subjectMap = new Map(subjects.map((s) => [s.id, s]));
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const recordWhere = {
+      studentId: student.id,
+      assessment: { status: 'published' },
+    };
 
-    const mapped = records.map((r) => ({
+    const allRecords = await this.prisma.assessmentRecord.findMany({
+      where: recordWhere,
+      include: { assessment: { select: { name: true } } },
+    });
+    const allSubjectIds = [...new Set(allRecords.map((r) => r.subjectId))];
+    const allSubjects = allSubjectIds.length
+      ? await this.prisma.subject.findMany({ where: { id: { in: allSubjectIds } } })
+      : [];
+    const allSubjectMap = new Map(allSubjects.map((s) => [s.id, s.name]));
+
+    const mappedAll = allRecords.map((r) => ({
       id: r.id,
-      assessment: assessmentMap.get(r.assessmentId)?.name ?? null,
-      subject: subjectMap.get(r.subjectId)?.name ?? null,
+      assessment: r.assessment.name,
+      subject: allSubjectMap.get(r.subjectId) ?? null,
       grade: r.grade,
       percentage: r.percentage ? Number(r.percentage) : null,
     }));
 
-    const percentages = mapped.map((r) => r.percentage).filter((p): p is number => p !== null);
+    const percentages = mappedAll.map((r) => r.percentage).filter((p): p is number => p !== null);
     const averagePercentage =
       percentages.length > 0
         ? Math.round(percentages.reduce((s, p) => s + p, 0) / percentages.length)
         : null;
 
     const subjectAgg = new Map<string, { sum: number; count: number }>();
-    for (const row of mapped) {
+    for (const row of mappedAll) {
       if (!row.subject || row.percentage === null) continue;
       const cur = subjectAgg.get(row.subject) ?? { sum: 0, count: 0 };
       cur.sum += row.percentage;
@@ -124,18 +178,51 @@ export class PortalSectionsService {
       count,
     }));
 
+    const [total, pageRecords] = await Promise.all([
+      this.prisma.assessmentRecord.count({ where: recordWhere }),
+      this.prisma.assessmentRecord.findMany({
+        where: recordWhere,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { assessment: { select: { name: true } } },
+      }),
+    ]);
+    const pageSubjectIds = [...new Set(pageRecords.map((r) => r.subjectId))];
+    const pageSubjects = pageSubjectIds.length
+      ? await this.prisma.subject.findMany({ where: { id: { in: pageSubjectIds } } })
+      : [];
+    const pageSubjectMap = new Map(pageSubjects.map((s) => [s.id, s.name]));
+
     return {
       averagePercentage,
       bySubject,
-      records: paginate(mapped, query.page ?? 1, query.limit ?? 20),
+      records: paginatedResult(
+        pageRecords.map((r) => ({
+          id: r.id,
+          assessment: r.assessment.name,
+          subject: pageSubjectMap.get(r.subjectId) ?? null,
+          grade: r.grade,
+          percentage: r.percentage ? Number(r.percentage) : null,
+        })),
+        total,
+        page,
+        limit,
+      ),
     };
   }
 
   async getStudentFees(student: { id: string; branchId: string }, query: PortalSectionQuery) {
-    const fees = await this.feesService.getStudentFees(student.id, student.branchId);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const studentScope = selectedBranchScope([student.branchId]);
+    const [fees, invoicePage] = await Promise.all([
+      this.feesService.getStudentFees(student.id, studentScope),
+      this.feesService.findAll({ studentId: student.id, page, limit }, studentScope),
+    ]);
     return {
       outstanding: fees.outstanding,
-      invoices: paginate(fees.invoices, query.page ?? 1, query.limit ?? 20),
+      invoices: paginatedResult(invoicePage.data, invoicePage.meta.total, page, limit),
     };
   }
 
@@ -151,12 +238,12 @@ export class PortalSectionsService {
     };
   }
 
-  async getStudentNotices(user: AuthUser, branchId: string | null, query: PortalSectionQuery) {
+  async getStudentNotices(user: AuthUser, scope: BranchScope, query: PortalSectionQuery) {
     const audiences: string[] = ['all', 'students'];
     const where = {
       isPublished: true,
       audience: { in: audiences },
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
       ...(query.search
         ? {
             OR: [
@@ -167,7 +254,7 @@ export class PortalSectionsService {
         : {}),
     };
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const [total, notices] = await Promise.all([
       this.prisma.notice.count({ where }),
       this.prisma.notice.findMany({
@@ -177,29 +264,26 @@ export class PortalSectionsService {
         take: limit,
       }),
     ]);
-    return {
-      data: notices.map((n) => ({
+    return paginatedResult(
+      notices.map((n) => ({
         id: n.id,
         title: n.title,
         body: n.body,
         audience: n.audience,
         publishedAt: n.publishedAt?.toISOString() ?? null,
       })),
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
-  async getParentNotices(user: AuthUser, branchId: string | null, query: PortalSectionQuery) {
+  async getParentNotices(user: AuthUser, scope: BranchScope, query: PortalSectionQuery) {
     const audiences: string[] = ['all', 'parents'];
     const where = {
       isPublished: true,
       audience: { in: audiences },
-      ...(branchId ? { branchId } : {}),
+      ...prismaBranchFilter(scope),
       ...(query.search
         ? {
             OR: [
@@ -210,7 +294,7 @@ export class PortalSectionsService {
         : {}),
     };
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 8;
     const [total, notices] = await Promise.all([
       this.prisma.notice.count({ where }),
       this.prisma.notice.findMany({
@@ -220,40 +304,92 @@ export class PortalSectionsService {
         take: limit,
       }),
     ]);
-    return {
-      data: notices.map((n) => ({
+    return paginatedResult(
+      notices.map((n) => ({
         id: n.id,
         title: n.title,
         body: n.body,
         audience: n.audience,
         publishedAt: n.publishedAt?.toISOString() ?? null,
       })),
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
-    };
+      total,
+      page,
+      limit,
+    );
+  }
+
+  async getStudentLearning(
+    student: {
+      id: string;
+      branchId: string;
+      programId: string | null;
+      batchId: string | null;
+    },
+    query: { type?: string; search?: string; page?: number; limit?: number },
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const result = await this.learningService.listForStudentContext({
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'students',
+      type: query.type,
+      search: query.search,
+      page,
+      limit,
+    });
+    return paginatedResult(result.data, result.meta.total, page, limit);
+  }
+
+  async getParentLearning(
+    student: {
+      id: string;
+      branchId: string;
+      programId: string | null;
+      batchId: string | null;
+    },
+    query: { type?: string; search?: string; page?: number; limit?: number },
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const result = await this.learningService.listForStudentContext({
+      branchId: student.branchId,
+      programId: student.programId,
+      batchId: student.batchId,
+      audience: 'parents',
+      type: query.type,
+      search: query.search,
+      page,
+      limit,
+    });
+    return paginatedResult(result.data, result.meta.total, page, limit);
   }
 
   async getStudentDocuments(student: { id: string; branchId: string }, query: PortalSectionQuery) {
-    const result = await this.documentsService.findAll({ studentId: student.id }, student.branchId);
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const mapped = result.data.map((d) => ({
-      id: d.id,
-      title: d.title,
-      category: d.category,
-      mimeType: d.mimeType,
-      sizeBytes: d.sizeBytes,
-      createdAt: d.createdAt.toISOString(),
-    }));
-    return paginate(mapped, page, limit);
+    const limit = query.limit ?? 8;
+    const result = await this.documentsService.findAll(
+      { studentId: student.id, page, limit },
+      selectedBranchScope([student.branchId]),
+    );
+    return paginatedResult(
+      result.data.map((d) => ({
+        id: d.id,
+        title: d.title,
+        category: d.category,
+        mimeType: d.mimeType,
+        sizeBytes: d.sizeBytes,
+        createdAt: d.createdAt.toISOString(),
+      })),
+      result.meta.total,
+      page,
+      limit,
+    );
   }
 
   async getDocumentSignedUrl(documentId: string, branchId: string) {
-    return this.documentsService.getSignedUrl(documentId, branchId);
+    return this.documentsService.getSignedUrl(documentId, selectedBranchScope([branchId]));
   }
 
   async getStudentCalendar(
@@ -343,7 +479,10 @@ export class PortalSectionsService {
   }
 
   async getStudentInsights(student: { id: string; branchId: string }) {
-    const summary = await this.aiInsightsService.getStudentSummary(student.id, student.branchId);
+    const summary = await this.aiInsightsService.getStudentSummary(
+      student.id,
+      selectedBranchScope([student.branchId]),
+    );
     return {
       student: summary.student,
       overallPercentage: summary.overallPercentage,
@@ -425,26 +564,43 @@ export class PortalSectionsService {
     };
   }
 
-  async listParentLeaveRequests(parentEmail: string, studentId?: string) {
+  async listParentLeaveRequests(
+    parentEmail: string,
+    studentId?: string,
+    query?: Pick<PortalSectionQuery, 'page' | 'limit'>,
+  ) {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 8;
     const parent = await this.prisma.parent.findFirst({
       where: { email: parentEmail, deletedAt: null },
     });
-    if (!parent) return { data: [] };
+    if (!parent) return paginatedResult([], 0, page, limit);
 
-    const requests = await this.prisma.leaveRequest.findMany({
-      where: {
-        parentId: parent.id,
-        ...(studentId ? { studentId } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: { student: { select: { fullName: true } } },
-    });
+    const where = {
+      kind: 'student' as const,
+      parentId: parent.id,
+      ...(studentId ? { studentId } : {}),
+    };
 
-    return {
-      data: requests.map((r: (typeof requests)[number]) => ({
+    const [total, requests] = await Promise.all([
+      this.prisma.leaveRequest.count({ where }),
+      this.prisma.leaveRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { student: { select: { fullName: true } } },
+      }),
+    ]);
+
+    return paginatedResult(
+      requests.map((r) => ({
         id: r.id,
+        kind: r.kind,
         studentId: r.studentId,
-        studentName: r.student.fullName,
+        studentName: r.student?.fullName ?? null,
+        employeeId: null,
+        employeeName: null,
         parentId: r.parentId,
         fromDate: r.fromDate.toISOString().slice(0, 10),
         toDate: r.toDate.toISOString().slice(0, 10),
@@ -452,7 +608,10 @@ export class PortalSectionsService {
         status: r.status,
         createdAt: r.createdAt.toISOString(),
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   async createParentLeaveRequest(parentEmail: string, input: CreateLeaveRequestInput) {
@@ -474,6 +633,7 @@ export class PortalSectionsService {
 
     const request = await this.prisma.leaveRequest.create({
       data: {
+        kind: 'student',
         studentId: input.studentId,
         parentId: parent.id,
         fromDate,
@@ -486,8 +646,11 @@ export class PortalSectionsService {
 
     return {
       id: request.id,
+      kind: request.kind,
       studentId: request.studentId,
-      studentName: request.student.fullName,
+      studentName: request.student?.fullName ?? null,
+      employeeId: null,
+      employeeName: null,
       parentId: request.parentId,
       fromDate: request.fromDate.toISOString().slice(0, 10),
       toDate: request.toDate.toISOString().slice(0, 10),
@@ -497,48 +660,170 @@ export class PortalSectionsService {
     };
   }
 
-  async listStaffLeaveRequests(branchId: string | null) {
-    const requests = await this.prisma.leaveRequest.findMany({
-      where: branchId
-        ? { student: { branchId } }
-        : {},
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { student: { select: { fullName: true, branchId: true } } },
-    });
+  async listStaffLeaveRequests(
+    scope: BranchScope,
+    kind?: string,
+    page = 1,
+    limit = 8,
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const branchFilter = prismaBranchFilter(scope);
+    const where = {
+      ...(kind ? { kind } : {}),
+      ...(scope.kind === 'selected'
+        ? {
+            OR: [
+              { kind: 'student', student: { ...branchFilter } },
+              { kind: 'employee', user: { ...branchFilter } },
+              { kind: 'employee', userId: { not: null }, user: { branchId: null } },
+            ],
+          }
+        : {}),
+    };
+
+    const [requests, total] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          student: { select: { fullName: true, branchId: true } },
+          user: { select: { fullName: true, branchId: true } },
+        },
+      }),
+      this.prisma.leaveRequest.count({ where }),
+    ]);
+
     return {
-      data: requests.map((r: (typeof requests)[number]) => ({
-        id: r.id,
-        studentId: r.studentId,
-        studentName: r.student.fullName,
-        parentId: r.parentId,
-        fromDate: r.fromDate.toISOString().slice(0, 10),
-        toDate: r.toDate.toISOString().slice(0, 10),
-        reason: r.reason,
-        status: r.status,
-        createdAt: r.createdAt.toISOString(),
-      })),
+      data: requests.map((r) => this.toLeaveRequestResponse(r)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  async createEmployeeLeaveRequest(userId: string, input: CreateEmployeeLeaveRequestInput) {
+    const fromDate = new Date(input.fromDate);
+    const toDate = new Date(input.toDate);
+    if (toDate < fromDate) {
+      throw new BadRequestException('End date must be on or after start date');
+    }
+
+    const request = await this.prisma.leaveRequest.create({
+      data: {
+        kind: 'employee',
+        userId,
+        fromDate,
+        toDate,
+        reason: input.reason,
+        status: 'pending',
+      },
+      include: { user: { select: { fullName: true } } },
+    });
+
+    return {
+      id: request.id,
+      kind: request.kind,
+      studentId: null,
+      studentName: null,
+      employeeId: request.userId,
+      employeeName: request.user?.fullName ?? null,
+      parentId: null,
+      fromDate: request.fromDate.toISOString().slice(0, 10),
+      toDate: request.toDate.toISOString().slice(0, 10),
+      reason: request.reason,
+      status: request.status,
+      createdAt: request.createdAt.toISOString(),
+    };
+  }
+
+  async listMyEmployeeLeaveRequests(userId: string, page = 1, limit = 8): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const where = { kind: 'employee', userId };
+    const [requests, total] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { user: { select: { fullName: true } } },
+      }),
+      this.prisma.leaveRequest.count({ where }),
+    ]);
+
+    return {
+      data: requests.map((r) => this.toLeaveRequestResponse(r)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
     };
   }
 
   async reviewLeaveRequest(id: string, status: 'approved' | 'rejected', reviewerId: string) {
-    const existing = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const existing = await this.prisma.leaveRequest.findUnique({
+      where: { id },
+      include: {
+        student: { select: { fullName: true } },
+        user: { select: { fullName: true } },
+      },
+    });
     if (!existing) throw new NotFoundException('Leave request not found');
     const updated = await this.prisma.leaveRequest.update({
       where: { id },
       data: { status, reviewedById: reviewerId },
-      include: { student: { select: { fullName: true } } },
+      include: {
+        student: { select: { fullName: true } },
+        user: { select: { fullName: true } },
+      },
     });
     return {
       id: updated.id,
+      kind: updated.kind,
       studentId: updated.studentId,
-      studentName: updated.student.fullName,
+      studentName: updated.student?.fullName ?? null,
+      employeeId: updated.userId,
+      employeeName: updated.user?.fullName ?? null,
       parentId: updated.parentId,
       fromDate: updated.fromDate.toISOString().slice(0, 10),
       toDate: updated.toDate.toISOString().slice(0, 10),
       reason: updated.reason,
       status: updated.status,
       createdAt: updated.createdAt.toISOString(),
+    };
+  }
+
+  private toLeaveRequestResponse(r: {
+    id: string;
+    kind: string;
+    studentId: string | null;
+    userId: string | null;
+    parentId: string | null;
+    fromDate: Date;
+    toDate: Date;
+    reason: string;
+    status: string;
+    createdAt: Date;
+    student?: { fullName: string } | null;
+    user?: { fullName: string } | null;
+  }) {
+    return {
+      id: r.id,
+      kind: r.kind,
+      studentId: r.studentId,
+      studentName: r.student?.fullName ?? null,
+      employeeId: r.userId,
+      employeeName: r.user?.fullName ?? null,
+      parentId: r.parentId,
+      fromDate: r.fromDate.toISOString().slice(0, 10),
+      toDate: r.toDate.toISOString().slice(0, 10),
+      reason: r.reason,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
     };
   }
 

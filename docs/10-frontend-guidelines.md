@@ -4,6 +4,8 @@
 
 The frontend is a **Next.js 15** application using the App Router, **shadcn/ui** components, and **Tailwind CSS**. All institution branding is dynamic — never hardcode names or logos.
 
+For visual tokens, tables, stats, charts, and UI recipes to recreate this design elsewhere, see [design-system-handoff.md](./design-system-handoff.md).
+
 ## Project Structure
 
 ```

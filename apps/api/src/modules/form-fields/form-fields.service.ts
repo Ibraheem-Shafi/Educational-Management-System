@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser } from '@eims/types';
-import type { CreateFormFieldInput, UpdateFormFieldInput } from '@eims/shared';
+import type { AuthUser, PaginatedResponse } from '@eims/types';
+import type { CreateFormFieldInput, ListFormFieldsQuery, UpdateFormFieldInput } from '@eims/shared';
+import { paginatedResult } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class FormFieldsService {
@@ -11,12 +12,38 @@ export class FormFieldsService {
     private readonly audit: AuditService,
   ) {}
 
-  async findAll(activeOnly = true) {
-    const fields = await this.prisma.formField.findMany({
-      where: activeOnly ? { isActive: true } : {},
-      orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
-    });
-    return { data: fields };
+  async findAll(query: ListFormFieldsQuery): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const activeOnly = !query.all;
+    const where = {
+      ...(activeOnly ? { isActive: true } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { label: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const orderBy = [{ sortOrder: 'asc' as const }, { label: 'asc' as const }];
+
+    if (query.all) {
+      const fields = await this.prisma.formField.findMany({ where, orderBy });
+      return paginatedResult(fields, fields.length, 1, Math.max(fields.length, 1));
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const [fields, total] = await Promise.all([
+      this.prisma.formField.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.formField.count({ where }),
+    ]);
+    return paginatedResult(fields, total, page, limit);
   }
 
   async create(input: CreateFormFieldInput, user: AuthUser) {

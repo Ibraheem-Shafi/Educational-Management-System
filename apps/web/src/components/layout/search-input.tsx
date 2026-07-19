@@ -11,12 +11,15 @@ export function SearchInput({
   onValueChange,
   placeholder = 'Search by name, ID,',
   debounceMs = DEFAULT_DEBOUNCE_MS,
+  trimValue = true,
   className,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   placeholder?: string;
   debounceMs?: number;
+  /** When false, keeps spaces in the input; callers can trim only for API/query use. */
+  trimValue?: boolean;
   className?: string;
 }) {
   const [localValue, setLocalValue] = useState(value);
@@ -29,11 +32,11 @@ export function SearchInput({
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      const next = localValue.trim();
+      const next = trimValue ? localValue.trim() : localValue;
       if (next !== value) onValueChangeRef.current(next);
     }, debounceMs);
     return () => window.clearTimeout(handle);
-  }, [localValue, debounceMs, value]);
+  }, [localValue, debounceMs, trimValue, value]);
 
   return (
     <div

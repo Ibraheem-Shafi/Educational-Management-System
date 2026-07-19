@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Receipt, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createFeeInvoiceSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import type { PaginatedResponse } from '@eims/types';
 import {
   Dialog,
@@ -14,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -50,6 +55,10 @@ export function CreateInvoiceDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createFeeInvoiceSchema);
 
   const { data: students } = useQuery({
     queryKey: ['students-fees'],
@@ -64,23 +73,19 @@ export function CreateInvoiceDialog({
   });
 
   useEffect(() => {
-    if (!open) setForm(emptyForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyForm);
+      setPickedBranchId('');
+      clearAll();
+    }
+  }, [open, clearAll]);
 
   const createMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: ReturnType<typeof buildPayload>) =>
       apiClient('/fee-invoices', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          branchId,
-          studentId: form.studentId,
-          feeTypeId: form.feeTypeId,
-          amount: Number(form.amount),
-          ...(form.discount ? { discount: Number(form.discount) } : {}),
-          ...(form.fine ? { fine: Number(form.fine) } : {}),
-          ...(form.dueDate ? { dueDate: new Date(form.dueDate).toISOString() } : {}),
-        }),
+        body: JSON.stringify(payload),
       }),
     onSuccess: () => {
       toast.success('Invoice created');
@@ -88,10 +93,30 @@ export function CreateInvoiceDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
-  const canSubmit = form.studentId && form.feeTypeId && form.amount && branchId;
+  function buildPayload() {
+    return {
+      branchId: effectiveBranchId,
+      studentId: form.studentId,
+      feeTypeId: form.feeTypeId,
+      amount: Number(form.amount),
+      ...(form.discount ? { discount: Number(form.discount) } : {}),
+      ...(form.fine ? { fine: Number(form.fine) } : {}),
+      ...(form.dueDate ? { dueDate: new Date(form.dueDate).toISOString() } : {}),
+    };
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    createMutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -114,27 +139,36 @@ export function CreateInvoiceDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            createMutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={(value) => {
+                  clearField('branchId');
+                  setPickedBranchId(value);
+                }}
+                error={errors.branchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown
                 aria-label="Student"
                 placeholder="Select student"
                 value={form.studentId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, studentId: value }))}
+                onValueChange={(value) => {
+                  clearField('studentId');
+                  setForm((prev) => ({ ...prev, studentId: value }));
+                }}
                 options={[
                   { value: '', label: 'Select student' },
                   ...(students?.data.map((s) => ({ value: s.id, label: s.fullName })) ?? []),
                 ]}
-                className="w-full"
+                className={fieldClassName('studentId', 'w-full')}
               />
+              <FormFieldError message={errors.studentId} />
             </div>
 
             <div>
@@ -143,13 +177,17 @@ export function CreateInvoiceDialog({
                 aria-label="Fee type"
                 placeholder="Select fee type"
                 value={form.feeTypeId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, feeTypeId: value }))}
+                onValueChange={(value) => {
+                  clearField('feeTypeId');
+                  setForm((prev) => ({ ...prev, feeTypeId: value }));
+                }}
                 options={[
                   { value: '', label: 'Select fee type' },
                   ...(feeTypes?.data.map((f) => ({ value: f.id, label: f.name })) ?? []),
                 ]}
-                className="w-full"
+                className={fieldClassName('feeTypeId', 'w-full')}
               />
+              <FormFieldError message={errors.feeTypeId} />
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -157,22 +195,29 @@ export function CreateInvoiceDialog({
                 <FormFieldLabel required>Amount (PKR)</FormFieldLabel>
                 <input
                   type="number"
-                  className={modalFieldClassName}
+                  className={fieldClassName('amount', modalFieldClassName)}
                   placeholder="Amount (PKR)"
                   value={form.amount}
-                  onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
-                  required
+                  onChange={(e) => {
+                    clearField('amount');
+                    setForm((prev) => ({ ...prev, amount: e.target.value }));
+                  }}
                 />
+                <FormFieldError message={errors.amount} />
               </div>
               <div>
                 <FormFieldLabel>Discount</FormFieldLabel>
                 <input
                   type="number"
-                  className={modalFieldClassName}
+                  className={fieldClassName('discount', modalFieldClassName)}
                   placeholder="Discount"
                   value={form.discount}
-                  onChange={(e) => setForm((prev) => ({ ...prev, discount: e.target.value }))}
+                  onChange={(e) => {
+                    clearField('discount');
+                    setForm((prev) => ({ ...prev, discount: e.target.value }));
+                  }}
                 />
+                <FormFieldError message={errors.discount} />
               </div>
             </div>
 
@@ -181,20 +226,28 @@ export function CreateInvoiceDialog({
                 <FormFieldLabel>Late fine</FormFieldLabel>
                 <input
                   type="number"
-                  className={modalFieldClassName}
+                  className={fieldClassName('fine', modalFieldClassName)}
                   placeholder="Late fine"
                   value={form.fine}
-                  onChange={(e) => setForm((prev) => ({ ...prev, fine: e.target.value }))}
+                  onChange={(e) => {
+                    clearField('fine');
+                    setForm((prev) => ({ ...prev, fine: e.target.value }));
+                  }}
                 />
+                <FormFieldError message={errors.fine} />
               </div>
               <div>
                 <FormFieldLabel>Due date</FormFieldLabel>
                 <input
                   type="date"
-                  className={modalFieldClassName}
+                  className={fieldClassName('dueDate', modalFieldClassName)}
                   value={form.dueDate}
-                  onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                  onChange={(e) => {
+                    clearField('dueDate');
+                    setForm((prev) => ({ ...prev, dueDate: e.target.value }));
+                  }}
                 />
+                <FormFieldError message={errors.dueDate} />
               </div>
             </div>
           </div>
@@ -213,7 +266,7 @@ export function CreateInvoiceDialog({
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending || !canSubmit}
+              disabled={createMutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

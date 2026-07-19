@@ -1,3 +1,5 @@
+import { prismaBranchFilter, prismaBranchIdFilter, scopeCacheKey, requireSingleBranchId, sqlBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -25,32 +27,32 @@ export class BranchesService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<BranchesStatsResponse> {
-    const cacheKey = `branches:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<BranchesStatsResponse> {
+    const cacheKey = `branches:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<BranchesStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildStats(branchId);
+    const result = await this.buildStats(scope);
     this.ttlCache.set(cacheKey, result, STATS_CACHE_TTL_MS);
     return result;
   }
 
-  async findAll(query: ListBranchesQuery, branchId: string | null) {
+  async findAll(query: ListBranchesQuery, scope: BranchScope) {
     if (query.page !== undefined) {
-      return this.findAllPaginated({ ...query, page: query.page }, branchId);
+      return this.findAllPaginated({ ...query, page: query.page }, scope);
     }
-    return this.findAllSimple(branchId);
+    return this.findAllSimple(scope);
   }
 
-  private async findAllSimple(branchId: string | null) {
-    const cacheKey = `branches:list:${branchId ?? 'all'}`;
+  private async findAllSimple(scope: BranchScope) {
+    const cacheKey = `branches:list:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<{ data: Branch[] }>(cacheKey);
     if (cached) return cached;
 
     const branches = await this.prisma.branch.findMany({
       where: {
         deletedAt: null,
-        ...(branchId ? { id: branchId } : {}),
+        ...(prismaBranchIdFilter(scope)),
       },
       orderBy: { name: 'asc' },
     });
@@ -61,18 +63,20 @@ export class BranchesService {
 
   private async findAllPaginated(
     query: ListBranchesQuery & { page: number },
-    branchId: string | null,
+    scope: BranchScope,
   ): Promise<PaginatedResponse<BranchListRow>> {
     const where = {
       deletedAt: null,
-      ...(branchId ? { id: branchId } : {}),
+      ...(prismaBranchIdFilter(scope)),
       ...(query.status === 'active' ? { isActive: true } : {}),
       ...(query.status === 'inactive' ? { isActive: false } : {}),
       ...(query.search
         ? {
             OR: [
               { name: { contains: query.search, mode: 'insensitive' as const } },
-              { code: { contains: query.search, mode: 'insensitive' as const } },
+              // Branch IDs render as BR-<code>; strip the prefix so searching by
+              // the visible branch ID matches the underlying code.
+              { code: { contains: query.search.replace(/^BR-/i, ''), mode: 'insensitive' as const } },
               { id: { contains: query.search, mode: 'insensitive' as const } },
             ],
           }
@@ -191,12 +195,12 @@ export class BranchesService {
     };
   }
 
-  async findOne(id: string, branchId: string | null): Promise<BranchDetailResponse> {
+  async findOne(id: string, scope: BranchScope): Promise<BranchDetailResponse> {
     const branch = await this.prisma.branch.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { id: branchId } : {}),
+        ...(scope.kind === 'selected' ? { AND: [prismaBranchIdFilter(scope)] } : {}),
       },
     });
     if (!branch) throw new NotFoundException('Branch not found');
@@ -421,14 +425,14 @@ export class BranchesService {
   async update(
     id: string,
     input: UpdateBranchInput,
-    branchId: string | null,
+    scope: BranchScope,
     user: AuthUser,
   ) {
     const existing = await this.prisma.branch.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(branchId ? { id: branchId } : {}),
+        ...(scope.kind === 'selected' ? { AND: [prismaBranchIdFilter(scope)] } : {}),
       },
     });
     if (!existing) throw new NotFoundException('Branch not found');
@@ -466,9 +470,13 @@ export class BranchesService {
     return this.toResponse(branch);
   }
 
-  async deactivate(id: string, branchId: string | null, user: AuthUser) {
+  async deactivate(id: string, scope: BranchScope, user: AuthUser) {
     const existing = await this.prisma.branch.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { id: branchId } : {}) },
+      where: {
+        id,
+        deletedAt: null,
+        ...(scope.kind === 'selected' ? { AND: [prismaBranchIdFilter(scope)] } : {}),
+      },
     });
     if (!existing) throw new NotFoundException('Branch not found');
 
@@ -494,14 +502,14 @@ export class BranchesService {
     this.ttlCache.deleteByPrefix('branches:');
   }
 
-  private async buildStats(branchId: string | null): Promise<BranchesStatsResponse> {
+  private async buildStats(scope: BranchScope): Promise<BranchesStatsResponse> {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
 
     const branchWhere = {
       deletedAt: null,
-      ...(branchId ? { id: branchId } : {}),
+      ...(prismaBranchIdFilter(scope)),
     };
     const branchWherePrevious = {
       ...branchWhere,
@@ -512,7 +520,7 @@ export class BranchesService {
     const inactiveBranchWhere = { ...branchWhere, isActive: false };
     const inactiveBranchWherePrevious = { ...branchWherePrevious, isActive: false };
 
-    const studentWhere = { deletedAt: null, ...(branchId ? { branchId } : {}) };
+    const studentWhere = { deletedAt: null, ...prismaBranchFilter(scope) };
     const studentWherePrevious = { ...studentWhere, createdAt: { lte: thirtyDaysAgo } };
 
     const [

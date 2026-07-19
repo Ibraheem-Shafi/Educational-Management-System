@@ -1,12 +1,19 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Mail, Phone } from 'lucide-react';
 import type { DashboardBranchPerformanceResponse } from '@eims/types';
+import { useAuth } from '@/providers/auth-provider';
+import { apiClient } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 
 function formatStudentCount(value: number): string {
@@ -62,16 +69,44 @@ function AttendanceCell({ rate }: { rate: number }) {
 }
 
 export function BranchPerformanceCard({
-  data,
-  isLoading,
+  isLoading: isLoadingProp,
   showViewAll = false,
 }: {
-  data?: DashboardBranchPerformanceResponse;
+  /** When true, renders skeleton without fetching. */
   isLoading?: boolean;
   /** Requires `branches.manage`. */
   showViewAll?: boolean;
 }) {
-  if (isLoading || !data) {
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+
+  const scope = usePageBranchScopeOptional();
+  const scopeKey = scope?.scopeKey ?? 'all';
+
+  const { data, isLoading: queryLoading } = useQuery({
+    queryKey: [...queryKeys.dashboardBranchPerformance, scopeKey, page, limit],
+    queryFn: () =>
+      apiClient<DashboardBranchPerformanceResponse>(
+        scope
+          ? withBranchScope('/dashboard/branch-performance', scope.effectiveScope, { page, limit })
+          : `/dashboard/branch-performance?page=${page}&limit=${limit}`,
+        { token },
+      ),
+    enabled: !!token && !isLoadingProp,
+    placeholderData: (previous) => previous,
+  });
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const isLoading = isLoadingProp || queryLoading;
+  const branches = data?.data ?? [];
+
+  if (isLoading && !data) {
     return (
       <div className="overflow-hidden rounded-xl border border-stroke-soft-200 bg-neutral-0">
         <div className="flex flex-col gap-3 border-b border-stroke-soft-200 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
@@ -138,17 +173,17 @@ export function BranchPerformanceCard({
             </tr>
           </thead>
           <tbody>
-            {data.branches.length === 0 ? (
+            {branches.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-5 py-8 text-sm text-text-sub-500">
                   No branches found.
                 </td>
               </tr>
             ) : (
-              data.branches.map((branch, index) => (
+              branches.map((branch, index) => (
                 <tr
                   key={branch.id}
-                  className={cn(index < data.branches.length - 1 && 'border-b border-stroke-soft-200')}
+                  className={cn(index < branches.length - 1 && 'border-b border-stroke-soft-200')}
                 >
                   <td className="px-5 py-4 text-sm font-medium text-text-main-900">{branch.name}</td>
                   <td className="px-5 py-4 text-sm text-text-sub-500">{branch.addressLabel}</td>
@@ -199,6 +234,15 @@ export function BranchPerformanceCard({
           </tbody>
         </table>
       </div>
+      {data?.meta && data.meta.totalPages > 0 && (
+        <PaginationBar
+          page={page}
+          totalPages={data.meta.totalPages}
+          onPageChange={setPage}
+          limit={limit}
+          onLimitChange={handleLimitChange}
+        />
+      )}
     </div>
   );
 }

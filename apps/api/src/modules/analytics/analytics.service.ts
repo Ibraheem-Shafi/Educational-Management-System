@@ -4,14 +4,28 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import {
+  prismaBranchFilter,
+  scopeCacheKey,
+  sqlBranchFilter,
+} from '../../common/utils/branch-scope.util';
+import { selectedBranchScope } from '@eims/shared';
 import type {
   AnalyticsCorrelationQuery,
   AnalyticsPerformanceQuery,
   AnalyticsTrendsQuery,
   AnalyticsWeakSubjectsQuery,
+  BranchScope,
 } from '@eims/shared';
 
 const DASHBOARD_CACHE_TTL_MS = 45_000;
+
+/** Legacy query.branchId narrows an `all` scope; a resolved scope always wins. */
+function effectiveScope(scope: BranchScope, queryBranchId?: string | null): BranchScope {
+  if (scope.kind === 'selected') return scope;
+  if (queryBranchId) return selectedBranchScope([queryBranchId]);
+  return scope;
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -21,8 +35,8 @@ export class AnalyticsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getAttendanceTrends(query: AnalyticsTrendsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getAttendanceTrends(query: AnalyticsTrendsQuery, scope: BranchScope) {
+    const effective = effectiveScope(scope, query.branchId);
     const from = new Date(query.from);
     const to = new Date(query.to);
 
@@ -35,9 +49,7 @@ export class AnalyticsService {
         )`
       : Prisma.empty;
 
-    const branchFilter = effectiveBranchId
-      ? Prisma.sql`AND ar."branchId" = ${effectiveBranchId}`
-      : Prisma.empty;
+    const branchFilter = sqlBranchFilter(effective, 'ar."branchId"');
 
     const rows = await this.prisma.$queryRaw<
       Array<{ date: Date; total: bigint; present: bigint }>
@@ -71,13 +83,13 @@ export class AnalyticsService {
     return { trends };
   }
 
-  async getPerformance(query: AnalyticsPerformanceQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getPerformance(query: AnalyticsPerformanceQuery, scope: BranchScope) {
+    const effective = effectiveScope(scope, query.branchId);
 
     const students = await this.prisma.student.findMany({
       where: {
         deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
       },
       select: { id: true, fullName: true, batchId: true },
@@ -129,10 +141,10 @@ export class AnalyticsService {
     return { subjects, students: studentPerformance };
   }
 
-  async getRankings(branchId: string | null, assessmentId?: string) {
+  async getRankings(scope: BranchScope, assessmentId?: string) {
     const assessments = await this.prisma.assessment.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
         ...(assessmentId ? { id: assessmentId } : {}),
       },
       orderBy: { conductedAt: 'desc' },
@@ -172,13 +184,13 @@ export class AnalyticsService {
     return { rankings: results };
   }
 
-  async getWeakSubjects(query: AnalyticsWeakSubjectsQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getWeakSubjects(query: AnalyticsWeakSubjectsQuery, scope: BranchScope) {
+    const effective = effectiveScope(scope, query.branchId);
 
     const students = await this.prisma.student.findMany({
       where: {
         deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
       },
       select: { id: true, fullName: true },
@@ -226,9 +238,9 @@ export class AnalyticsService {
 
   async getAttendancePerformanceCorrelation(
     query: AnalyticsCorrelationQuery,
-    branchId: string | null,
+    scope: BranchScope,
   ) {
-    const effectiveBranchId = branchId ?? query.branchId;
+    const effective = effectiveScope(scope, query.branchId);
     const periodDays = 30;
     const since = new Date();
     since.setDate(since.getDate() - periodDays);
@@ -236,7 +248,7 @@ export class AnalyticsService {
     const students = await this.prisma.student.findMany({
       where: {
         deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+        ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
       },
       select: { id: true, fullName: true },
@@ -257,7 +269,7 @@ export class AnalyticsService {
           entityType: 'student',
           entityId: { in: studentIds },
           date: { gte: since },
-          ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+          ...prismaBranchFilter(effective),
         },
         select: { entityId: true, statusId: true },
       }),
@@ -327,18 +339,19 @@ export class AnalyticsService {
     return { periodDays, correlation, students: dataPoints };
   }
 
-  async getDashboardKpis(branchId: string | null) {
-    const cacheKey = `analytics:dashboard:${branchId ?? 'all'}`;
+  async getDashboardKpis(scope: BranchScope) {
+    const cacheKey = `analytics:dashboard:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<Awaited<ReturnType<AnalyticsService['buildDashboardKpis']>>>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildDashboardKpis(branchId);
+    const result = await this.buildDashboardKpis(scope);
     this.ttlCache.set(cacheKey, result, DASHBOARD_CACHE_TTL_MS);
     return result;
   }
 
-  private async buildDashboardKpis(branchId: string | null) {
-    const branchFilter = branchId ? { branchId } : {};
+  private async buildDashboardKpis(scope: BranchScope) {
+    const branchFilter = prismaBranchFilter(scope);
+    const studentBranchFilter = scope.kind === 'selected' ? branchFilter : undefined;
     const now = new Date();
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -386,7 +399,7 @@ export class AnalyticsService {
         where: {
           percentage: { not: null },
           assessment: { conductedAt: { gte: thirtyDaysAgo } },
-          student: branchId ? { branchId } : undefined,
+          student: studentBranchFilter,
         },
         _avg: { percentage: true },
       }),
@@ -394,7 +407,7 @@ export class AnalyticsService {
         where: {
           percentage: { not: null },
           assessment: { conductedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
-          student: branchId ? { branchId } : undefined,
+          student: studentBranchFilter,
         },
         _avg: { percentage: true },
       }),

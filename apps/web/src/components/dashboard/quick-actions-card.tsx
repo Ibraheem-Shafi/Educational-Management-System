@@ -78,9 +78,9 @@ export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
           <Skeleton className="h-6 w-32" />
           <Skeleton className="mt-2 h-4 w-44" />
         </div>
-        <div className="grid grid-cols-2 gap-3 p-5">
+        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
           {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-[88px] rounded-xl" />
+            <Skeleton key={index} className="h-[60px] rounded-xl sm:h-[88px]" />
           ))}
         </div>
       </div>
@@ -96,9 +96,9 @@ export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-5">
+      <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
         {actions.length === 0 ? (
-          <p className="col-span-2 py-6 text-center text-sm text-text-sub-500">
+          <p className="py-6 text-center text-sm text-text-sub-500 sm:col-span-2">
             No quick actions available
           </p>
         ) : (
@@ -109,11 +109,12 @@ export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
                 key={action.label}
                 href={action.href}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-2 rounded-xl border border-stroke-soft-200',
-                  'bg-white px-3 py-4 text-center transition-colors hover:bg-neutral-50',
+                  'flex items-center gap-3 rounded-xl border border-stroke-soft-200',
+                  'bg-white px-4 py-3 transition-colors hover:bg-neutral-50',
+                  'sm:flex-col sm:justify-center sm:gap-2 sm:px-3 sm:py-4 sm:text-center',
                 )}
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EFF6FF]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF]">
                   <Icon className="h-5 w-5 text-[#2563EB]" strokeWidth={1.75} />
                 </span>
                 <span className="text-sm font-medium leading-5 text-text-main-900">

@@ -1,3 +1,5 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
@@ -13,12 +15,12 @@ export class AcademicStatsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<AcademicStatsResponse> {
-    const cacheKey = `academic:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<AcademicStatsResponse> {
+    const cacheKey = `academic:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<AcademicStatsResponse>(cacheKey);
     if (cached) return cached;
 
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const thirtyAgo = thirtyDaysAgo();
     const base = { deletedAt: null, ...branchFilter };
     const previous = { ...base, createdAt: { lte: thirtyAgo } };

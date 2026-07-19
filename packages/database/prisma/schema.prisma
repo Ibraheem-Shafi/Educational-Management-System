@@ -60,15 +60,29 @@ model User {
   gender         String?
   cnic           String?
   branchId       String?
+  department     String?
+  designation    String?
   isActive       Boolean   @default(true)
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  branch      Branch?       @relation(fields: [branchId], references: [id])
-  userRoles   UserRole[]
-  userSessions UserSession[]
+  branch               Branch?              @relation(fields: [branchId], references: [id])
+  userRoles            UserRole[]
+  userSessions         UserSession[]
+  employmentContracts  EmploymentContract[]
+  performanceReviews   PerformanceReview[]  @relation("ReviewSubject")
+  reviewsAuthored       PerformanceReview[]  @relation("ReviewAuthor")
+  documents             Document[]
+  libraryLoansBorrowed       LibraryLoan[]                @relation("LibraryLoanBorrower")
+  libraryLoansIssued         LibraryLoan[]                @relation("LibraryLoanIssuer")
+  libraryReservations        LibraryReservation[]         @relation("LibraryReservationBorrower")
+  transportStaffAssignments  TransportStaffAssignment[]
+  salaryStructures           SalaryStructure[]
+  payrollLines               PayrollLine[]
+  devicePushTokens           DevicePushToken[]
+  leaveRequests              LeaveRequest[]
 
   @@index([branchId])
   @@index([supabaseUserId])
@@ -258,8 +272,13 @@ model Student {
   studentSubjects   StudentSubject[]
   assessmentRecords AssessmentRecord[]
   feeInvoices       FeeInvoice[]
-  documents         Document[]
-  leaveRequests     LeaveRequest[]
+  documents            Document[]
+  leaveRequests        LeaveRequest[]
+  certificateIssues    CertificateIssue[]
+  libraryLoans         LibraryLoan[]
+  libraryReservations  LibraryReservation[]
+  transportAssignments StudentTransport[]
+  transportAttendance  TransportAttendance[]
 
   @@index([branchId])
   @@index([batchId])
@@ -317,22 +336,28 @@ model AssessmentSeries {
 }
 
 model Assessment {
-  id          String    @id @default(cuid())
-  branchId    String
-  name        String
-  typeId      String
-  seriesId    String?
-  sessionId   String?
-  totalMarks  Decimal   @db.Decimal(10, 2)
-  conductedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  branchId      String
+  name          String
+  typeId        String
+  seriesId      String?
+  sessionId     String?
+  totalMarks    Decimal   @db.Decimal(10, 2)
+  conductedAt   DateTime?
+  status        String    @default("draft")
+  publishedAt   DateTime?
+  publishedById String?
+  answerKey     String?
+  reviewNotes   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   series  AssessmentSeries?  @relation(fields: [seriesId], references: [id])
   records AssessmentRecord[]
 
   @@index([branchId])
   @@index([branchId, conductedAt])
+  @@index([branchId, status])
 }
 
 model AssessmentRecord {
@@ -424,7 +449,8 @@ model FeeInvoice {
   updatedAt   DateTime  @updatedAt
   createdById String?
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  payments FeePayment[]
 
   @@index([branchId])
   @@index([studentId])
@@ -532,6 +558,7 @@ model Document {
   id           String    @id @default(cuid())
   branchId     String
   studentId    String?
+  userId       String?
   category     String
   title        String
   storagePath  String
@@ -543,8 +570,10 @@ model Document {
   deletedAt    DateTime?
 
   student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
+  @@index([userId])
   @@index([branchId])
   @@index([category])
   @@index([branchId, deletedAt])
@@ -598,6 +627,10 @@ model LearningResource {
   audience         String    @default("all")
   dueAt            DateTime?
   maxMarks         Decimal?  @db.Decimal(10, 2)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  meetingUrl       String?
+  meetingPlatform  String?
   isPublished      Boolean   @default(false)
   publishedAt      DateTime?
   createdById      String?
@@ -611,6 +644,7 @@ model LearningResource {
   @@index([batchId])
   @@index([subjectId])
   @@index([dueAt])
+  @@index([startsAt])
   @@index([isPublished, deletedAt])
 }
 
@@ -630,8 +664,11 @@ model LearningAttachment {
 
 model LeaveRequest {
   id           String   @id @default(cuid())
-  studentId    String
+  /** student = parent-submitted student absence; employee = staff leave */
+  kind         String   @default("student")
+  studentId    String?
   parentId     String?
+  userId       String?
   fromDate     DateTime @db.Date
   toDate       DateTime @db.Date
   reason       String
@@ -640,10 +677,699 @@ model LeaveRequest {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  parent  Parent? @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent  Parent?  @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
   @@index([parentId])
+  @@index([userId])
+  @@index([kind, status])
   @@index([status])
+}
+
+// --- Phase 4: Front office ---
+
+model AdmissionInquiry {
+  id                  String    @id @default(cuid())
+  branchId            String
+  fullName            String
+  phone               String?
+  email               String?
+  programInterest     String?
+  status              String    @default("new")
+  notes               String?
+  followUpAt          DateTime?
+  convertedStudentId  String?
+  createdById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([branchId, status])
+  @@index([convertedStudentId])
+}
+
+model Visitor {
+  id           String    @id @default(cuid())
+  branchId     String
+  fullName     String
+  phone        String?
+  purpose      String?
+  hostName     String?
+  checkedInAt  DateTime  @default(now())
+  checkedOutAt DateTime?
+  notes        String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([branchId, checkedInAt])
+}
+
+model ComplaintRequest {
+  id            String    @id @default(cuid())
+  branchId      String
+  type          String
+  subject       String
+  body          String
+  status        String    @default("open")
+  priority      String    @default("normal")
+  requesterName String?
+  requesterPhone String?
+  assignedToId  String?
+  resolvedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([branchId, status])
+  @@index([type])
+}
+
+model ReceptionActivity {
+  id          String   @id @default(cuid())
+  branchId    String
+  action      String
+  entityType  String?
+  entityId    String?
+  summary     String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([branchId, createdAt])
+}
+
+// --- Phase 4: Expanded HR ---
+
+model EmploymentContract {
+  id             String    @id @default(cuid())
+  userId         String
+  branchId       String
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+  employmentType String
+  salaryNote     String?
+  status         String    @default("active")
+  documentPath   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deletedAt])
+  @@index([branchId, deletedAt])
+}
+
+model PerformanceReview {
+  id           String   @id @default(cuid())
+  userId       String
+  branchId     String
+  periodLabel  String
+  reviewedAt   DateTime @db.Date
+  score        Decimal? @db.Decimal(5, 2)
+  summary      String
+  reviewedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  user       User  @relation("ReviewSubject", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ReviewAuthor", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, deletedAt])
+  @@index([branchId, deletedAt])
+}
+
+// --- Phase 4: Certificates ---
+
+model CertificateTemplate {
+  id        String   @id @default(cuid())
+  branchId  String?
+  type      String
+  name      String
+  fields    Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issues CertificateIssue[]
+
+  @@index([type, isActive])
+  @@index([branchId])
+}
+
+model CertificateIssue {
+  id         String    @id @default(cuid())
+  branchId   String
+  studentId  String
+  templateId String
+  title      String
+  serialNo   String?
+  issuedAt   DateTime  @default(now())
+  issuedById String?
+  meta       Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  template CertificateTemplate @relation(fields: [templateId], references: [id])
+  student  Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, deletedAt])
+  @@index([studentId])
+  @@index([templateId])
+}
+
+// --- Phase 5: Library ---
+
+model LibraryCategory {
+  id        String    @id @default(cuid())
+  branchId  String
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  books LibraryBook[]
+
+  @@index([branchId, deletedAt])
+}
+
+model LibraryBook {
+  id          String    @id @default(cuid())
+  branchId    String
+  categoryId  String?
+  title       String
+  author      String
+  publisher   String?
+  edition     String?
+  isbn        String?
+  accessionNo String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  category     LibraryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  copies       LibraryCopy[]
+  reservations LibraryReservation[]
+
+  @@index([branchId, deletedAt])
+  @@index([branchId, accessionNo])
+  @@index([categoryId])
+}
+
+model LibraryCopy {
+  id        String    @id @default(cuid())
+  bookId    String
+  copyCode  String
+  status    String    @default("available")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  book  LibraryBook   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  loans LibraryLoan[]
+
+  @@unique([bookId, copyCode])
+  @@index([bookId, deletedAt])
+  @@index([status])
+}
+
+model LibraryLoan {
+  id           String    @id @default(cuid())
+  copyId       String
+  borrowerType String
+  studentId    String?
+  userId       String?
+  issuedAt     DateTime  @default(now())
+  dueAt        DateTime
+  returnedAt   DateTime?
+  renewedCount Int       @default(0)
+  issuedById   String?
+  branchId     String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  copy     LibraryCopy   @relation(fields: [copyId], references: [id])
+  student  Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  user     User?         @relation("LibraryLoanBorrower", fields: [userId], references: [id], onDelete: SetNull)
+  issuedBy User?         @relation("LibraryLoanIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  fines    LibraryFine[]
+
+  @@index([branchId])
+  @@index([copyId])
+  @@index([studentId])
+  @@index([userId])
+  @@index([returnedAt])
+}
+
+model LibraryReservation {
+  id           String    @id @default(cuid())
+  bookId       String
+  borrowerType String
+  studentId    String?
+  userId       String?
+  status       String    @default("active")
+  reservedAt   DateTime  @default(now())
+  branchId     String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  book    LibraryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  student Student?    @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  user    User?       @relation("LibraryReservationBorrower", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, deletedAt])
+  @@index([bookId, status])
+  @@index([studentId])
+  @@index([userId])
+}
+
+model LibraryFine {
+  id        String   @id @default(cuid())
+  loanId    String
+  branchId  String
+  amount    Decimal  @db.Decimal(10, 2)
+  status    String   @default("unpaid")
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loan LibraryLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, status])
+  @@index([loanId])
+}
+
+// --- Phase 5: Transport ---
+
+model TransportVehicle {
+  id          String    @id @default(cuid())
+  branchId    String
+  plateNumber String
+  makeModel   String?
+  capacity    Int?
+  status      String    @default("active")
+  gpsDeviceId String?
+  lastLat     Decimal?  @db.Decimal(10, 7)
+  lastLng     Decimal?  @db.Decimal(10, 7)
+  lastPingAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  staffAssignments TransportStaffAssignment[]
+  trips            TransportTrip[]
+  documents        TransportVehicleDocument[]
+
+  @@unique([branchId, plateNumber])
+  @@index([branchId, deletedAt])
+  @@index([gpsDeviceId])
+}
+
+model TransportStaffAssignment {
+  id        String   @id @default(cuid())
+  vehicleId String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicle TransportVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, userId, role])
+  @@index([vehicleId])
+  @@index([userId])
+}
+
+model TransportRoute {
+  id        String    @id @default(cuid())
+  branchId  String
+  name      String
+  code      String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  stops       TransportStop[]
+  assignments StudentTransport[]
+  trips       TransportTrip[]
+
+  @@index([branchId, deletedAt])
+}
+
+model TransportStop {
+  id          String   @id @default(cuid())
+  routeId     String
+  name        String
+  sequence    Int
+  pickupTime  String?
+  dropoffTime String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  route       TransportRoute     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  assignments StudentTransport[]
+
+  @@unique([routeId, sequence])
+  @@index([routeId])
+}
+
+model StudentTransport {
+  id        String    @id @default(cuid())
+  studentId String
+  routeId   String
+  stopId    String
+  direction String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  route   TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop    TransportStop  @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, deletedAt])
+  @@index([routeId, deletedAt])
+  @@index([stopId])
+}
+
+model TransportTrip {
+  id        String   @id @default(cuid())
+  routeId   String
+  vehicleId String?
+  tripDate  DateTime @db.Date
+  direction String
+  status    String   @default("scheduled")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  route      TransportRoute        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  vehicle    TransportVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  attendance TransportAttendance[]
+
+  @@index([routeId, tripDate])
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model TransportAttendance {
+  id         String   @id @default(cuid())
+  tripId     String
+  studentId  String
+  status     String
+  recordedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  trip    TransportTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, studentId])
+  @@index([tripId])
+  @@index([studentId])
+}
+
+model TransportVehicleDocument {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  title       String
+  storagePath String
+  mimeType    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vehicle TransportVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+}
+
+// --- Phase 6: Payroll ---
+
+model SalaryStructure {
+  id           String    @id @default(cuid())
+  userId       String
+  branchId     String
+  basicSalary  Decimal   @db.Decimal(12, 2)
+  effectiveFrom DateTime @db.Date
+  effectiveTo  DateTime? @db.Date
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  components SalaryComponent[]
+
+  @@index([userId, deletedAt])
+  @@index([branchId, deletedAt])
+  @@index([userId, isActive])
+}
+
+model SalaryComponent {
+  id             String   @id @default(cuid())
+  structureId    String
+  kind           String
+  name           String
+  amount         Decimal  @db.Decimal(12, 2)
+  percentOfBasic Decimal? @db.Decimal(5, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  structure SalaryStructure @relation(fields: [structureId], references: [id], onDelete: Cascade)
+
+  @@index([structureId])
+}
+
+model PayrollRun {
+  id           String    @id @default(cuid())
+  branchId     String
+  year         Int
+  month        Int
+  status       String    @default("draft")
+  approvedById String?
+  finalizedAt  DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lines PayrollLine[]
+
+  @@unique([branchId, year, month])
+  @@index([branchId, status])
+}
+
+model PayrollLine {
+  id                   String   @id @default(cuid())
+  runId                String
+  userId               String
+  basicSalary          Decimal  @db.Decimal(12, 2)
+  allowancesTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  deductionsTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  adjustmentsTotal     Decimal  @default(0) @db.Decimal(12, 2)
+  netPay               Decimal  @db.Decimal(12, 2)
+  attendancePresentDays Int     @default(0)
+  attendanceAbsentDays Int      @default(0)
+  workingDays          Int      @default(0)
+  breakdown            Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, userId])
+  @@index([userId])
+}
+
+// --- Phase 6: Fee payments ---
+
+model FeePayment {
+  id           String    @id @default(cuid())
+  invoiceId    String
+  branchId     String
+  amount       Decimal   @db.Decimal(12, 2)
+  method       String
+  provider     String    @default("manual")
+  providerRef  String?
+  status       String    @default("pending")
+  paidAt       DateTime?
+  recordedById String?
+  meta         Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([branchId, status])
+  @@index([providerRef])
+}
+
+// --- Phase 6: Accounting ---
+
+model Account {
+  id        String    @id @default(cuid())
+  branchId  String?
+  code      String
+  name      String
+  type      String
+  isSystem  Boolean   @default(false)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  journalLines JournalLine[]
+  budgetLines  BudgetLine[]
+
+  @@unique([code, branchId])
+  @@index([type, isActive])
+  @@index([branchId, deletedAt])
+}
+
+model JournalVoucher {
+  id          String    @id @default(cuid())
+  branchId    String
+  voucherType String
+  voucherNo   String
+  voucherDate DateTime  @db.Date
+  narration   String?
+  status      String    @default("draft")
+  sourceType  String?
+  sourceId    String?
+  postedAt    DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lines JournalLine[]
+
+  @@unique([branchId, voucherNo])
+  @@index([branchId, voucherDate])
+  @@index([status])
+  @@index([sourceType, sourceId])
+}
+
+model JournalLine {
+  id        String  @id @default(cuid())
+  voucherId String
+  accountId String
+  debit     Decimal @default(0) @db.Decimal(14, 2)
+  credit    Decimal @default(0) @db.Decimal(14, 2)
+  memo      String?
+
+  voucher JournalVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  account Account        @relation(fields: [accountId], references: [id])
+
+  @@index([voucherId])
+  @@index([accountId])
+}
+
+model Budget {
+  id        String   @id @default(cuid())
+  branchId  String?
+  year      Int
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines BudgetLine[]
+
+  @@index([branchId, year])
+}
+
+model BudgetLine {
+  id        String  @id @default(cuid())
+  budgetId  String
+  accountId String
+  amount    Decimal @db.Decimal(14, 2)
+
+  budget  Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([budgetId, accountId])
+  @@index([accountId])
+}
+
+// --- Phase 7: Biometric attendance readiness ---
+
+model BiometricDevice {
+  id         String    @id @default(cuid())
+  branchId   String
+  name       String
+  vendor     String    @default("generic")
+  deviceCode String    @unique
+  location   String?
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  externalIds BiometricExternalId[]
+  punchLogs   BiometricPunchLog[]
+
+  @@index([branchId, deletedAt])
+  @@index([branchId, isActive])
+}
+
+model BiometricExternalId {
+  id               String   @id @default(cuid())
+  branchId         String
+  deviceId         String?
+  externalPersonId String
+  entityType       String
+  entityId         String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  device BiometricDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@unique([branchId, externalPersonId])
+  @@index([deviceId])
+  @@index([entityType, entityId])
+}
+
+model BiometricPunchLog {
+  id                 String   @id @default(cuid())
+  deviceId           String
+  externalPersonId   String
+  punchedAt          DateTime
+  payload            Json?
+  matched            Boolean  @default(false)
+  attendanceRecordId String?
+  createdAt          DateTime @default(now())
+
+  device BiometricDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, punchedAt])
+  @@index([externalPersonId])
+}
+
+// --- Phase 7: Push token readiness ---
+
+model DevicePushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  platform  String   @default("android")
+  token     String   @unique
+  appRole   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([appRole])
 }

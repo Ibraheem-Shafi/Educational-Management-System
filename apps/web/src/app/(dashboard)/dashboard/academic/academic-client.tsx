@@ -5,11 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
-import type { AcademicStatsResponse, ProgramListItem } from '@eims/types';
+import { PERMISSIONS, updateAcademicSessionSchema } from '@eims/shared';
+import type { AcademicStatsResponse, PaginatedResponse, ProgramListItem } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,9 +27,10 @@ import {
 import { MainStatsSection, type MainStatItem } from '@/components/layout/main-stats-section';
 import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { CreateBatchDialog } from '@/components/features/academic/create-batch-dialog';
 import { EditBatchDialog } from '@/components/features/academic/edit-batch-dialog';
 import { CreateSubjectDialog } from '@/components/features/academic/create-subject-dialog';
@@ -37,11 +44,6 @@ const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 type AcademicTab = 'programs' | 'batches' | 'subjects' | 'sessions';
-
-interface Branch {
-  id: string;
-  name: string;
-}
 
 interface Subject {
   id: string;
@@ -92,13 +94,14 @@ function tabStats(tab: AcademicTab, stats?: AcademicStatsResponse): MainStatItem
 
 export default function AcademicPage() {
   const router = useRouter();
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.ACADEMIC_MANAGE);
   const [tab, setTab] = useState<AcademicTab>('programs');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
 
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
   const [createSubjectOpen, setCreateSubjectOpen] = useState(false);
@@ -114,64 +117,101 @@ export default function AcademicPage() {
   const [editSessionStart, setEditSessionStart] = useState('');
   const [editSessionEnd, setEditSessionEnd] = useState('');
   const [editSessionCurrent, setEditSessionCurrent] = useState(false);
+  const {
+    errors: sessionErrors,
+    validate: validateSession,
+    clearField: clearSessionField,
+    fieldClassName: sessionFieldClassName,
+    applyApiErrors: applySessionApiErrors,
+    clearAll: clearSessionErrors,
+  } = useFormErrors(updateAcademicSessionSchema);
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: Branch[] }>('/branches', { token }),
-    enabled: !!token,
-  });
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  const handleTabChange = (next: string) => {
+    setTab(next as AcademicTab);
+    setPage(1);
+  };
+
+  const subjectsQueryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }).toString();
+
+  const sessionsQueryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }).toString();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.academicStats(tab),
-    queryFn: () => apiClient<AcademicStatsResponse>('/academic/stats', { token }),
+    queryKey: [...queryKeys.academicStats(tab), scopeKey],
+    queryFn: () =>
+      apiClient<AcademicStatsResponse>(withBranchScope('/academic/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: programs, isLoading: programsLoading } = useQuery({
-    queryKey: queryKeys.programs(effectiveBranchId),
+    queryKey: queryKeys.programs(scopeKey, { page, limit }),
     queryFn: () =>
-      apiClient<{ data: ProgramListItem[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
-    enabled: !!token && !!effectiveBranchId && (tab === 'programs' || tab === 'batches'),
+      apiClient<PaginatedResponse<ProgramListItem>>(
+        withBranchScope('/programs', effectiveScope, { page, limit }),
+        { token },
+      ),
+    enabled: !!token && tab === 'programs',
+    placeholderData: (previous) => previous,
+  });
+
+  const { data: programOptionsData } = useQuery({
+    queryKey: queryKeys.programs(singleBranchId ?? '', { options: true, limit: 100 }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<ProgramListItem>>(
+        `/programs?branchId=${singleBranchId}&limit=100`,
+        { token },
+      ),
+    enabled: !!token && !!singleBranchId && (tab === 'batches' || createBatchOpen),
   });
 
   const { data: subjects, isLoading: subjectsLoading } = useQuery({
-    queryKey: queryKeys.subjects,
-    queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
+    queryKey: [...queryKeys.subjects, { page, limit }],
+    queryFn: () =>
+      apiClient<PaginatedResponse<Subject>>(`/subjects?${subjectsQueryParams}`, { token }),
     enabled: !!token && tab === 'subjects',
+    placeholderData: (previous) => previous,
   });
 
   const { data: batches, isLoading: batchesLoading } = useQuery({
-    queryKey: ['batches', effectiveBranchId],
+    queryKey: queryKeys.batches(scopeKey, undefined, { page, limit }),
     queryFn: () =>
-      apiClient<{ data: Batch[] }>(`/batches?branchId=${effectiveBranchId}`, { token }),
-    enabled: !!token && !!effectiveBranchId && tab === 'batches',
+      apiClient<PaginatedResponse<Batch>>(
+        withBranchScope('/batches', effectiveScope, { page, limit }),
+        { token },
+      ),
+    enabled: !!token && tab === 'batches',
+    placeholderData: (previous) => previous,
   });
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['academic-sessions'],
-    queryFn: () => apiClient<{ data: Session[] }>('/academic-sessions', { token }),
+    queryKey: queryKeys.academicSessions({ page, limit }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<Session>>(`/academic-sessions?${sessionsQueryParams}`, { token }),
     enabled: !!token && tab === 'sessions',
+    placeholderData: (previous) => previous,
   });
 
-  const branchOptions = useMemo(
-    () => (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
-    [branches],
-  );
 
   const programOptions = useMemo(
-    () => (programs?.data ?? []).map((p) => ({ value: p.id, label: p.name })),
-    [programs],
+    () => (programOptionsData?.data ?? []).map((p) => ({ value: p.id, label: p.name })),
+    [programOptionsData],
   );
 
   const invalidateAcademic = () => {
     queryClient.invalidateQueries({ queryKey: ['programs'] });
     queryClient.invalidateQueries({ queryKey: queryKeys.programs() });
     queryClient.invalidateQueries({ queryKey: ['batches'] });
-    queryClient.invalidateQueries({ queryKey: ['subjects'] });
     queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
-    queryClient.invalidateQueries({ queryKey: ['academic-sessions'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.academicSessions() });
     queryClient.invalidateQueries({ queryKey: queryKeys.academicStats() });
   };
 
@@ -182,8 +222,12 @@ export default function AcademicPage() {
       toast.success('Session updated');
       invalidateAcademic();
       setEditSessionId(null);
+      clearSessionErrors();
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applySessionApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const createAction = (() => {
@@ -224,23 +268,15 @@ export default function AcademicPage() {
           { id: 'sessions', label: 'Sessions' },
         ]}
         value={tab}
-        onValueChange={(id) => setTab(id as AcademicTab)}
+        onValueChange={handleTabChange}
       />
 
-      {!user?.branchId && tab !== 'subjects' && tab !== 'sessions' && (
-        <SelectDropdown
-          aria-label="Branch"
-          placeholder="Select branch"
-          value={branchId}
-          onValueChange={setBranchId}
-          options={branchOptions}
-        />
-      )}
+      {tab !== 'subjects' && tab !== 'sessions' && <PageBranchScopeControl />}
 
       <MainStatsSection isLoading={statsLoading} stats={tabStats(tab, stats)} />
 
       {tab === 'programs' && (
-        <ContentPanel title={`Programs (${programs?.data.length ?? 0})`}>
+        <ContentPanel title={`Programs (${programs?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-separate border-spacing-0">
               <thead>
@@ -252,15 +288,15 @@ export default function AcademicPage() {
                 </tr>
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
-                {programsLoading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={4} className={tdClass}>
-                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    </tr>
-                  ))}
-                {!programsLoading &&
+                {programsLoading ? (
+                  <DataTableSkeletonRows columns={4} rows={limit} />
+                ) : (programs?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                      No programs found
+                    </td>
+                  </tr>
+                ) : (
                   programs?.data.map((p) => (
                     <tr key={p.id} className="hover:bg-[var(--neutral-50)]/50">
                       <td className={tdClass}>{p.name}</td>
@@ -284,15 +320,29 @@ export default function AcademicPage() {
                         ) : null}
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {programs?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={programs.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </ContentPanel>
       )}
 
       {tab === 'batches' && (
-        <ContentPanel title={`Batches (${batches?.data.length ?? 0})`}>
+        <ContentPanel title={`Batches (${batches?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] border-separate border-spacing-0">
               <thead>
@@ -303,15 +353,15 @@ export default function AcademicPage() {
                 </tr>
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
-                {batchesLoading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={3} className={tdClass}>
-                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    </tr>
-                  ))}
-                {!batchesLoading &&
+                {batchesLoading ? (
+                  <DataTableSkeletonRows columns={3} rows={limit} />
+                ) : (batches?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                      No batches found
+                    </td>
+                  </tr>
+                ) : (
                   batches?.data.map((b) => (
                     <tr key={b.id} className="hover:bg-[var(--neutral-50)]/50">
                       <td className={tdClass}>{b.name}</td>
@@ -329,15 +379,29 @@ export default function AcademicPage() {
                         ) : null}
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {batches?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={batches.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </ContentPanel>
       )}
 
       {tab === 'sessions' && (
-        <ContentPanel title={`Sessions (${sessions?.data.length ?? 0})`}>
+        <ContentPanel title={`Sessions (${sessions?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-separate border-spacing-0">
               <thead>
@@ -349,38 +413,54 @@ export default function AcademicPage() {
                 </tr>
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
-                {sessionsLoading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={4} className={tdClass}>
-                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    </tr>
-                  ))}
-                {!sessionsLoading &&
+                {sessionsLoading ? (
+                  <DataTableSkeletonRows columns={4} rows={limit} />
+                ) : (sessions?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                      No sessions found
+                    </td>
+                  </tr>
+                ) : (
                   sessions?.data.map((s) => (
                     <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
                       {editSessionId === s.id ? (
                         <>
                           <td className={tdClass}>
                             <Input
+                              className={sessionFieldClassName('name', '')}
                               value={editSessionName}
-                              onChange={(e) => setEditSessionName(e.target.value)}
+                              onChange={(e) => {
+                                setEditSessionName(e.target.value);
+                                clearSessionField('name');
+                              }}
                             />
+                            <FormFieldError message={sessionErrors.name} />
                           </td>
                           <td className={tdClass}>
                             <div className="flex gap-2">
                               <Input
                                 type="date"
+                                className={sessionFieldClassName('startDate', '')}
                                 value={editSessionStart}
-                                onChange={(e) => setEditSessionStart(e.target.value)}
+                                onChange={(e) => {
+                                  setEditSessionStart(e.target.value);
+                                  clearSessionField('startDate');
+                                }}
                               />
                               <Input
                                 type="date"
+                                className={sessionFieldClassName('endDate', '')}
                                 value={editSessionEnd}
-                                onChange={(e) => setEditSessionEnd(e.target.value)}
+                                onChange={(e) => {
+                                  setEditSessionEnd(e.target.value);
+                                  clearSessionField('endDate');
+                                }}
                               />
                             </div>
+                            <FormFieldError
+                              message={sessionErrors.startDate ?? sessionErrors.endDate}
+                            />
                           </td>
                           <td className={tdClass}>
                             <label className="flex items-center gap-2 text-sm">
@@ -397,21 +477,23 @@ export default function AcademicPage() {
                               <Button
                                 size="sm"
                                 disabled={updateSession.isPending}
-                                onClick={() =>
-                                  updateSession.mutate({
-                                    id: s.id,
-                                    body: {
-                                      name: editSessionName,
-                                      startDate: new Date(editSessionStart).toISOString(),
-                                      endDate: new Date(editSessionEnd).toISOString(),
-                                      isCurrent: editSessionCurrent,
-                                    },
-                                  })
-                                }
+                                onClick={() => {
+                                  const body = {
+                                    name: editSessionName.trim(),
+                                    startDate: new Date(editSessionStart).toISOString(),
+                                    endDate: new Date(editSessionEnd).toISOString(),
+                                    isCurrent: editSessionCurrent,
+                                  };
+                                  if (!validateSession(body)) return;
+                                  updateSession.mutate({ id: s.id, body });
+                                }}
                               >
                                 Save
                               </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditSessionId(null)}>
+                              <Button size="sm" variant="ghost" onClick={() => {
+                                setEditSessionId(null);
+                                clearSessionErrors();
+                              }}>
                                 Cancel
                               </Button>
                             </div>
@@ -433,6 +515,7 @@ export default function AcademicPage() {
                                   {
                                     label: 'Edit',
                                     onClick: () => {
+                                      clearSessionErrors();
                                       setEditSessionId(s.id);
                                       setEditSessionName(s.name);
                                       setEditSessionStart(s.startDate.slice(0, 10));
@@ -447,15 +530,29 @@ export default function AcademicPage() {
                         </>
                       )}
                     </tr>
-                  ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {sessions?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={sessions.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </ContentPanel>
       )}
 
       {tab === 'subjects' && (
-        <ContentPanel title={`Subjects (${subjects?.data.length ?? 0})`}>
+        <ContentPanel title={`Subjects (${subjects?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] border-separate border-spacing-0">
               <thead>
@@ -466,15 +563,15 @@ export default function AcademicPage() {
                 </tr>
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
-                {subjectsLoading &&
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={3} className={tdClass}>
-                        <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    </tr>
-                  ))}
-                {!subjectsLoading &&
+                {subjectsLoading ? (
+                  <DataTableSkeletonRows columns={3} rows={limit} />
+                ) : (subjects?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
+                      No subjects found
+                    </td>
+                  </tr>
+                ) : (
                   subjects?.data.map((s) => (
                     <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
                       <td className={tdClass}>{s.name}</td>
@@ -497,17 +594,31 @@ export default function AcademicPage() {
                         ) : null}
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {subjects?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={subjects.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </ContentPanel>
       )}
 
       <CreateBatchDialog
         open={createBatchOpen}
         onOpenChange={setCreateBatchOpen}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
         programOptions={programOptions}
       />
       <EditBatchDialog

@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -16,7 +17,7 @@ import { LearningService } from './learning.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createLearningResourceSchema,
@@ -41,23 +42,23 @@ export class LearningController {
 
   @Get('stats')
   @Permissions('learning.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.learningService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.learningService.getStats(scope);
   }
 
   @Get()
   @Permissions('learning.read')
   findAll(
     @Query(createZodPipe(listLearningQuerySchema)) query: ListLearningQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.learningService.findAll(query, branchId);
+    return this.learningService.findAll(query, scope);
   }
 
   @Get(':id')
   @Permissions('learning.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.learningService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.learningService.findOne(id, scope);
   }
 
   @Post()
@@ -76,9 +77,9 @@ export class LearningController {
     @Param('id') id: string,
     @Body(createZodPipe(updateLearningResourceSchema)) body: UpdateLearningResourceInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.learningService.update(id, body, user, branchId);
+    return this.learningService.update(id, body, user, scope);
   }
 
   @Delete(':id')
@@ -86,9 +87,9 @@ export class LearningController {
   remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.learningService.remove(id, user, branchId);
+    return this.learningService.remove(id, user, scope);
   }
 
   @Post(':id/attachments')
@@ -98,9 +99,9 @@ export class LearningController {
     @Param('id') id: string,
     @Body(createZodPipe(addLearningAttachmentSchema)) body: AddLearningAttachmentInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.learningService.addAttachment(id, body, user, branchId);
+    return this.learningService.addAttachment(id, body, user, scope);
   }
 
   @Get(':id/attachments/:attachmentId/signed-url')
@@ -108,8 +109,8 @@ export class LearningController {
   signedUrl(
     @Param('id') id: string,
     @Param('attachmentId') attachmentId: string,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.learningService.getAttachmentSignedUrl(id, attachmentId, branchId);
+    return this.learningService.getAttachmentSignedUrl(id, attachmentId, scope);
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,7 +8,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { useBatches } from '@/hooks/use-batches';
 import { useLookups } from '@/hooks/use-lookups';
 import { PageHeader } from '@/components/layout/page-header';
@@ -35,7 +37,7 @@ const MODE_TABS = [
 ] as const;
 
 export default function AttendancePage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -43,32 +45,32 @@ export default function AttendancePage() {
 
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [mode, setMode] = useState<AttendanceMode>('student');
-  const [branchId, setBranchId] = useState(user?.branchId ?? '');
   const [batchId, setBatchId] = useState('');
 
   const viewMonth = monthFromIso(selectedDate);
-  const { effectiveBranchId, branches } = useEffectiveBranchId(token, user?.branchId, branchId);
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
+  const effectiveBranchId = singleBranchId ?? '';
   const { data: batches } = useBatches(token, effectiveBranchId);
   const { data: statuses } = useLookups('attendance_status', token);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.attendanceStats,
-    queryFn: () => apiClient<AttendanceStatsResponse>('/attendance/stats', { token }),
+    queryKey: [...queryKeys.attendanceStats, scopeKey],
+    queryFn: () =>
+      apiClient<AttendanceStatsResponse>(withBranchScope('/attendance/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: trend, isLoading: trendLoading } = useQuery({
-    queryKey: queryKeys.attendanceTrend(viewMonth),
+    queryKey: [...queryKeys.attendanceTrend(viewMonth), scopeKey],
     queryFn: () =>
-      apiClient<AttendanceTrendResponse>(`/attendance/trend?month=${viewMonth}`, { token }),
+      apiClient<AttendanceTrendResponse>(
+        withBranchScope('/attendance/trend', effectiveScope, { month: viewMonth }),
+        { token },
+      ),
     enabled: !!token,
   });
-
-  useEffect(() => {
-    if (!batchId && batches?.data.length) {
-      setBatchId(batches.data[0].id);
-    }
-  }, [batches, batchId]);
 
   const gridQueryKey = ['attendance-grid', viewMonth, mode, batchId, effectiveBranchId];
 
@@ -162,11 +164,6 @@ export default function AttendancePage() {
     [batches],
   );
 
-  const branchOptions = useMemo(
-    () => (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
-    [branches],
-  );
-
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
@@ -213,19 +210,7 @@ export default function AttendancePage() {
             />
           )}
 
-          {!user?.branchId && (
-            <SelectDropdown
-              value={branchId}
-              onValueChange={(value) => {
-                setBranchId(value);
-                setBatchId('');
-              }}
-              options={branchOptions}
-              placeholder="Select branch"
-              aria-label="Branch"
-              className="min-w-[160px]"
-            />
-          )}
+          <PageBranchScopeControl />
         </div>
 
         <Tabs
@@ -235,6 +220,12 @@ export default function AttendancePage() {
           onValueChange={(id) => setMode(id as AttendanceMode)}
         />
       </div>
+
+      {!effectiveBranchId && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Select a single branch (app or page scope) to view and mark the attendance grid.
+        </p>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
         <AttendanceGrid

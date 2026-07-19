@@ -6,9 +6,15 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ZodSchema } from 'zod';
+import { createProgramSchema, updateProgramSchema } from '@eims/shared';
 import type { ProgramDetailResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { Button } from '@/components/ui/button';
 import {
@@ -71,6 +77,15 @@ export function ProgramForm({
   const [code, setCode] = useState('');
   const [batches, setBatches] = useState<DraftBatch[]>([newDraftBatch()]);
   const [hydrated, setHydrated] = useState(mode === 'create');
+  const programSchema = useMemo(
+    () =>
+      (mode === 'create' ? createProgramSchema : updateProgramSchema) as ZodSchema<
+        Record<string, unknown>
+      >,
+    [mode],
+  );
+  const { errors, validate, clearField, fieldClassName, applyApiErrors } =
+    useFormErrors(programSchema);
 
   const { data: branches } = useQuery({
     queryKey: queryKeys.branches,
@@ -78,7 +93,11 @@ export function ProgramForm({
     enabled: !!token,
   });
 
-  const effectiveBranchId = branchId || user?.branchId || branches?.data[0]?.id || '';
+  // Preselect scoped branch when scope is a single branch; require explicit
+  // pick when scope is All / multiple branches (no first-branch fallback).
+  const pageScope = usePageBranchScopeOptional();
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
+  const effectiveBranchId = branchId || user?.branchId || scopedSingleBranchId || '';
 
   const { data: subjects } = useQuery({
     queryKey: queryKeys.subjects,
@@ -116,36 +135,19 @@ export function ProgramForm({
   );
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      const payloadBatches = batches
-        .filter((b) => b.name.trim().length >= 2)
-        .map((b) => ({
-          ...(b.id ? { id: b.id } : {}),
-          name: b.name.trim(),
-          subjectIds: b.subjectIds,
-        }));
-
+    mutationFn: async (payload: Record<string, unknown>) => {
       if (mode === 'create') {
         return apiClient<ProgramDetailResponse>('/programs', {
           method: 'POST',
           token,
-          body: JSON.stringify({
-            branchId: effectiveBranchId,
-            name: name.trim(),
-            ...(code.trim() ? { code: code.trim() } : {}),
-            batches: payloadBatches,
-          }),
+          body: JSON.stringify(payload),
         });
       }
 
       return apiClient<ProgramDetailResponse>(`/programs/${programId}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({
-          name: name.trim(),
-          ...(code.trim() ? { code: code.trim() } : {}),
-          batches: payloadBatches,
-        }),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: () => {
@@ -156,8 +158,36 @@ export function ProgramForm({
       }
       router.push('/dashboard/academic');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const buildPayload = () => {
+    const payloadBatches = batches
+      .filter((b) => b.name.trim().length > 0)
+      .map((b) => ({
+        ...(b.id ? { id: b.id } : {}),
+        name: b.name.trim(),
+        subjectIds: b.subjectIds,
+      }));
+
+    if (mode === 'create') {
+      return {
+        branchId: effectiveBranchId,
+        name: name.trim(),
+        ...(code.trim() ? { code: code.trim() } : {}),
+        batches: payloadBatches,
+      };
+    }
+
+    return {
+      name: name.trim(),
+      ...(code.trim() ? { code: code.trim() } : {}),
+      batches: payloadBatches,
+    };
+  };
 
   const updateBatch = (key: string, patch: Partial<DraftBatch>) => {
     setBatches((prev) => prev.map((b) => (b.key === key ? { ...b, ...patch } : b)));
@@ -195,15 +225,9 @@ export function ProgramForm({
           className="space-y-6"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!effectiveBranchId) {
-              toast.error('Select a branch');
-              return;
-            }
-            if (name.trim().length < 2) {
-              toast.error('Program name is required');
-              return;
-            }
-            saveMutation.mutate();
+            const payload = buildPayload();
+            if (!validate(payload)) return;
+            saveMutation.mutate(payload);
           }}
         >
           <ContentPanel title="Program details">
@@ -222,31 +246,42 @@ export function ProgramForm({
                       aria-label="Branch"
                       placeholder="Select branch"
                       value={effectiveBranchId}
-                      onValueChange={setBranchId}
+                      onValueChange={(value) => {
+                        setBranchId(value);
+                        clearField('branchId');
+                      }}
                       options={[{ value: '', label: 'Select branch' }, ...branchOptions]}
+                      className={fieldClassName('branchId', 'w-full')}
                     />
                   )}
+                  <FormFieldError message={errors.branchId} />
                 </div>
               ) : null}
               <div>
                 <FormFieldLabel required>Program name</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('name', modalFieldClassName)}
                   placeholder="e.g. Intermediate"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  minLength={2}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    clearField('name');
+                  }}
                 />
+                <FormFieldError message={errors.name} />
               </div>
               <div>
                 <FormFieldLabel>Code</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('code', modalFieldClassName)}
                   placeholder="Optional code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    clearField('code');
+                  }}
                 />
+                <FormFieldError message={errors.code} />
               </div>
             </div>
           </ContentPanel>
@@ -275,11 +310,18 @@ export function ProgramForm({
                     <div className="min-w-0 flex-1">
                       <FormFieldLabel required>Batch {index + 1} name</FormFieldLabel>
                       <input
-                        className={modalFieldClassName}
+                        className={fieldClassName(
+                          `batches.${index}.name`,
+                          modalFieldClassName,
+                        )}
                         placeholder="e.g. Morning A"
                         value={batch.name}
-                        onChange={(e) => updateBatch(batch.key, { name: e.target.value })}
+                        onChange={(e) => {
+                          updateBatch(batch.key, { name: e.target.value });
+                          clearField(`batches.${index}.name`);
+                        }}
                       />
+                      <FormFieldError message={errors[`batches.${index}.name`]} />
                     </div>
                     {batches.length > 1 && !batch.id ? (
                       <Button
@@ -313,7 +355,7 @@ export function ProgramForm({
             <Button type="button" variant="ghost" onClick={() => router.push('/dashboard/academic')}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending || !effectiveBranchId}>
+            <Button type="submit" disabled={saveMutation.isPending}>
               {mode === 'create' ? 'Create program' : 'Save program'}
             </Button>
           </div>

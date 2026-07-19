@@ -31,7 +31,7 @@ function StatSkeleton({ count = 4 }: { count?: number }) {
     <div className="flex flex-col gap-2 py-[11px]" style={dashedBorderStyle}>
       <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
         {Array.from({ length: count }).map((_, i) => (
-          <div key={i} className="flex min-w-0 flex-1 flex-col gap-2 px-4 py-2">
+          <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-2 px-4 py-2 lg:items-start">
             <div className="h-4 w-24 animate-pulse rounded bg-[var(--neutral-50)]" />
             <div className="h-9 w-16 animate-pulse rounded bg-[var(--neutral-50)]" />
           </div>
@@ -73,8 +73,8 @@ export function MainStatsSection({
                 <VerticalSeparator className="hidden lg:flex" />
               </>
             )}
-            <div className="flex min-w-0 flex-1 flex-col gap-1 px-4 py-2 lg:px-5">
-              <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-4 py-2 text-center lg:items-start lg:px-5 lg:text-left">
+              <div className="flex items-start justify-center gap-2 lg:w-full lg:justify-between">
                 <p className="text-sm font-medium leading-5 text-[var(--base-muted-foreground)]">
                   {stat.label}
                 </p>

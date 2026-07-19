@@ -10,7 +10,9 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { useBatches } from '@/hooks/use-batches';
 import { queryKeys } from '@/lib/query-keys';
 import {
@@ -43,6 +45,7 @@ const TYPE_OPTIONS = [
   { value: 'resource', label: 'Resources' },
   { value: 'homework', label: 'Homework' },
   { value: 'syllabus', label: 'Syllabus' },
+  { value: 'online_class', label: 'Online class' },
 ];
 
 interface Subject {
@@ -59,7 +62,7 @@ function labelize(value: string) {
 }
 
 export default function LearningPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -73,10 +76,10 @@ export default function LearningPage() {
   const [publishedFilter, setPublishedFilter] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
-  const [branchSelection, setBranchSelection] = useState(user?.branchId ?? '');
-  const { effectiveBranchId, branches } = useEffectiveBranchId(token, user?.branchId, branchSelection);
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } =
+    useEffectiveBranchScope();
 
-  const { data: batches } = useBatches(token, effectiveBranchId, undefined, !!effectiveBranchId);
+  const { data: batches } = useBatches(token, singleBranchId ?? '', undefined, !!singleBranchId);
 
   const { data: subjects } = useQuery({
     queryKey: ['subjects'],
@@ -91,18 +94,21 @@ export default function LearningPage() {
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (effectiveBranchId) params.set('branchId', effectiveBranchId);
+    appendToSearchParams(params);
     if (type) params.set('type', type);
     if (batchId) params.set('batchId', batchId);
     if (subjectId) params.set('subjectId', subjectId);
     if (search) params.set('search', search);
     if (publishedFilter === 'published') params.set('publishedOnly', 'true');
     return params;
-  }, [batchId, effectiveBranchId, limit, page, publishedFilter, search, subjectId, type]);
+  }, [batchId, appendToSearchParams, limit, page, publishedFilter, search, subjectId, type]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.learningStats,
-    queryFn: () => apiClient<LearningStatsResponse>('/learning/stats', { token }),
+    queryKey: [...queryKeys.learningStats, scopeKey],
+    queryFn: () =>
+      apiClient<LearningStatsResponse>(withBranchScope('/learning/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
@@ -115,10 +121,10 @@ export default function LearningPage() {
       batchId,
       subjectId,
       publishedFilter,
-      branchId: effectiveBranchId,
+      scopeKey,
     }),
     queryFn: () => apiClient<PaginatedResponse<LearningResourceResponse>>(`/learning?${queryParams}`, { token }),
-    enabled: !!token && !!effectiveBranchId,
+    enabled: !!token,
   });
 
   const rows = useMemo(() => {
@@ -185,7 +191,7 @@ export default function LearningPage() {
           if (!open) setEditing(null);
           setOpenCreate(open);
         }}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
         resource={editing}
       />
 
@@ -233,15 +239,7 @@ export default function LearningPage() {
             ...(subjects?.data.map((s) => ({ value: s.id, label: s.name })) ?? []),
           ]}
         />
-        {!user?.branchId && branches?.data && branches.data.length > 1 && (
-          <SelectDropdown
-            aria-label="Branch"
-            placeholder="Branch"
-            value={branchSelection}
-            onValueChange={setBranchSelection}
-            options={branches.data.map((b) => ({ value: b.id, label: b.name }))}
-          />
-        )}
+        <PageBranchScopeControl />
       </FilterBar>
 
       <div className="bg-white">

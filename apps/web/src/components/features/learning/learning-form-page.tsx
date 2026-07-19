@@ -4,16 +4,27 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LEARNING_AUDIENCES, LEARNING_RESOURCE_TYPES, LEARNING_VISIBILITY_SCOPES } from '@eims/shared';
+import {
+  LEARNING_AUDIENCES,
+  LEARNING_MEETING_PLATFORMS,
+  LEARNING_RESOURCE_TYPES,
+  LEARNING_VISIBILITY_SCOPES,
+  createLearningResourceSchema,
+  updateLearningResourceSchema,
+} from '@eims/shared';
 import type { LearningResourceResponse } from '@eims/types';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -34,13 +45,22 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const editId = mode === 'edit' ? params?.id : undefined;
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const pageScope = usePageBranchScopeOptional();
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const scopedSingleBranchId = pageScope?.singleBranchId ?? null;
 
   const { data: existing } = useQuery({
     queryKey: ['learning', 'detail', editId],
     queryFn: () => apiClient<LearningResourceResponse>(`/learning/${editId}`, { token }),
     enabled: !!token && !!editId,
   });
+
+  // Edit: locked to the resource's branch. Create: assigned branch, then
+  // explicit pick / single-branch scope (no first-branch fallback).
+  const effectiveBranchId =
+    mode === 'edit'
+      ? (existing?.branchId ?? '')
+      : user?.branchId || pickedBranchId || scopedSingleBranchId || '';
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState('homework');
@@ -56,6 +76,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const [isPublished, setIsPublished] = useState(false);
   const [fileName, setFileName] = useState('');
   const [storagePath, setStoragePath] = useState('');
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingPlatform, setMeetingPlatform] = useState('meet');
 
   useEffect(() => {
     if (!existing || mode !== 'edit') return;
@@ -73,6 +97,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
     setIsPublished(existing.isPublished);
     setFileName(existing.attachments?.[0]?.fileName ?? '');
     setStoragePath(existing.attachments?.[0]?.storagePath ?? '');
+    setStartsAt(existing.startsAt ? existing.startsAt.slice(0, 16) : '');
+    setEndsAt(existing.endsAt ? existing.endsAt.slice(0, 16) : '');
+    setMeetingUrl(existing.meetingUrl ?? '');
+    setMeetingPlatform(existing.meetingPlatform ?? 'meet');
   }, [existing, mode]);
 
   const { data: programs } = useQuery({
@@ -93,25 +121,32 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const requiresBatch = visibilityScope === 'batch' || visibilityScope === 'batch_subject';
   const requiresSubject = visibilityScope === 'batch_subject';
 
-  const canSubmit = title.trim() && effectiveBranchId && (!requiresProgram || programId) && (!requiresBatch || batchId) && (!requiresSubject || subjectId);
+  const isOnlineClass = type === 'online_class';
+  const learningSchema = editId ? updateLearningResourceSchema : createLearningResourceSchema;
+  const { errors, clearField, validate, applyApiErrors, fieldClassName } = useFormErrors(learningSchema);
+
+  const buildPayload = () => ({
+    ...(editId ? {} : { branchId: effectiveBranchId }),
+    title: title.trim(),
+    type,
+    visibilityScope,
+    programId: programId || null,
+    batchId: batchId || null,
+    subjectId: subjectId || null,
+    audience,
+    description: description.trim() || undefined,
+    body: body.trim() || undefined,
+    dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+    maxMarks: maxMarks ? Number(maxMarks) : null,
+    startsAt: isOnlineClass && startsAt ? new Date(startsAt).toISOString() : null,
+    endsAt: isOnlineClass && endsAt ? new Date(endsAt).toISOString() : null,
+    meetingUrl: isOnlineClass ? meetingUrl.trim() || null : null,
+    meetingPlatform: isOnlineClass ? meetingPlatform : null,
+    isPublished,
+  });
 
   const submitMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        branchId: effectiveBranchId,
-        title: title.trim(),
-        type,
-        visibilityScope,
-        programId: programId || undefined,
-        batchId: batchId || undefined,
-        subjectId: subjectId || undefined,
-        audience,
-        description: description.trim() || undefined,
-        body: body.trim() || undefined,
-        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-        maxMarks: maxMarks ? Number(maxMarks) : undefined,
-        isPublished,
-      };
+    mutationFn: async (payload: ReturnType<typeof buildPayload>) => {
       const path = editId ? `/learning/${editId}` : '/learning';
       const method = editId ? 'PATCH' : 'POST';
       const resource = await apiClient<LearningResourceResponse>(path, {
@@ -133,7 +168,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.learningStats });
       router.push('/dashboard/learning');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   return (
@@ -165,13 +203,36 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
           className="space-y-6 p-5"
           onSubmit={(e) => {
             e.preventDefault();
-            submitMutation.mutate();
+            const payload = buildPayload();
+            if (!validate(payload)) return;
+            submitMutation.mutate(payload);
           }}
         >
+          {mode === 'create' && !user?.branchId && (
+            <BranchSelectField
+              value={pickedBranchId || scopedSingleBranchId || ''}
+              onValueChange={(value) => {
+                setPickedBranchId(value);
+                setProgramId('');
+                setBatchId('');
+                clearField('branchId');
+              }}
+              error={errors.branchId}
+            />
+          )}
+
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <FormFieldLabel required>Title</FormFieldLabel>
-              <input className={modalFieldClassName} value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input
+                className={fieldClassName('title', modalFieldClassName)}
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  clearField('title');
+                }}
+              />
+              <FormFieldError message={errors.title} />
             </div>
             <div>
               <FormFieldLabel required>Type</FormFieldLabel>
@@ -212,6 +273,7 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                   setProgramId(value);
                   setBatchId('');
                   setSubjectId('');
+                  clearField('programId');
                 }}
                 options={[
                   { value: '', label: 'Select program' },
@@ -219,6 +281,7 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.programId} />
             </div>
             <div>
               <FormFieldLabel required={requiresBatch || requiresSubject}>Batch</FormFieldLabel>
@@ -228,6 +291,7 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 onValueChange={(value) => {
                   setBatchId(value);
                   setSubjectId('');
+                  clearField('batchId');
                 }}
                 options={[
                   { value: '', label: 'Select batch' },
@@ -235,29 +299,92 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.batchId} />
             </div>
             <div>
               <FormFieldLabel required={requiresSubject}>Subject</FormFieldLabel>
               <SelectDropdown
                 aria-label="Subject"
                 value={subjectId}
-                onValueChange={setSubjectId}
+                onValueChange={(value) => {
+                  setSubjectId(value);
+                  clearField('subjectId');
+                }}
                 options={[
                   { value: '', label: 'Select subject' },
                   ...(subjects?.data.map((s) => ({ value: s.id, label: s.name })) ?? []),
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.subjectId} />
             </div>
-            <div>
-              <FormFieldLabel>Due at</FormFieldLabel>
-              <input
-                type="datetime-local"
-                className={modalFieldClassName}
-                value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
-              />
-            </div>
+            {isOnlineClass ? (
+              <>
+                <div>
+                  <FormFieldLabel required>Starts at</FormFieldLabel>
+                  <input
+                    type="datetime-local"
+                    className={fieldClassName('startsAt', modalFieldClassName)}
+                    value={startsAt}
+                    onChange={(e) => {
+                      setStartsAt(e.target.value);
+                      clearField('startsAt');
+                    }}
+                  />
+                  <FormFieldError message={errors.startsAt} />
+                </div>
+                <div>
+                  <FormFieldLabel>Ends at</FormFieldLabel>
+                  <input
+                    type="datetime-local"
+                    className={fieldClassName('endsAt', modalFieldClassName)}
+                    value={endsAt}
+                    onChange={(e) => {
+                      setEndsAt(e.target.value);
+                      clearField('endsAt');
+                    }}
+                  />
+                  <FormFieldError message={errors.endsAt} />
+                </div>
+                <div>
+                  <FormFieldLabel required>Meeting URL</FormFieldLabel>
+                  <input
+                    type="url"
+                    className={fieldClassName('meetingUrl', modalFieldClassName)}
+                    value={meetingUrl}
+                    onChange={(e) => {
+                      setMeetingUrl(e.target.value);
+                      clearField('meetingUrl');
+                    }}
+                    placeholder="https://meet.google.com/..."
+                  />
+                  <FormFieldError message={errors.meetingUrl} />
+                </div>
+                <div>
+                  <FormFieldLabel>Meeting platform</FormFieldLabel>
+                  <SelectDropdown
+                    aria-label="Meeting platform"
+                    value={meetingPlatform}
+                    onValueChange={setMeetingPlatform}
+                    options={LEARNING_MEETING_PLATFORMS.map((v) => ({
+                      value: v,
+                      label: v.charAt(0).toUpperCase() + v.slice(1),
+                    }))}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <FormFieldLabel>Due at</FormFieldLabel>
+                <input
+                  type="datetime-local"
+                  className={modalFieldClassName}
+                  value={dueAt}
+                  onChange={(e) => setDueAt(e.target.value)}
+                />
+              </div>
+            )}
             <div>
               <FormFieldLabel>Max marks</FormFieldLabel>
               <input
@@ -316,7 +443,7 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
             </button>
             <button
               type="submit"
-              disabled={!canSubmit || submitMutation.isPending}
+              disabled={submitMutation.isPending}
               className="rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm text-white disabled:opacity-50"
             >
               {submitMutation.isPending ? 'Saving…' : editId ? 'Save changes' : 'Create content'}

@@ -18,6 +18,20 @@ export async function seedStudentsAndParents(prisma: PrismaClient, ctx: DemoCont
           address: parent.address ?? null,
         },
       }));
+
+    // Keep existing records in sync with config (e.g. email domain changes) so
+    // portal profile linking by email stays correct across re-seeds.
+    if (existing) {
+      await prisma.parent.update({
+        where: { id: row.id },
+        data: {
+          fullName: parent.fullName,
+          phone: parent.phone,
+          email: parent.email ?? null,
+          address: parent.address ?? null,
+        },
+      });
+    }
     ctx.parentIds.set(parent.demoKey, row.id);
   }
 
@@ -64,7 +78,15 @@ export async function seedStudentsAndParents(prisma: PrismaClient, ctx: DemoCont
     if (existing) {
       await prisma.student.update({
         where: { id: row.id },
-        data: { customFields, batchId, programId, statusId },
+        data: {
+          customFields,
+          batchId,
+          programId,
+          statusId,
+          fullName: student.fullName,
+          phone: student.phone,
+          email: student.email ?? null,
+        },
       });
     }
 

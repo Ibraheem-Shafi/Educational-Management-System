@@ -1,12 +1,21 @@
 import { z } from 'zod';
-import { CNIC_REGEX, PHONE_REGEX } from '../constants/pakistan';
+import {
+  MSG,
+  optionalCnic,
+  optionalEmail,
+  optionalPhone,
+  optionalString,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const createParentSchema = z.object({
-  fullName: z.string().min(2).max(200),
-  phone: z.string().regex(PHONE_REGEX).optional(),
-  email: z.string().email().optional(),
-  address: z.string().max(500).optional(),
-  cnic: z.string().regex(CNIC_REGEX).optional(),
+  fullName: requiredString('Full name'),
+  phone: optionalPhone(),
+  email: optionalEmail(),
+  address: optionalString(500),
+  cnic: optionalCnic(),
   studentId: z.string().optional(),
   relationshipCode: z.enum(['father', 'mother', 'guardian']).optional(),
 });
@@ -14,16 +23,26 @@ export const createParentSchema = z.object({
 export type CreateParentInput = z.infer<typeof createParentSchema>;
 
 export const linkParentStudentSchema = z.object({
-  studentId: z.string().min(1),
-  relationshipCode: z.enum(['father', 'mother', 'guardian']),
+  studentId: requiredId('Student'),
+  relationshipCode: z.enum(['father', 'mother', 'guardian'], {
+    errorMap: () => ({ message: MSG.select('relationship') }),
+  }),
 });
 
 export type LinkParentStudentInput = z.infer<typeof linkParentStudentSchema>;
 
 export const listParentsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
   search: z.string().optional(),
 });
 
 export type ListParentsQuery = z.infer<typeof listParentsQuerySchema>;
+
+export const listParentStudentsQuerySchema = paginationQuerySchema;
+
+export type ListParentStudentsQuery = z.infer<typeof listParentStudentsQuerySchema>;
+
+export const listStudentParentsQuerySchema = paginationQuerySchema;
+
+export type ListStudentParentsQuery = z.infer<typeof listStudentParentsQuerySchema>;

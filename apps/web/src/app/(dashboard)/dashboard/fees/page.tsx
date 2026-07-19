@@ -6,7 +6,9 @@ import { Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
 import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import {
@@ -18,9 +20,10 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
-import { ContentPanel } from '@/components/layout/content-panel';
+import { Tabs } from '@/components/ui/tabs';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
+import { RecordPaymentDialog } from '@/components/features/fees/record-payment-dialog';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -43,46 +46,58 @@ interface Invoice {
   paidAt: string | null;
 }
 
+type PayTarget = { id: string; netAmount: number; student?: { fullName: string } };
+
 function formatCount(value: number): string {
   return value.toLocaleString('en-US');
 }
 
 export default function FeesPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const canCollect = can(PERMISSIONS.FEES_COLLECT);
   const [createOpen, setCreateOpen] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<PayTarget | null>(null);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
+  const [defaulterPage, setDefaulterPage] = useState(1);
+  const [defaulterLimit, setDefaulterLimit] = useState(8);
+  const [tab, setTab] = useState<'fees' | 'defaulters'>('fees');
 
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.feesStats,
-    queryFn: () => apiClient<FeesStatsResponse>('/fees/stats', { token }),
+    queryKey: [...queryKeys.feesStats, scopeKey],
+    queryFn: () => apiClient<FeesStatsResponse>(withBranchScope('/fees/stats', effectiveScope), { token }),
     enabled: !!token,
   });
 
   const { data: trend, isLoading: trendLoading } = useQuery({
-    queryKey: queryKeys.feesRevenueTrend,
-    queryFn: () => apiClient<FeesRevenueTrendResponse>('/fees/revenue-trend', { token }),
+    queryKey: [...queryKeys.feesRevenueTrend, scopeKey],
+    queryFn: () =>
+      apiClient<FeesRevenueTrendResponse>(withBranchScope('/fees/revenue-trend', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
   const { data: invoices, isLoading, error } = useQuery({
-    queryKey: ['fee-invoices', effectiveBranchId, invoicePage, invoiceLimit],
+    queryKey: ['fee-invoices', scopeKey, invoicePage, invoiceLimit],
     queryFn: () =>
       apiClient<PaginatedResponse<Invoice>>(
-        `/fee-invoices?branchId=${effectiveBranchId}&page=${invoicePage}&limit=${invoiceLimit}`,
+        withBranchScope('/fee-invoices', effectiveScope, {
+          page: invoicePage,
+          limit: invoiceLimit,
+        }),
         { token },
       ),
-    enabled: !!token && !!effectiveBranchId,
+    enabled: !!token,
   });
 
-  const { data: defaulters } = useQuery({
-    queryKey: ['fee-defaulters', effectiveBranchId],
+  const { data: defaulters, isLoading: defaultersLoading, error: defaultersError } = useQuery({
+    queryKey: ['fee-defaulters', scopeKey, defaulterPage, defaulterLimit],
     queryFn: () =>
       apiClient<{
         data: Array<{
@@ -92,8 +107,15 @@ export default function FeesPage() {
           dueDate: string | null;
         }>;
         total: number;
-      }>('/reports/fee-defaulters', { token }),
-    enabled: !!token,
+        meta: { total: number; page: number; limit: number; totalPages: number };
+      }>(
+        withBranchScope('/reports/fee-defaulters', effectiveScope, {
+          page: defaulterPage,
+          limit: defaulterLimit,
+        }),
+        { token },
+      ),
+    enabled: !!token && tab === 'defaulters',
   });
 
   const payMutation = useMutation({
@@ -108,9 +130,16 @@ export default function FeesPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const openRecordPayment = (invoice: PayTarget) => setPayInvoice(invoice);
+
   const handleLimitChange = useCallback((next: number) => {
     setInvoiceLimit(next);
     setInvoicePage(1);
+  }, []);
+
+  const handleDefaulterLimitChange = useCallback((next: number) => {
+    setDefaulterLimit(next);
+    setDefaulterPage(1);
   }, []);
 
   return (
@@ -136,7 +165,13 @@ export default function FeesPage() {
       <CreateInvoiceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        branchId={effectiveBranchId}
+        branchId={singleBranchId ?? ''}
+      />
+
+      <RecordPaymentDialog
+        open={!!payInvoice}
+        onOpenChange={(open) => !open && setPayInvoice(null)}
+        invoice={payInvoice}
       />
 
       <MainStatsSection
@@ -175,138 +210,185 @@ export default function FeesPage() {
         gradientId="feesRevenueGradient"
       />
 
-      <ContentPanel title={`Fee defaulters (${defaulters?.total ?? 0})`}>
-        <div className={dataTableWrapperClass}>
-          <table className={cn(dataTableClass, 'min-w-[640px]')}>
-            <thead>
-              <tr>
-                <th className={dataTableThClass}>Student</th>
-                <th className={dataTableThClass}>Due date</th>
-                <th className={dataTableThClass}>Amount</th>
-                <th className={cn(dataTableThClass, 'w-12')} />
-              </tr>
-            </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {defaulters?.data.length === 0 && (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          aria-label="Fees sections"
+          tabs={[
+            { id: 'fees', label: 'Fees' },
+            { id: 'defaulters', label: 'Fee Defaulter' },
+          ]}
+          value={tab}
+          onValueChange={(id) => setTab(id as 'fees' | 'defaulters')}
+        />
+        <PageBranchScopeControl />
+      </div>
+
+      {tab === 'fees' && (
+        <div className="bg-white">
+          <div className={dataTableWrapperClass}>
+            <table className={dataTableClass}>
+              <thead>
                 <tr>
-                  <td
-                    colSpan={4}
-                    className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
-                  >
-                    No overdue invoices
-                  </td>
+                  <th className={dataTableThClass}>Student</th>
+                  <th className={dataTableThClass}>Fee type</th>
+                  <th className={dataTableThClass}>Amount</th>
+                  <th className={dataTableThClass}>Due date</th>
+                  <th className={dataTableThClass}>Status</th>
+                  <th className={cn(dataTableThClass, 'w-12')} />
                 </tr>
-              )}
-              {defaulters?.data.map((inv) => (
-                <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                  <td className={dataTableTdClass}>{inv.student.fullName}</td>
-                  <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                    {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
-                  </td>
-                  <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                    {formatCurrency(inv.netAmount)}
-                  </td>
-                  <td className={cn(dataTableTdClass, 'text-right')}>
-                    {canCollect ? (
-                      <RowActionsMenu
-                        items={[
-                          {
-                            label: 'Record payment',
-                            onClick: () => payMutation.mutate(inv.id),
-                          },
-                        ]}
-                      />
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </ContentPanel>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {isLoading && <DataTableSkeletonRows columns={6} rows={invoiceLimit} />}
 
-      <div className="bg-white">
-        <div className={dataTableWrapperClass}>
-          <table className={dataTableClass}>
-            <thead>
-              <tr>
-                <th className={dataTableThClass}>Student</th>
-                <th className={dataTableThClass}>Fee type</th>
-                <th className={dataTableThClass}>Amount</th>
-                <th className={dataTableThClass}>Due date</th>
-                <th className={dataTableThClass}>Status</th>
-                <th className={cn(dataTableThClass, 'w-12')} />
-              </tr>
-            </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={6} rows={invoiceLimit} />}
-
-              {error && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
-                    Failed to load invoices
-                  </td>
-                </tr>
-              )}
-
-              {!isLoading && !error && invoices?.data.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
-                  >
-                    No invoices found
-                  </td>
-                </tr>
-              )}
-
-              {!isLoading &&
-                !error &&
-                invoices?.data.map((inv) => (
-                  <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                    <td className={dataTableTdClass}>{inv.student?.fullName ?? '—'}</td>
-                    <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
-                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                      {formatCurrency(inv.netAmount)}
-                    </td>
-                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                      {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
-                    </td>
-                    <td className={dataTableTdClass}>
-                      {inv.status ? (
-                        <StatusBadge label={inv.status.label} code={inv.status.code} />
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className={cn(dataTableTdClass, 'text-right')}>
-                      {canCollect && !inv.paidAt ? (
-                        <RowActionsMenu
-                          items={[
-                            {
-                              label: 'Record payment',
-                              onClick: () => payMutation.mutate(inv.id),
-                            },
-                          ]}
-                        />
-                      ) : null}
+                {error && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
+                      Failed to load invoices
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+                )}
 
-        {invoices && (
-          <PaginationBar
-            page={invoicePage}
-            totalPages={invoices.meta.totalPages}
-            limit={invoiceLimit}
-            onPageChange={setInvoicePage}
-            onLimitChange={handleLimitChange}
-          />
-        )}
-      </div>
+                {!isLoading && !error && invoices?.data.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                    >
+                      No invoices found
+                    </td>
+                  </tr>
+                )}
+
+                {!isLoading &&
+                  !error &&
+                  invoices?.data.map((inv) => (
+                    <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={dataTableTdClass}>{inv.student?.fullName ?? '—'}</td>
+                      <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
+                      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        {formatCurrency(inv.netAmount)}
+                      </td>
+                      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+                      </td>
+                      <td className={dataTableTdClass}>
+                        {inv.status ? (
+                          <StatusBadge label={inv.status.label} code={inv.status.code} />
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className={cn(dataTableTdClass, 'text-right')}>
+                        {canCollect && !inv.paidAt ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Record payment',
+                                onClick: () => openRecordPayment(inv),
+                              },
+                              {
+                                label: 'Pay in full',
+                                onClick: () => payMutation.mutate(inv.id),
+                              },
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+          {invoices && (
+            <PaginationBar
+              page={invoicePage}
+              totalPages={invoices.meta.totalPages}
+              limit={invoiceLimit}
+              onPageChange={setInvoicePage}
+              onLimitChange={handleLimitChange}
+            />
+          )}
+        </div>
+      )}
+
+      {tab === 'defaulters' && (
+        <div className="bg-white">
+          <div className={dataTableWrapperClass}>
+            <table className={cn(dataTableClass, 'min-w-[640px]')}>
+              <thead>
+                <tr>
+                  <th className={dataTableThClass}>Student</th>
+                  <th className={dataTableThClass}>Due date</th>
+                  <th className={dataTableThClass}>Amount</th>
+                  <th className={cn(dataTableThClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {defaultersLoading && <DataTableSkeletonRows columns={4} rows={defaulterLimit} />}
+
+                {defaultersError && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                      Failed to load fee defaulters
+                    </td>
+                  </tr>
+                )}
+
+                {!defaultersLoading && !defaultersError && defaulters?.data.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                    >
+                      No overdue invoices
+                    </td>
+                  </tr>
+                )}
+                {!defaultersLoading &&
+                  !defaultersError &&
+                  defaulters?.data.map((inv) => (
+                    <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={dataTableTdClass}>{inv.student.fullName}</td>
+                      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+                      </td>
+                      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        {formatCurrency(inv.netAmount)}
+                      </td>
+                      <td className={cn(dataTableTdClass, 'text-right')}>
+                        {canCollect ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Record payment',
+                                onClick: () => openRecordPayment(inv),
+                              },
+                              {
+                                label: 'Pay in full',
+                                onClick: () => payMutation.mutate(inv.id),
+                              },
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+          {defaulters?.meta && (
+            <PaginationBar
+              page={defaulterPage}
+              totalPages={defaulters.meta.totalPages}
+              limit={defaulterLimit}
+              onPageChange={setDefaulterPage}
+              onLimitChange={handleDefaulterLimitChange}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

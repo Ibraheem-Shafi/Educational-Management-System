@@ -1,12 +1,16 @@
 import { z } from 'zod';
-import { CNIC_REGEX } from '../constants/pakistan';
+import {
+  optionalCnic,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
 
 export const acceptInvitationSchema = z.object({
-  token: z.string().min(1),
-  fullName: z.string().min(2).max(200),
-  password: z.string().min(8).max(128),
+  token: requiredId('Token'),
+  fullName: requiredString('Full name'),
+  password: requiredString('Password', 8, 128),
   gender: z.enum(['male', 'female', 'other']).optional(),
-  cnic: z.string().regex(CNIC_REGEX).optional(),
+  cnic: optionalCnic(),
 });
 
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;

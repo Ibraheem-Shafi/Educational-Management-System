@@ -1,10 +1,13 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, Permissions } from '../../common/decorators/auth.decorators';
+import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
+import { paginationQuerySchema } from '@eims/shared';
+import type { BranchScope, PaginationQuery } from '@eims/shared';
 
 @ApiTags('reports')
 @ApiBearerAuth()
@@ -15,13 +18,16 @@ export class ReportsController {
 
   @Get('overview')
   @Permissions('reports.view')
-  getOverview(@BranchId() branchId: string | null) {
-    return this.reportsService.getOverview(branchId);
+  getOverview(@BranchScopeParam() scope: BranchScope) {
+    return this.reportsService.getOverview(scope);
   }
 
   @Get('fee-defaulters')
   @Permissions('reports.view')
-  getFeeDefaulters(@BranchId() branchId: string | null) {
-    return this.reportsService.getFeeDefaulters(branchId);
+  getFeeDefaulters(
+    @BranchScopeParam() scope: BranchScope,
+    @Query(createZodPipe(paginationQuerySchema)) query: PaginationQuery,
+  ) {
+    return this.reportsService.getFeeDefaulters(scope, query);
   }
 }

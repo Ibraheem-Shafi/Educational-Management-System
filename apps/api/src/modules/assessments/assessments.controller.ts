@@ -6,22 +6,28 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { AssessmentsService } from './assessments.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createAssessmentSchema,
+  updateAssessmentSchema,
   listAssessmentsQuerySchema,
+  listAssessmentTypesQuerySchema,
+  listAssessmentSeriesQuerySchema,
   marksSheetQuerySchema,
   bulkMarksSchema,
+  reportCardsQuerySchema,
   createAssessmentTypeSchema,
   updateAssessmentTypeSchema,
   createAssessmentSeriesSchema,
@@ -29,10 +35,15 @@ import {
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
+  BranchScope,
   CreateAssessmentInput,
+  UpdateAssessmentInput,
   ListAssessmentsQuery,
+  ListAssessmentTypesQuery,
+  ListAssessmentSeriesQuery,
   MarksSheetQuery,
   BulkMarksInput,
+  ReportCardsQuery,
   CreateAssessmentTypeInput,
   UpdateAssessmentTypeInput,
   CreateAssessmentSeriesInput,
@@ -48,8 +59,8 @@ export class AssessmentsController {
 
   @Get('assessment-types')
   @Permissions('assessments.read')
-  listTypes(@Query('all') all?: string) {
-    return this.assessmentsService.listTypes(all === 'true');
+  listTypes(@Query(createZodPipe(listAssessmentTypesQuerySchema)) query: ListAssessmentTypesQuery) {
+    return this.assessmentsService.listTypes(query);
   }
 
   @Post('assessment-types')
@@ -74,8 +85,8 @@ export class AssessmentsController {
 
   @Get('assessment-series')
   @Permissions('assessments.read')
-  listSeries() {
-    return this.assessmentsService.listSeries();
+  listSeries(@Query(createZodPipe(listAssessmentSeriesQuerySchema)) query: ListAssessmentSeriesQuery) {
+    return this.assessmentsService.listSeries(query);
   }
 
   @Post('assessment-series')
@@ -100,17 +111,26 @@ export class AssessmentsController {
 
   @Get('assessments/stats')
   @Permissions('assessments.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.assessmentsService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.assessmentsService.getStats(scope);
+  }
+
+  @Get('report-cards')
+  @Permissions('assessments.read')
+  getReportCard(
+    @Query(createZodPipe(reportCardsQuerySchema)) query: ReportCardsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.assessmentsService.getReportCard(query, scope);
   }
 
   @Get('assessments')
   @Permissions('assessments.read')
   findAll(
     @Query(createZodPipe(listAssessmentsQuerySchema)) query: ListAssessmentsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.assessmentsService.findAll(query, branchId);
+    return this.assessmentsService.findAll(query, scope);
   }
 
   @Post('assessments')
@@ -125,8 +145,52 @@ export class AssessmentsController {
 
   @Get('assessments/:id')
   @Permissions('assessments.read')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.assessmentsService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.assessmentsService.findOne(id, scope);
+  }
+
+  @Patch('assessments/:id')
+  @Permissions('assessments.marks.enter')
+  update(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateAssessmentSchema)) body: UpdateAssessmentInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.assessmentsService.update(id, body, user, scope);
+  }
+
+  @Post('assessments/:id/submit-review')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('assessments.marks.enter')
+  submitReview(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.assessmentsService.submitReview(id, user, scope);
+  }
+
+  @Post('assessments/:id/publish')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('assessments.publish')
+  publish(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.assessmentsService.publish(id, user, scope);
+  }
+
+  @Post('assessments/:id/unpublish')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('assessments.publish')
+  unpublish(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.assessmentsService.unpublish(id, user, scope);
   }
 
   @Get('assessments/:id/marks-sheet')
@@ -134,9 +198,23 @@ export class AssessmentsController {
   getMarksSheet(
     @Param('id') id: string,
     @Query(createZodPipe(marksSheetQuerySchema)) query: MarksSheetQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.assessmentsService.getMarksSheet(id, query, branchId);
+    return this.assessmentsService.getMarksSheet(id, query, scope);
+  }
+
+  @Get('assessments/:id/export.csv')
+  @Permissions('assessments.read')
+  async exportCsv(
+    @Param('id') id: string,
+    @Query(createZodPipe(marksSheetQuerySchema)) query: MarksSheetQuery,
+    @BranchScopeParam() scope: BranchScope,
+    @Res() res: Response,
+  ) {
+    const { csv, filename } = await this.assessmentsService.exportMarksCsv(id, query, scope);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   @Post('assessments/:id/marks/bulk')
@@ -146,17 +224,17 @@ export class AssessmentsController {
     @Param('id') id: string,
     @Body(createZodPipe(bulkMarksSchema)) body: BulkMarksInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.assessmentsService.bulkMarks(id, body, user, branchId);
+    return this.assessmentsService.bulkMarks(id, body, user, scope);
   }
 
   @Get('students/:studentId/assessment-records')
   @Permissions('assessments.read')
   getStudentRecords(
     @Param('studentId') studentId: string,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.assessmentsService.getStudentRecords(studentId, branchId);
+    return this.assessmentsService.getStudentRecords(studentId, scope);
   }
 }

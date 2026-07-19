@@ -4,7 +4,7 @@ import { AnalyticsService } from './analytics.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   analyticsCorrelationQuerySchema,
@@ -17,6 +17,7 @@ import type {
   AnalyticsPerformanceQuery,
   AnalyticsTrendsQuery,
   AnalyticsWeakSubjectsQuery,
+  BranchScope,
 } from '@eims/shared';
 
 @ApiTags('analytics')
@@ -28,52 +29,52 @@ export class AnalyticsController {
 
   @Get('dashboard')
   @Permissions('analytics.read')
-  dashboard(@BranchId() branchId: string | null) {
-    return this.analyticsService.getDashboardKpis(branchId);
+  dashboard(@BranchScopeParam() scope: BranchScope) {
+    return this.analyticsService.getDashboardKpis(scope);
   }
 
   @Get('attendance-trends')
   @Permissions('analytics.read')
   attendanceTrends(
     @Query(createZodPipe(analyticsTrendsQuerySchema)) query: AnalyticsTrendsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.analyticsService.getAttendanceTrends(query, branchId);
+    return this.analyticsService.getAttendanceTrends(query, scope);
   }
 
   @Get('performance')
   @Permissions('analytics.read')
   performance(
     @Query(createZodPipe(analyticsPerformanceQuerySchema)) query: AnalyticsPerformanceQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.analyticsService.getPerformance(query, branchId);
+    return this.analyticsService.getPerformance(query, scope);
   }
 
   @Get('rankings')
   @Permissions('analytics.read')
   rankings(
     @Query('assessmentId') assessmentId: string | undefined,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.analyticsService.getRankings(branchId, assessmentId);
+    return this.analyticsService.getRankings(scope, assessmentId);
   }
 
   @Get('weak-subjects')
   @Permissions('analytics.read')
   weakSubjects(
     @Query(createZodPipe(analyticsWeakSubjectsQuerySchema)) query: AnalyticsWeakSubjectsQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.analyticsService.getWeakSubjects(query, branchId);
+    return this.analyticsService.getWeakSubjects(query, scope);
   }
 
   @Get('attendance-performance-correlation')
   @Permissions('analytics.read')
   attendancePerformanceCorrelation(
     @Query(createZodPipe(analyticsCorrelationQuerySchema)) query: AnalyticsCorrelationQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.analyticsService.getAttendancePerformanceCorrelation(query, branchId);
+    return this.analyticsService.getAttendancePerformanceCorrelation(query, scope);
   }
 }

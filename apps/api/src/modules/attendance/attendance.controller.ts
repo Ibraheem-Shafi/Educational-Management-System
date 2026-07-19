@@ -13,7 +13,7 @@ import { AttendanceService } from './attendance.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   attendanceSheetQuerySchema,
@@ -27,6 +27,7 @@ import type { AuthUser } from '@eims/types';
 import type {
   AttendanceSheetQuery,
   AttendanceGridQuery,
+  BranchScope,
   BulkAttendanceInput,
   AttendanceHistoryQuery,
   StaffAttendanceSheetQuery,
@@ -42,45 +43,45 @@ export class AttendanceController {
 
   @Get('stats')
   @Permissions('attendance.read')
-  getStats(@BranchId() branchId: string | null) {
-    return this.attendanceService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.attendanceService.getStats(scope);
   }
 
   @Get('trend')
   @Permissions('attendance.read')
   getTrend(
     @Query('month') month: string,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
     const effectiveMonth = month ?? new Date().toISOString().slice(0, 7);
-    return this.attendanceService.getTrend(branchId, effectiveMonth);
+    return this.attendanceService.getTrend(scope, effectiveMonth);
   }
 
   @Get('sheet')
   @Permissions('attendance.read')
   getSheet(
     @Query(createZodPipe(attendanceSheetQuerySchema)) query: AttendanceSheetQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.attendanceService.getSheet(query, branchId);
+    return this.attendanceService.getSheet(query, scope);
   }
 
   @Get('grid')
   @Permissions('attendance.read')
   getGrid(
     @Query(createZodPipe(attendanceGridQuerySchema)) query: AttendanceGridQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.attendanceService.getGrid(query, branchId);
+    return this.attendanceService.getGrid(query, scope);
   }
 
   @Get('history')
   @Permissions('attendance.read')
   getHistory(
     @Query(createZodPipe(attendanceHistoryQuerySchema)) query: AttendanceHistoryQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.attendanceService.getHistory(query, branchId);
+    return this.attendanceService.getHistory(query, scope);
   }
 
   @Post('bulk')
@@ -97,9 +98,9 @@ export class AttendanceController {
   @Permissions('attendance.read')
   getStaffSheet(
     @Query(createZodPipe(staffAttendanceSheetQuerySchema)) query: StaffAttendanceSheetQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.attendanceService.getStaffSheet(query, branchId);
+    return this.attendanceService.getStaffSheet(query, scope);
   }
 
   @Post('staff-bulk')

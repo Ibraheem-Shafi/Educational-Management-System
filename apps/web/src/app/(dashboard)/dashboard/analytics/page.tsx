@@ -5,6 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Download } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { downloadCsv } from '@/lib/download-csv';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -34,7 +37,7 @@ function defaultDateRange() {
 }
 
 export default function AnalyticsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const token = session?.access_token;
   const range = useMemo(() => defaultDateRange(), []);
   const [from, setFrom] = useState(range.from);
@@ -43,13 +46,8 @@ export default function AnalyticsPage() {
   const [batchId, setBatchId] = useState('');
   const [assessmentId, setAssessmentId] = useState('');
 
-  const { data: branches } = useQuery({
-    queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/branches', { token }),
-    enabled: !!token,
-  });
-
-  const effectiveBranchId = user?.branchId || branches?.data[0]?.id || '';
+  const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
+  const effectiveBranchId = singleBranchId ?? '';
 
   const { data: batches } = useQuery({
     queryKey: queryKeys.batches(effectiveBranchId),
@@ -62,10 +60,10 @@ export default function AnalyticsPage() {
   });
 
   const { data: assessments } = useQuery({
-    queryKey: ['assessments', effectiveBranchId],
+    queryKey: ['assessments', scopeKey],
     queryFn: () =>
       apiClient<{ data: { id: string; name: string }[] }>(
-        `/assessments${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ''}`,
+        withBranchScope('/assessments', effectiveScope),
         { token },
       ),
     enabled: !!token,
@@ -81,8 +79,12 @@ export default function AnalyticsPage() {
   });
 
   const { data: kpis, isLoading: kpisLoading } = useQuery({
-    queryKey: queryKeys.analyticsDashboard,
-    queryFn: () => apiClient<AnalyticsDashboardKpisResponse>('/analytics/dashboard', { token }),
+    queryKey: [...queryKeys.analyticsDashboard, scopeKey],
+    queryFn: () =>
+      apiClient<AnalyticsDashboardKpisResponse>(
+        withBranchScope('/analytics/dashboard', effectiveScope),
+        { token },
+      ),
     enabled: !!token,
   });
 
@@ -152,6 +154,10 @@ export default function AnalyticsPage() {
         title="Analytics"
         description="Performance and attendance insights"
       />
+
+      <div className="flex justify-end">
+        <PageBranchScopeControl />
+      </div>
 
       <MainStatsSection
         isLoading={kpisLoading}

@@ -5,6 +5,11 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { totpCodeSchema } from '@/lib/auth-form-schemas';
+import { authFieldClassName } from '@/components/auth/auth-shell';
 
 interface MfaEnrollLoginProps {
   onEnrolled: () => void;
@@ -17,6 +22,7 @@ export function MfaEnrollLogin({ onEnrolled }: MfaEnrollLoginProps) {
   const [verifyCode, setVerifyCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
+  const { errors, clearField, validate, fieldClassName } = useFormErrors(totpCodeSchema);
 
   const startEnroll = async () => {
     setLoading(true);
@@ -36,6 +42,8 @@ export function MfaEnrollLogin({ onEnrolled }: MfaEnrollLoginProps) {
 
   const confirmEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate({ code: verifyCode })) return;
+
     setLoading(true);
     try {
       const supabase = createClient();
@@ -78,14 +86,21 @@ export function MfaEnrollLogin({ onEnrolled }: MfaEnrollLoginProps) {
       <p className="text-sm text-muted-foreground">
         Scan with your authenticator app, then enter the 6-digit code.
       </p>
-      <Input
-        placeholder="6-digit code"
-        value={verifyCode}
-        onChange={(e) => setVerifyCode(e.target.value)}
-        maxLength={6}
-        required
-      />
-      <Button type="submit" className="w-full" disabled={loading || verifyCode.length < 6}>
+      <div>
+        <FormFieldLabel required>Authenticator code</FormFieldLabel>
+        <Input
+          placeholder="6-digit code"
+          value={verifyCode}
+          onChange={(e) => {
+            setVerifyCode(e.target.value);
+            clearField('code');
+          }}
+          maxLength={6}
+          className={fieldClassName('code', authFieldClassName)}
+        />
+        <FormFieldError message={errors.code} />
+      </div>
+      <Button type="submit" className="w-full" disabled={loading}>
         {loading ? 'Verifying...' : 'Verify & continue'}
       </Button>
     </form>

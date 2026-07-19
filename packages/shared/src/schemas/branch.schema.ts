@@ -1,17 +1,18 @@
 import { z } from 'zod';
-import { PHONE_REGEX } from '../constants/pakistan';
+import {
+  optionalEmail,
+  optionalPhone,
+  optionalString,
+  requiredString,
+} from '../validation/messages';
 
 export const createBranchSchema = z.object({
-  name: z.string().min(2).max(200),
-  code: z
-    .string()
-    .min(2)
-    .max(20)
-    .regex(/^[a-z0-9_-]+$/i, 'Code must be alphanumeric'),
-  address: z.string().max(500).optional(),
-  city: z.string().max(100).optional(),
-  phone: z.string().regex(PHONE_REGEX).optional(),
-  email: z.string().email().optional(),
+  name: requiredString('Branch name'),
+  code: requiredString('Code', 2, 20).regex(/^[a-z0-9_-]+$/i, 'Code must be alphanumeric'),
+  address: optionalString(500),
+  city: optionalString(100),
+  phone: optionalPhone(),
+  email: optionalEmail(),
 });
 
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
@@ -24,7 +25,7 @@ export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
 
 export const listBranchesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(10),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
 });

@@ -1,3 +1,4 @@
+import type { BranchScope } from '@eims/shared';
 import {
   Body,
   Controller,
@@ -15,7 +16,7 @@ import { UsersService } from './users.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { listUsersQuerySchema, createInvitationSchema, updateUserSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -32,15 +33,15 @@ export class UsersController {
   @Permissions('users.manage')
   findAll(
     @Query(createZodPipe(listUsersQuerySchema)) query: ListUsersQuery,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.usersService.findAll(query, branchId);
+    return this.usersService.findAll(query, scope);
   }
 
   @Get('stats')
   @Permissions('users.manage')
-  getStats(@BranchId() branchId: string | null) {
-    return this.usersService.getStats(branchId);
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.usersService.getStats(scope);
   }
 
   @Get('roles')
@@ -51,8 +52,8 @@ export class UsersController {
 
   @Get('invitations')
   @Permissions('users.manage')
-  listInvitations(@BranchId() branchId: string | null) {
-    return this.usersService.listInvitations(branchId);
+  listInvitations(@BranchScopeParam() scope: BranchScope) {
+    return this.usersService.listInvitations(scope);
   }
 
   @Post('invitations')
@@ -67,8 +68,8 @@ export class UsersController {
 
   @Get(':id')
   @Permissions('users.manage')
-  findOne(@Param('id') id: string, @BranchId() branchId: string | null) {
-    return this.usersService.findOne(id, branchId);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.usersService.findOne(id, scope);
   }
 
   @Patch(':id')
@@ -77,8 +78,8 @@ export class UsersController {
     @Param('id') id: string,
     @Body(createZodPipe(updateUserSchema)) body: UpdateUserInput,
     @CurrentUser() user: AuthUser,
-    @BranchId() branchId: string | null,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.usersService.update(id, body, user, branchId);
+    return this.usersService.update(id, body, user, scope);
   }
 }

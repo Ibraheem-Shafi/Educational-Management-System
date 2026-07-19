@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,9 +8,12 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { useEffectiveBranchId } from '@/hooks/use-branches';
-import type { DocumentsStatsResponse } from '@eims/types';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { withBranchScope } from '@/lib/branch-scope';
+import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
+import type { DocumentsStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -21,6 +24,7 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { UploadDocumentDialog } from '@/components/features/documents/upload-document-dialog';
 import {
   dataTableClass,
@@ -47,7 +51,7 @@ interface DocumentRow {
   title: string;
   category: string;
   createdAt: string;
-  student?: { fullName: string };
+  student?: { fullName: string } | null;
 }
 
 function formatCount(value: number): string {
@@ -59,7 +63,7 @@ function categoryLabel(value: string): string {
 }
 
 export default function DocumentsPage() {
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
@@ -67,61 +71,78 @@ export default function DocumentsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const [deleteTarget, setDeleteTarget] = useState<DocumentRow | null>(null);
 
-  const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } =
+    useEffectiveBranchScope();
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
+    setPage(1);
   }, []);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.documentsStats,
-    queryFn: () => apiClient<DocumentsStatsResponse>('/documents/stats', { token }),
+    queryKey: [...queryKeys.documentsStats, scopeKey],
+    queryFn: () =>
+      apiClient<DocumentsStatsResponse>(withBranchScope('/documents/stats', effectiveScope), {
+        token,
+      }),
     enabled: !!token,
   });
 
+  const queryString = (() => {
+    const p = new URLSearchParams();
+    appendToSearchParams(p);
+    if (search) p.set('search', search);
+    if (category) p.set('category', category);
+    p.set('page', String(page));
+    p.set('limit', String(limit));
+    return p.toString();
+  })();
+
   const { data: documents, isLoading, error } = useQuery({
-    queryKey: ['documents', effectiveBranchId],
-    queryFn: () =>
-      apiClient<{ data: DocumentRow[] }>(`/documents?branchId=${effectiveBranchId}`, { token }),
-    enabled: !!token && !!effectiveBranchId,
+    queryKey: ['documents', scopeKey, search, category, page, limit],
+    queryFn: () => apiClient<PaginatedResponse<DocumentRow>>(`/documents?${queryString}`, { token }),
+    enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
-  const filteredDocuments = useMemo(() => {
-    const list = documents?.data ?? [];
-    return list.filter((doc) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !doc.title.toLowerCase().includes(q) &&
-          !(doc.student?.fullName ?? '').toLowerCase().includes(q)
-        ) {
-          return false;
-        }
-      }
-      if (category && doc.category !== category) return false;
-      return true;
-    });
-  }, [documents?.data, search, category]);
+  const rows = documents?.data ?? [];
 
   const openDocument = async (id: string) => {
+    const t = toast.loading('Opening document…');
     try {
       const res = await apiClient<{ url: string }>(`/documents/${id}/signed-url`, { token });
+      toast.dismiss(t);
       window.open(res.url, '_blank');
     } catch (err) {
+      toast.dismiss(t);
       toast.error(err instanceof Error ? err.message : 'Failed to open document');
     }
   };
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient(`/documents/${id}`, { method: 'DELETE', token }),
-    onSuccess: () => {
+    onMutate: () => ({ toastId: toast.loading('Deleting document…') }),
+    onSuccess: (_data, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
       toast.success('Document deleted');
       queryClient.invalidateQueries({ queryKey: ['documents'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.documentsStats });
+      setDeleteTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.error(err.message);
+    },
   });
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -147,9 +168,24 @@ export default function DocumentsPage() {
         <UploadDocumentDialog
           open={uploadOpen}
           onOpenChange={setUploadOpen}
-          branchId={effectiveBranchId}
+          branchId={singleBranchId ?? ''}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete document?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.title}" will be removed. This action cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+      />
 
       <MainStatsSection
         isLoading={statsLoading}
@@ -178,12 +214,15 @@ export default function DocumentsPage() {
       />
 
       <FilterBar className="items-center">
-        <SearchInput value={search} onValueChange={handleSearchChange} />
+        <SearchInput value={search} onValueChange={handleSearchChange} placeholder="Search by title, student" />
         <SelectDropdown
           aria-label="Filter by category"
           placeholder="All categories"
           value={category}
-          onValueChange={setCategory}
+          onValueChange={(value) => {
+            setCategory(value);
+            setPage(1);
+          }}
           options={[
             { value: '', label: 'All categories' },
             ...CATEGORIES.map((c) => ({ value: c.value, label: c.label })),
@@ -195,11 +234,13 @@ export default function DocumentsPage() {
             onClick={() => {
               setSearch('');
               setCategory('');
+              setPage(1);
             }}
           >
             Clear filters
           </Button>
         )}
+        <PageBranchScopeControl />
       </FilterBar>
 
       <div className="bg-white">
@@ -215,7 +256,7 @@ export default function DocumentsPage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={5} rows={8} />}
+              {isLoading && <DataTableSkeletonRows columns={5} rows={limit} />}
 
               {error && (
                 <tr>
@@ -225,7 +266,7 @@ export default function DocumentsPage() {
                 </tr>
               )}
 
-              {!isLoading && !error && filteredDocuments.length === 0 && (
+              {!isLoading && !error && rows.length === 0 && (
                 <tr>
                   <td
                     colSpan={5}
@@ -238,7 +279,7 @@ export default function DocumentsPage() {
 
               {!isLoading &&
                 !error &&
-                filteredDocuments.map((doc) => (
+                rows.map((doc) => (
                   <tr key={doc.id} className={cn('transition-colors', dataTableRowHoverClass)}>
                     <td className={dataTableTdClass}>{doc.title}</td>
                     <td className={dataTableTdClass}>{doc.student?.fullName ?? '—'}</td>
@@ -249,16 +290,15 @@ export default function DocumentsPage() {
                     <td className={cn(dataTableTdClass, 'text-right')}>
                       <RowActionsMenu
                         items={[
-                          { label: 'Open', onClick: () => openDocument(doc.id) },
+                          {
+                            label: 'Open',
+                            onClick: () => openDocument(doc.id),
+                          },
                           ...(canUpload
                             ? [
                                 {
                                   label: 'Delete',
-                                  onClick: () => {
-                                    if (confirm('Delete this document?')) {
-                                      deleteMutation.mutate(doc.id);
-                                    }
-                                  },
+                                  onClick: () => setDeleteTarget(doc),
                                 },
                               ]
                             : []),
@@ -270,6 +310,16 @@ export default function DocumentsPage() {
             </tbody>
           </table>
         </div>
+
+        {documents?.meta && (
+          <PaginationBar
+            page={page}
+            totalPages={documents.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={handleLimitChange}
+          />
+        )}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 Single reference for database seeding, demo logins, and what data is created for client presentations.
 
 **Institution:** Nexium Academy Pakistan (Pakistani coaching center)  
-**Demo version:** `nexium-v1.1`  
+**Demo version:** `nexium-v1.5`  
 **Config files:** [`templates/nexium.institution.json`](templates/nexium.institution.json) (foundation) · [`templates/nexium.demo.json`](templates/nexium.demo.json) (transactional data)  
 **Logo:** `apps/web/public/logo.png` — temporary asset until a new Nexium logo is provided (filename stays the same).
 
@@ -47,6 +47,9 @@ Defined in `nexium.institution.json` → `demo.password` and synced to Supabase 
 | ahmed.teacher@nexium.edu.pk | Nexium@2026! | Dr. Ahmed Hassan | Teacher | MAIN | `/dashboard` |
 | fees@nexium.edu.pk | Nexium@2026! | Sadia Bano | Accountant | MAIN | `/dashboard` |
 | reception@nexium.edu.pk | Nexium@2026! | Hina Batool | Receptionist | MAIN | `/dashboard` |
+| lahore.teacher@nexium.edu.pk | Nexium@2026! | Dr. Farah Siddiqui | Teacher | LAHORE | `/dashboard` |
+| lahore.fees@nexium.edu.pk | Nexium@2026! | Imran Qureshi | Accountant | LAHORE | `/dashboard` |
+| lahore.reception@nexium.edu.pk | Nexium@2026! | Nadia Sheikh | Receptionist | LAHORE | `/dashboard` |
 | rashid.ahmad@nexium.edu.pk | Nexium@2026! | Rashid Ahmad Khan | Parent | — | `/portal/parent` |
 | ali.khan@nexium.edu.pk | Nexium@2026! | Muhammad Ali Khan | Student | — | `/portal/student` |
 
@@ -55,7 +58,7 @@ Defined in `nexium.institution.json` → `demo.password` and synced to Supabase 
 - **Parent** (`rashid.ahmad@nexium.edu.pk`) is linked to **Ali Khan** and **Zainab Hussain** (sibling discount demo).
 - **Student** (`ali.khan@nexium.edu.pk`) must match the student record email in the database.
 - Staff accounts use the main login page; parent/student use the same login and are routed to their portal by role.
-- **Learning:** demo seed creates published notes, materials, syllabus, resources, and homework (with due dates) for the MAIN campus first batch. Browse under **Learning** in `/dashboard`, `/portal/student/learning`, and `/portal/parent/learning`.
+- **Learning:** demo seed creates published notes, materials, syllabus, resources, homework, and online classes **for each campus** (titles prefixed with `[MAIN]` / `[LAHORE]`).
 
 ### MFA
 
@@ -83,14 +86,16 @@ Change the demo password (or delete demo Supabase users) before any production g
 | `npm run db:seed:auth` | Phase 3 — create/link Supabase Auth users + JWT metadata |
 | `npm run db:seed:all` | `db:seed` then `db:seed:auth` (full client setup) |
 | `npm run db:seed:demo` | Rebuild demo data only (targeted delete + re-insert) |
-| `npm run db:seed:verify` | Print counts; exit 1 if below thresholds |
+| `npm run db:seed:verify` | Print global + per-branch counts; exit 1 if below thresholds |
 
 **Re-seed demo without touching foundation:**
 
 ```bash
-npm run db:seed:demo
+npm run db:seed:demo -- --force-demo
 npm run db:seed:auth
 ```
+
+A version bump (for example `nexium-v1.4` → `nexium-v1.5`) also cleans and re-applies Phase 2 automatically on the next `db:seed` / `db:seed:demo`.
 
 ---
 
@@ -110,26 +115,43 @@ npm run db:seed:auth
 - Form fields: previous school, board, emergency contact
 - Super Admin invitation record (superseded once `db:seed:auth` runs)
 
-### Phase 2 — Demo data (`nexium.demo.json`)
+### Phase 2 — Demo data (`nexium.demo.json` + seed steps)
 
-| Data | Count / detail |
-|------|----------------|
-| Students | 49 (mixed statuses: active, inactive, suspended, graduated, transferred, dropped) |
-| Parents | 48 |
-| Batches | 6 (MDCAT morning/evening, HSSC, SSC, MDCAT Lahore, ECAT Lahore) |
-| Attendance | ~20 weekdays per active student |
-| Assessments | 5 (weekly, monthly, FLP-1/2, grand test) with marks |
-| Fee structures | MDCAT / HSSC / SSC monthly + admission + test (PKR) |
-| Fee invoices | 3 months × up to 30 students (paid / pending / overdue) |
-| Notices | 6 (PMC registration, Ramadan timings, PTM, fee challan, etc.) |
-| Timetable | MDCAT Morning Batch A weekly grid |
-| Documents | Fee policy, prospectus, sample admission form |
-| Communications | 5 SMS/WhatsApp log entries |
+Both **MAIN** and **LAHORE** receive representative operational data.
+
+| Data | Detail |
+|------|--------|
+| Students | 49 (36 MAIN / 13 LAHORE; mixed statuses) |
+| Parents | 48 (institution-wide) |
+| Batches | 6 (4 MAIN + 2 LAHORE) |
+| Staff accounts | Teacher, accountant, receptionist per branch (+ branch admins + super admin) |
+| Attendance | ~20 weekdays per active student **and** staff/teacher attendance samples |
+| Assessments | 8 (5 MAIN + 3 LAHORE) with marks |
+| Fee structures | Per-branch monthly/admission (and MAIN test fee) |
+| Fee invoices | 3 months × students per branch (paid / pending / overdue + discount samples) |
+| Fee payments | Completed payment rows for paid invoices |
+| Notices | Published + draft per campus |
+| Timetable | MAIN MDCAT Morning A + LAHORE MDCAT/ECAT slots |
+| Documents | Policy + student admission forms per campus |
+| Learning | Notes, materials, syllabus, homework, online classes per campus |
+| Front office | Inquiries (incl. enrolled), visitors, complaints, reception activity per campus |
+| Certificates | Global templates + one issued certificate per campus |
+| Library | Categories, books, copies, active loan, overdue fine, reservation per campus |
+| Transport | Vehicle, route, stops, assignments, trip + attendance per campus |
+| Payroll | Finalized prior-month run + current-month **draft** run per campus |
+| Biometric | Device, student mappings, punch logs (matched + unmatched) per campus |
+| HR | Employment contracts + performance reviews for branch staff |
+| Leave | Pending/approved employee leave + parent-submitted student leave |
+| Accounting | System COA, posted + draft vouchers, branch utility account, yearly budget |
+| AI attendance | One analyzed OCR session sample per campus |
+| Communications | SMS/WhatsApp log entries |
 | Audit log | Sample entries |
 
 **Fee settings:** 10% sibling discount, Rs 500 late fee after 7 days.
 
-**Featured student for demos:** Muhammad Ali Khan — `ali.khan@nexium.edu.pk`, MDCAT Morning Batch A, Islamabad.
+**Featured students:**  
+- MAIN — Muhammad Ali Khan (`ali-khan`)  
+- LAHORE — Ahmed Hassan (`ahmed-hassan`)
 
 ### Phase 3 — Auth (`seed-auth.ts`)
 
@@ -139,39 +161,32 @@ npm run db:seed:auth
 
 ---
 
-## Verification thresholds
+## Verification
 
-`npm run db:seed:verify` expects at least:
+`npm run db:seed:verify` checks:
 
-| Entity | Minimum |
-|--------|---------|
-| students | 45 |
-| batches | 6 |
-| parents | 30 |
-| attendance records | 500 |
-| assessments | 5 |
-| fee invoices | 60 |
-| notices | 5 |
-| users | 8 |
-
-Plus `terminology._demoSeedVersion` = `nexium-v1.1` on institution settings.
+1. Global totals (students, batches, parents, attendance, assessments, invoices, notices, users)
+2. `terminology._demoSeedVersion` = `nexium-v1.5`
+3. **Per-branch matrix** for MAIN and LAHORE (students, fees, assessments, learning, FO, library, transport, payroll, biometric, HR/leave, accounting, AI OCR, …)
+4. Cross-branch integrity (invoice/student, assessment/student, timetable/batch must share a branch)
 
 ---
 
-## Screens you can demo (non-AI)
+## Screens you can demo
 
 | Module | Sample login |
 |--------|----------------|
-| Dashboard, branches, academic | `admin@nexium.edu.pk` or `branchadmin@nexium.edu.pk` |
-| Students, parents, attendance | `ahmed.teacher@nexium.edu.pk` |
-| Fees, reports | `fees@nexium.edu.pk` |
-| Users, communications | `reception@nexium.edu.pk` |
-| Lahore campus data | `lahore.admin@nexium.edu.pk` |
-| Learning (publish notes / homework) | `admin@nexium.edu.pk` or `ahmed.teacher@nexium.edu.pk` |
-| Parent portal (+ Learning for children) | `rashid.ahmad@nexium.edu.pk` |
-| Student portal (+ Learning / due soon) | `ali.khan@nexium.edu.pk` |
-
-AI attendance and AI insights are intentionally empty/stubbed for demo.
+| Dashboard (switch branch scope) | `admin@nexium.edu.pk` |
+| Islamabad campus | `branchadmin@nexium.edu.pk` |
+| Lahore campus | `lahore.admin@nexium.edu.pk` |
+| Students, attendance, assessments | `ahmed.teacher@nexium.edu.pk` or `lahore.teacher@nexium.edu.pk` |
+| Fees, reports, accounting, payroll | `fees@nexium.edu.pk` or `lahore.fees@nexium.edu.pk` |
+| Front office, communications | `reception@nexium.edu.pk` or `lahore.reception@nexium.edu.pk` |
+| Learning + online classes | Campus teacher or admin |
+| Library / transport / biometric | Branch admin |
+| HR contracts / reviews / leave | Super admin or branch admin |
+| AI attendance history | Teacher (sample OCR sessions seeded) |
+| Parent / student portals | `rashid.ahmad@nexium.edu.pk` / `ali.khan@nexium.edu.pk` |
 
 ---
 
@@ -180,4 +195,5 @@ AI attendance and AI insights are intentionally empty/stubbed for demo.
 - [15-deployment.md](15-deployment.md) — production deployment
 - [17-clone-and-rebrand.md](17-clone-and-rebrand.md) — new institution from templates
 - [templates/institution-seed.example.json](templates/institution-seed.example.json) — foundation JSON schema
+- [demo-feature-checklist.md](demo-feature-checklist.md) — client walkthrough checklist
 - [progress/README.md](../progress/README.md) — go-live checklist summary

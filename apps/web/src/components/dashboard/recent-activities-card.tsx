@@ -81,7 +81,7 @@ export function RecentActivitiesCard({
 
   return (
     <div className="overflow-hidden rounded-xl border border-stroke-soft-200 bg-neutral-0">
-      <div className="flex items-start justify-between gap-3 border-b border-stroke-soft-200 px-5 py-4">
+      <div className="flex items-start justify-between gap-3 border-b border-stroke-soft-200 px-4 py-4 sm:px-5">
         <div>
           <h3 className="text-base font-medium leading-6 text-text-main-900">Recent Activities</h3>
           <p className="text-sm font-normal leading-5 text-text-sub-500">{scopeLabel}</p>
@@ -93,7 +93,7 @@ export function RecentActivitiesCard({
         />
       </div>
 
-      <div className="px-5 py-4">
+      <div className="px-4 py-4 sm:px-5">
         {data.activities.length === 0 ? (
           <p className="py-6 text-sm text-text-sub-500">No recent activity yet.</p>
         ) : (
@@ -120,19 +120,17 @@ export function RecentActivitiesCard({
                     <Icon className={cn('h-4 w-4', style.iconColor)} strokeWidth={1.75} />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium leading-5 text-text-main-900">
-                          {activity.title}
-                        </p>
-                        <p className="truncate text-sm leading-5 text-text-sub-500">
-                          {activity.description}
-                        </p>
-                      </div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="min-w-0 text-sm font-medium leading-5 text-text-main-900">
+                        {activity.title}
+                      </p>
                       <span className="shrink-0 text-xs leading-4 text-text-soft-400">
                         {formatRelativeTime(activity.occurredAt)}
                       </span>
                     </div>
+                    <p className="line-clamp-2 text-sm leading-5 text-text-sub-500 sm:line-clamp-1">
+                      {activity.description}
+                    </p>
                   </div>
                 </li>
               );

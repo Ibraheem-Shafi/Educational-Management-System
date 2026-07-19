@@ -1,3 +1,6 @@
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { getSingleBranchId } from '@eims/shared';
+import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
   NotFoundException,
@@ -5,9 +8,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
-import { countWithTrend, thirtyDaysAgo, todayStart } from '../../common/utils/stats.util';
+import { countWithTrend, todayStart } from '../../common/utils/stats.util';
+import { computeChangePercent } from '../../common/utils/metrics.util';
 import type { AttendanceStatsResponse, AttendanceTrendResponse, AuthUser } from '@eims/types';
 import type {
   AttendanceSheetQuery,
@@ -46,16 +51,16 @@ export class AttendanceService {
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
     private readonly lookupCache: LookupCacheService,
+    private readonly communications: CommunicationsService,
   ) {}
 
-  async getStats(branchId: string | null): Promise<AttendanceStatsResponse> {
-    const cacheKey = `attendance:stats:${branchId ?? 'all'}`;
+  async getStats(scope: BranchScope): Promise<AttendanceStatsResponse> {
+    const cacheKey = `attendance:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<AttendanceStatsResponse>(cacheKey);
     if (cached) return cached;
 
     const today = todayStart();
-    const thirtyAgo = thirtyDaysAgo();
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const studentFilter = { entityType: ATTENDANCE_ENTITY_STUDENT, ...branchFilter };
 
     const [presentId, absentId] = await Promise.all([
@@ -64,17 +69,27 @@ export class AttendanceService {
     ]);
 
     const todayWhere = { ...studentFilter, date: today };
-    const monthStart = new Date(today);
-    monthStart.setUTCDate(1);
+
+    // Yesterday, for a meaningful day-over-day comparison on Today's rate.
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayWhere = { ...studentFilter, date: yesterday };
+
+    // Month average is computed over the previous *completed* calendar month,
+    // excluding the current partial month.
+    const currentMonthStart = new Date(today);
+    currentMonthStart.setUTCDate(1);
+    const prevMonthStart = new Date(currentMonthStart);
+    prevMonthStart.setUTCMonth(prevMonthStart.getUTCMonth() - 1);
 
     const [
       todayTotal,
       todayPresent,
       todayAbsent,
-      monthTotal,
-      monthPresent,
-      prevMonthTotal,
-      prevMonthPresent,
+      yesterdayTotal,
+      yesterdayPresent,
+      completedMonthTotal,
+      completedMonthPresent,
     ] = await Promise.all([
       this.prisma.attendanceRecord.count({ where: todayWhere }),
       presentId
@@ -83,22 +98,18 @@ export class AttendanceService {
       absentId
         ? this.prisma.attendanceRecord.count({ where: { ...todayWhere, statusId: absentId } })
         : Promise.resolve(0),
-      this.prisma.attendanceRecord.count({
-        where: { ...studentFilter, date: { gte: monthStart, lte: today } },
-      }),
+      this.prisma.attendanceRecord.count({ where: yesterdayWhere }),
       presentId
-        ? this.prisma.attendanceRecord.count({
-            where: { ...studentFilter, date: { gte: monthStart, lte: today }, statusId: presentId },
-          })
+        ? this.prisma.attendanceRecord.count({ where: { ...yesterdayWhere, statusId: presentId } })
         : Promise.resolve(0),
       this.prisma.attendanceRecord.count({
-        where: { ...studentFilter, date: { gte: thirtyAgo, lt: monthStart } },
+        where: { ...studentFilter, date: { gte: prevMonthStart, lt: currentMonthStart } },
       }),
       presentId
         ? this.prisma.attendanceRecord.count({
             where: {
               ...studentFilter,
-              date: { gte: thirtyAgo, lt: monthStart },
+              date: { gte: prevMonthStart, lt: currentMonthStart },
               statusId: presentId,
             },
           })
@@ -106,12 +117,19 @@ export class AttendanceService {
     ]);
 
     const todayRate = todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0;
-    const monthAvg = monthTotal > 0 ? Math.round((monthPresent / monthTotal) * 100) : 0;
-    const prevMonthAvg = prevMonthTotal > 0 ? Math.round((prevMonthPresent / prevMonthTotal) * 100) : 0;
+    const yesterdayRate = yesterdayTotal > 0 ? Math.round((yesterdayPresent / yesterdayTotal) * 100) : 0;
+    const monthAvg =
+      completedMonthTotal > 0 ? Math.round((completedMonthPresent / completedMonthTotal) * 100) : 0;
 
     const result: AttendanceStatsResponse = {
-      todayRate: countWithTrend(todayRate, prevMonthAvg),
-      monthAverage: countWithTrend(monthAvg, prevMonthAvg),
+      // Only show a day-over-day delta when today has recorded attendance;
+      // otherwise there is nothing meaningful to compare against.
+      todayRate: {
+        total: todayRate,
+        changePercent: todayTotal > 0 ? computeChangePercent(todayRate, yesterdayRate) : null,
+      },
+      // Month average over the previous completed month; no spurious trend chip.
+      monthAverage: { total: monthAvg, changePercent: null },
       presentToday: countWithTrend(todayPresent, 0),
       absentToday: countWithTrend(todayAbsent, 0),
     };
@@ -120,13 +138,13 @@ export class AttendanceService {
     return result;
   }
 
-  async getTrend(branchId: string | null, month: string): Promise<AttendanceTrendResponse> {
-    const cacheKey = `attendance:trend:${branchId ?? 'all'}:${month}`;
+  async getTrend(scope: BranchScope, month: string): Promise<AttendanceTrendResponse> {
+    const cacheKey = `attendance:trend:${scopeCacheKey(scope)}:${month}`;
     const cached = this.ttlCache.get<AttendanceTrendResponse>(cacheKey);
     if (cached) return cached;
 
     const { from, to, dates } = monthDateRange(month);
-    const branchFilter = branchId ? { branchId } : {};
+    const branchFilter = prismaBranchFilter(scope);
     const presentId = await this.lookupCache.getStatusId('attendance_status', 'present');
 
     const records = await this.prisma.attendanceRecord.groupBy({
@@ -171,10 +189,10 @@ export class AttendanceService {
     return result;
   }
 
-  async getSheet(query: AttendanceSheetQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getSheet(query: AttendanceSheetQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('branchId is required');
+      throw new BadRequestException('A single branchId is required');
     }
 
     const date = parseDateOnly(query.date);
@@ -329,18 +347,42 @@ export class AttendanceService {
       },
     });
 
+    let absenceAlerts: { sent: number; failed: number; skipped: number } | null = null;
+    if (input.notifyAbsences !== false) {
+      const absentStatusId = await this.lookupCache.getStatusId('attendance_status', 'absent');
+      const absentStudentIds = input.records
+        .filter((r) => absentStatusId && r.statusId === absentStatusId)
+        .map((r) => r.studentId);
+      if (absentStudentIds.length > 0) {
+        try {
+          absenceAlerts = await this.communications.sendAbsenceAlerts(
+            {
+              branchId: input.branchId,
+              date: input.date,
+              studentIds: absentStudentIds,
+              channel: input.notifyChannel ?? 'sms',
+            },
+            user,
+          );
+        } catch {
+          absenceAlerts = { sent: 0, failed: absentStudentIds.length, skipped: 0 };
+        }
+      }
+    }
+
     return {
       date: input.date,
       branchId: input.branchId,
       batchId: input.batchId,
       marked: results.length,
+      absenceAlerts,
     };
   }
 
-  async getGrid(query: AttendanceGridQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
+  async getGrid(query: AttendanceGridQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
-      throw new BadRequestException('branchId is required');
+      throw new BadRequestException('A single branchId is required');
     }
 
     const { from, to, dates } = monthDateRange(query.month);
@@ -515,12 +557,12 @@ export class AttendanceService {
     };
   }
 
-  async getHistory(query: AttendanceHistoryQuery, branchId: string | null) {
+  async getHistory(query: AttendanceHistoryQuery, scope: BranchScope) {
     const student = await this.prisma.student.findFirst({
       where: {
         id: query.studentId,
         deletedAt: null,
-        ...(branchId ? { branchId } : {}),
+        ...prismaBranchFilter(scope),
       },
     });
     if (!student) throw new NotFoundException('Student not found');
@@ -562,9 +604,9 @@ export class AttendanceService {
     };
   }
 
-  async getStaffSheet(query: StaffAttendanceSheetQuery, branchId: string | null) {
-    const effectiveBranchId = branchId ?? query.branchId;
-    if (!effectiveBranchId) throw new BadRequestException('branchId is required');
+  async getStaffSheet(query: StaffAttendanceSheetQuery, scope: BranchScope) {
+    const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
+    if (!effectiveBranchId) throw new BadRequestException('A single branchId is required');
 
     const roleCodes =
       query.entityType === 'teacher'

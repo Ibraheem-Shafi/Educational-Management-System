@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -11,6 +12,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { cn } from '@/lib/utils';
 
 const thClass =
@@ -37,12 +40,20 @@ export default function AiInsightsPage() {
   const { session } = useAuth();
   const token = session?.access_token;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+
+  const queryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }).toString();
 
   const { data: atRisk, isLoading } = useQuery({
-    queryKey: queryKeys.aiInsightsAtRisk,
+    queryKey: queryKeys.aiInsightsAtRisk({ page, limit }),
     queryFn: () =>
-      apiClient<{ students: AtRiskStudent[] }>('/ai-insights/at-risk', { token }),
+      apiClient<PaginatedResponse<AtRiskStudent>>(`/ai-insights/at-risk?${queryParams}`, { token }),
     enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
   const { data: summary } = useQuery({
@@ -52,14 +63,14 @@ export default function AiInsightsPage() {
   });
 
   const stats = useMemo(() => {
-    const students = atRisk?.students ?? [];
+    const students = atRisk?.data ?? [];
     return {
-      total: students.length,
+      total: atRisk?.meta.total ?? students.length,
       high: students.filter((s) => s.riskLevel === 'high').length,
       medium: students.filter((s) => s.riskLevel === 'medium').length,
       lowAttendance: students.filter((s) => (s.attendanceRate ?? 100) < 75).length,
     };
-  }, [atRisk?.students]);
+  }, [atRisk?.data, atRisk?.meta.total]);
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -91,14 +102,16 @@ export default function AiInsightsPage() {
                 </tr>
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
-                {!isLoading && stats.total === 0 && (
+                {isLoading ? (
+                  <DataTableSkeletonRows columns={3} rows={limit} />
+                ) : stats.total === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
                       No at-risk students detected
                     </td>
                   </tr>
-                )}
-                {atRisk?.students.map((s) => (
+                ) : (
+                  atRisk?.data.map((s) => (
                   <tr key={s.studentId} className="hover:bg-[var(--neutral-50)]/50">
                     <td className={tdClass}>
                       <p className="font-medium">{s.fullName}</p>
@@ -116,10 +129,24 @@ export default function AiInsightsPage() {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {atRisk?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={atRisk.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </ContentPanel>
 
         <ContentPanel title="Performance summary">

@@ -4,14 +4,18 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createInvitationSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import {
   InvitePhoneField,
@@ -62,6 +66,8 @@ export function InviteUserDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createInvitationSchema);
 
   const { data: roles } = useQuery({
     queryKey: ['roles'],
@@ -76,19 +82,18 @@ export function InviteUserDialog({
   });
 
   useEffect(() => {
-    if (!open) setForm(emptyForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyForm);
+      clearAll();
+    }
+  }, [open, clearAll]);
 
   const inviteMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Record<string, unknown>) =>
       apiClient<{ token: string }>('/users/invitations', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          email: form.email,
-          roleId: form.roleId,
-          ...(form.branchId ? { branchId: form.branchId } : {}),
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: (data) => {
       toast.success('Invitation created');
@@ -100,11 +105,25 @@ export function InviteUserDialog({
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const update = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      email: form.email.trim(),
+      roleId: form.roleId,
+      ...(form.branchId ? { branchId: form.branchId } : {}),
+    };
+    if (!validate(payload)) return;
+    inviteMutation.mutate(payload);
   };
 
   const canSubmit =
@@ -126,7 +145,8 @@ export function InviteUserDialog({
               <UserPlus className="h-[18px] w-[18px] text-[var(--text-main-900)]" strokeWidth={1.5} />
             </div>
             <div className="min-w-0">
-              <DialogTitle>Invite User</DialogTitle>              <DialogDescription className="mt-1">
+              <DialogTitle>Invite User</DialogTitle>
+              <DialogDescription className="mt-1">
                 Enter the details to add new customer
               </DialogDescription>
             </div>
@@ -141,21 +161,15 @@ export function InviteUserDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            inviteMutation.mutate();
-          }}
-        >
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">            <div>
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+            <div>
               <FieldLabel required>Full Name</FieldLabel>
               <input
                 className={inviteFieldClassName}
                 placeholder="e.g., Nørrebro Kulturhus"
                 value={form.fullName}
                 onChange={(e) => update('fullName', e.target.value)}
-                required
               />
             </div>
 
@@ -163,12 +177,15 @@ export function InviteUserDialog({
               <FieldLabel required>Email</FieldLabel>
               <input
                 type="email"
-                className={inviteFieldClassName}
+                className={fieldClassName('email', inviteFieldClassName)}
                 placeholder="e.g., info@nexium.edu.pk"
                 value={form.email}
-                onChange={(e) => update('email', e.target.value)}
-                required
+                onChange={(e) => {
+                  update('email', e.target.value);
+                  clearField('email');
+                }}
               />
+              <FormFieldError message={errors.email} />
             </div>
 
             <div>
@@ -188,7 +205,6 @@ export function InviteUserDialog({
                 placeholder="Enter Address"
                 value={form.address}
                 onChange={(e) => update('address', e.target.value)}
-                required
               />
             </div>
 
@@ -200,7 +216,6 @@ export function InviteUserDialog({
                   placeholder="Enter CNIC"
                   value={form.cnic}
                   onChange={(e) => update('cnic', e.target.value)}
-                  required
                 />
               </div>
               <div>
@@ -228,13 +243,17 @@ export function InviteUserDialog({
                   aria-label="Select role"
                   placeholder="Select Role"
                   value={form.roleId}
-                  onValueChange={(value) => update('roleId', value)}
+                  onValueChange={(value) => {
+                    update('roleId', value);
+                    clearField('roleId');
+                  }}
                   options={[
                     { value: '', label: 'Select Role' },
                     ...(roles?.data.map((role) => ({ value: role.id, label: role.name })) ?? []),
                   ]}
                   className="w-full"
                 />
+                <FormFieldError message={errors.roleId} />
               </div>
               <div>
                 <FieldLabel required>Select Branch</FieldLabel>
@@ -242,18 +261,23 @@ export function InviteUserDialog({
                   aria-label="Select branch"
                   placeholder="Select Branch"
                   value={form.branchId}
-                  onValueChange={(value) => update('branchId', value)}
+                  onValueChange={(value) => {
+                    update('branchId', value);
+                    clearField('branchId');
+                  }}
                   options={[
                     { value: '', label: 'Select Branch' },
                     ...(branches?.data.map((branch) => ({ value: branch.id, label: branch.name })) ?? []),
                   ]}
                   className="w-full"
                 />
+                <FormFieldError message={errors.branchId} />
               </div>
             </div>
           </div>
 
-          <div className="flex shrink-0 gap-2 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-5 pb-5 pt-4">            <button
+          <div className="flex shrink-0 gap-2 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-5 pb-5 pt-4">
+            <button
               type="button"
               onClick={() => onOpenChange(false)}
               className={cn(

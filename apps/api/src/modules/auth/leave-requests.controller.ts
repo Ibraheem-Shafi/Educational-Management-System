@@ -1,23 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { z } from 'zod';
 import { PortalService } from './auth.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  createLeaveRequestSchema,
-  portalCalendarQuerySchema,
-  portalSectionQuerySchema,
-} from '@eims/shared';
+import { createEmployeeLeaveRequestSchema, listLeaveRequestsQuerySchema, reviewLeaveSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateLeaveRequestInput } from '@eims/shared';
-
-const reviewLeaveSchema = z.object({
-  status: z.enum(['approved', 'rejected']),
-});
+import type { BranchScope, CreateEmployeeLeaveRequestInput, ListLeaveRequestsQuery, ReviewLeaveInput } from '@eims/shared';
 
 @ApiTags('leave-requests')
 @ApiBearerAuth()
@@ -27,17 +18,38 @@ export class LeaveRequestsController {
   constructor(private readonly portalService: PortalService) {}
 
   @Get()
-  @Permissions('students.read')
-  list(@BranchId() branchId: string | null) {
-    return this.portalService.listStaffLeaveRequests(branchId);
+  @Permissions('leave.read')
+  list(
+    @BranchScopeParam() scope: BranchScope,
+    @Query(createZodPipe(listLeaveRequestsQuerySchema)) query: ListLeaveRequestsQuery,
+  ) {
+    return this.portalService.listStaffLeaveRequests(scope, query.kind, query.page, query.limit);
+  }
+
+  @Get('mine')
+  @Permissions('leave.request')
+  listMine(
+    @CurrentUser() user: AuthUser,
+    @Query(createZodPipe(listLeaveRequestsQuerySchema)) query: ListLeaveRequestsQuery,
+  ) {
+    return this.portalService.listMyEmployeeLeaveRequests(user, query.page, query.limit);
+  }
+
+  @Post()
+  @Permissions('leave.request')
+  create(
+    @CurrentUser() user: AuthUser,
+    @Body(createZodPipe(createEmployeeLeaveRequestSchema)) body: CreateEmployeeLeaveRequestInput,
+  ) {
+    return this.portalService.createEmployeeLeaveRequest(user, body);
   }
 
   @Patch(':id')
-  @Permissions('students.update')
+  @Permissions('leave.manage')
   review(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body(createZodPipe(reviewLeaveSchema)) body: z.infer<typeof reviewLeaveSchema>,
+    @Body(createZodPipe(reviewLeaveSchema)) body: ReviewLeaveInput,
   ) {
     return this.portalService.reviewLeaveRequest(user, id, body.status);
   }

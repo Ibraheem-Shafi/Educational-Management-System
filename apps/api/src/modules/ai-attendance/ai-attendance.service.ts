@@ -1,14 +1,18 @@
+import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import type { BranchScope } from '@eims/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import type { AuthUser } from '@eims/types';
 import type {
   AnalyzeOcrSessionInput,
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
+  ListOcrSessionsQuery,
 } from '@eims/shared';
 import { detectAttendanceCode, nameSimilarity } from '@eims/shared';
 
@@ -62,8 +66,8 @@ export class AiAttendanceService {
     return this.toResponse(session);
   }
 
-  async analyze(id: string, input: AnalyzeOcrSessionInput, user: AuthUser, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async analyze(id: string, input: AnalyzeOcrSessionInput, user: AuthUser, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     if (session.status === 'confirmed') {
       throw new BadRequestException('Session already confirmed');
     }
@@ -154,8 +158,8 @@ export class AiAttendanceService {
     return this.toResponse(updated);
   }
 
-  async confirm(id: string, input: ConfirmOcrSessionInput, user: AuthUser, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async confirm(id: string, input: ConfirmOcrSessionInput, user: AuthUser, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     if (session.status === 'confirmed') {
       throw new BadRequestException('Session already confirmed');
     }
@@ -166,6 +170,8 @@ export class AiAttendanceService {
         branchId: session.branchId,
         batchId: session.batchId,
         date: dateStr,
+        notifyAbsences: false,
+        notifyChannel: 'sms',
         records: input.records,
       },
       user,
@@ -187,23 +193,31 @@ export class AiAttendanceService {
     return { session: this.toResponse(updated), attendance: result };
   }
 
-  async findOne(id: string, branchId: string | null) {
-    const session = await this.findSession(id, branchId);
+  async findOne(id: string, scope: BranchScope) {
+    const session = await this.findSession(id, scope);
     return this.toResponse(session);
   }
 
-  async list(branchId: string | null) {
-    const sessions = await this.prisma.attendanceOcrSession.findMany({
-      where: branchId ? { branchId } : {},
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
-    return { data: sessions.map((s) => this.toResponse(s)) };
+  async list(query: ListOcrSessionsQuery, scope: BranchScope) {
+    const where = prismaBranchFilter(scope);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.attendanceOcrSession.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.attendanceOcrSession.count({ where }),
+    ]);
+    return paginatedResult(sessions.map((s) => this.toResponse(s)), total, page, limit);
   }
 
-  private async findSession(id: string, branchId: string | null) {
+  private async findSession(id: string, scope: BranchScope) {
     const session = await this.prisma.attendanceOcrSession.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) },
+      where: { id, ...prismaBranchFilter(scope) },
     });
     if (!session) throw new NotFoundException('OCR session not found');
     return session;

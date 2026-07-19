@@ -44,7 +44,7 @@ export function MetricDonutCard({
       <div className="flex flex-wrap justify-around gap-6">
         {segments.map((segment) => (
           <div key={segment.label} className="flex flex-col items-center gap-2">
-            <AttendanceDonut rate={segment.rate} color={segment.color} />
+            <AttendanceDonut rate={segment.rate} color={segment.color} className="w-[104px]" />
             <span className="text-sm text-[var(--text-sub-500)]">{segment.label}</span>
           </div>
         ))}

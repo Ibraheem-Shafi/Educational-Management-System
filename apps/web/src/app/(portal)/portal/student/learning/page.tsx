@@ -11,9 +11,11 @@ import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import {
   LEARNING_TYPE_FILTERS,
+  formatLearningDueAt,
   formatLearningDueDate,
   learningTypeLabel,
 } from '@/lib/portal-learning';
+import { OnlineClassSessionMeta } from '@/components/features/learning/online-class-session';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SearchInput } from '@/components/layout/search-input';
@@ -52,7 +54,7 @@ function StudentLearningContent() {
   );
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(8);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -157,12 +159,24 @@ function StudentLearningContent() {
                           {item.description}
                         </p>
                       )}
+                      {item.type === 'online_class' && (
+                        <OnlineClassSessionMeta
+                          startsAt={item.startsAt}
+                          endsAt={item.endsAt}
+                          meetingUrl={item.meetingUrl}
+                          variant="inline"
+                        />
+                      )}
                     </td>
                     <td className={dataTableTdClass}>
                       <StatusBadge label={learningTypeLabel(item.type)} code={item.type} />
                     </td>
                     <td className={dataTableTdClass}>{item.subject?.name ?? '—'}</td>
-                    <td className={dataTableTdClass}>{formatLearningDueDate(item.dueAt)}</td>
+                    <td className={dataTableTdClass}>
+                      {item.type === 'online_class'
+                        ? formatLearningDueAt(item.startsAt)
+                        : formatLearningDueDate(item.dueAt)}
+                    </td>
                     <td className={dataTableTdClass}>
                       <Link
                         href={`/portal/student/learning/${item.id}`}
@@ -178,7 +192,7 @@ function StudentLearningContent() {
             </tbody>
           </table>
         </div>
-        {meta && meta.totalPages > 1 && (
+        {meta && (
           <div className="border-t border-stroke-soft-200 px-5 py-3">
             <PaginationBar
               page={meta.page}

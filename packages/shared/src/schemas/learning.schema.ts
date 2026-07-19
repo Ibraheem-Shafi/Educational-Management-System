@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalString,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const LEARNING_RESOURCE_TYPES = [
   'note',
@@ -6,7 +13,10 @@ export const LEARNING_RESOURCE_TYPES = [
   'syllabus',
   'resource',
   'homework',
+  'online_class',
 ] as const;
+
+export const LEARNING_MEETING_PLATFORMS = ['zoom', 'meet', 'teams', 'other'] as const;
 
 export const LEARNING_VISIBILITY_SCOPES = [
   'branch',
@@ -18,8 +28,8 @@ export const LEARNING_VISIBILITY_SCOPES = [
 export const LEARNING_AUDIENCES = ['students', 'parents', 'all'] as const;
 
 export const learningAttachmentSchema = z.object({
-  fileName: z.string().min(1).max(255),
-  storagePath: z.string().min(1),
+  fileName: requiredString('File name', 1, 255),
+  storagePath: requiredId('Storage path'),
   mimeType: z.string().optional(),
   sizeBytes: z.number().int().positive().optional(),
 });
@@ -27,18 +37,29 @@ export const learningAttachmentSchema = z.object({
 export type LearningAttachmentInput = z.infer<typeof learningAttachmentSchema>;
 
 const learningResourceBaseSchema = z.object({
-  branchId: z.string().min(1),
-  type: z.enum(LEARNING_RESOURCE_TYPES),
-  title: z.string().min(1).max(200),
-  description: z.string().max(2000).optional(),
-  body: z.string().max(50000).optional(),
+  branchId: requiredId('Branch'),
+  type: z.enum(LEARNING_RESOURCE_TYPES, { errorMap: () => ({ message: MSG.select('type') }) }),
+  title: requiredString('Title', 1, 200),
+  description: optionalString(2000),
+  body: optionalString(50000),
   programId: z.string().optional().nullable(),
   batchId: z.string().optional().nullable(),
   subjectId: z.string().optional().nullable(),
-  visibilityScope: z.enum(LEARNING_VISIBILITY_SCOPES),
-  audience: z.enum(LEARNING_AUDIENCES).default('all'),
-  dueAt: z.string().datetime().optional().nullable(),
+  visibilityScope: z.enum(LEARNING_VISIBILITY_SCOPES, {
+    errorMap: () => ({ message: MSG.select('visibility scope') }),
+  }),
+  audience: z.enum(LEARNING_AUDIENCES, { errorMap: () => ({ message: MSG.select('audience') }) }).default('all'),
+  dueAt: z.string().datetime({ message: MSG.invalidDate }).optional().nullable(),
   maxMarks: z.number().positive().optional().nullable(),
+  startsAt: z.string().datetime({ message: MSG.invalidDate }).optional().nullable(),
+  endsAt: z.string().datetime({ message: MSG.invalidDate }).optional().nullable(),
+  meetingUrl: z
+    .union([z.string().url(MSG.invalidUrl), z.literal(''), z.null()])
+    .optional()
+    .nullable(),
+  meetingPlatform: z.enum(LEARNING_MEETING_PLATFORMS, {
+    errorMap: () => ({ message: MSG.select('meeting platform') }),
+  }).optional().nullable(),
   isPublished: z.boolean().optional().default(false),
   attachments: z.array(learningAttachmentSchema).optional().default([]),
 });
@@ -75,7 +96,34 @@ function refineLearningScope(
   }
 }
 
-export const createLearningResourceSchema = learningResourceBaseSchema.superRefine(refineLearningScope);
+function refineOnlineClass(
+  data: {
+    type: (typeof LEARNING_RESOURCE_TYPES)[number];
+    startsAt?: string | null;
+    meetingUrl?: string | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (data.type !== 'online_class') return;
+  if (!data.startsAt) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'startsAt is required for online classes',
+      path: ['startsAt'],
+    });
+  }
+  if (!data.meetingUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'meetingUrl is required for online classes',
+      path: ['meetingUrl'],
+    });
+  }
+}
+
+export const createLearningResourceSchema = learningResourceBaseSchema
+  .superRefine(refineLearningScope)
+  .superRefine(refineOnlineClass);
 
 export type CreateLearningResourceInput = z.infer<typeof createLearningResourceSchema>;
 
@@ -83,32 +131,43 @@ export const updateLearningResourceSchema = learningResourceBaseSchema
   .omit({ branchId: true, attachments: true })
   .partial()
   .superRefine((data, ctx) => {
-    if (!data.visibilityScope) return;
-    refineLearningScope(
-      {
-        visibilityScope: data.visibilityScope,
-        programId: data.programId,
-        batchId: data.batchId,
-        subjectId: data.subjectId,
-      },
-      ctx,
-    );
+    if (data.visibilityScope) {
+      refineLearningScope(
+        {
+          visibilityScope: data.visibilityScope,
+          programId: data.programId,
+          batchId: data.batchId,
+          subjectId: data.subjectId,
+        },
+        ctx,
+      );
+    }
+    if (data.type === 'online_class') {
+      refineOnlineClass(
+        {
+          type: 'online_class',
+          startsAt: data.startsAt,
+          meetingUrl: data.meetingUrl,
+        },
+        ctx,
+      );
+    }
   });
 
 export type UpdateLearningResourceInput = z.infer<typeof updateLearningResourceSchema>;
 
-export const listLearningQuerySchema = z.object({
-  branchId: z.string().optional(),
-  type: z.enum(LEARNING_RESOURCE_TYPES).optional(),
-  batchId: z.string().optional(),
-  subjectId: z.string().optional(),
-  programId: z.string().optional(),
-  audience: z.enum(LEARNING_AUDIENCES).optional(),
-  publishedOnly: z.coerce.boolean().optional(),
-  search: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-});
+export const listLearningQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    type: z.enum(LEARNING_RESOURCE_TYPES).optional(),
+    batchId: z.string().optional(),
+    subjectId: z.string().optional(),
+    programId: z.string().optional(),
+    audience: z.enum(LEARNING_AUDIENCES).optional(),
+    publishedOnly: z.coerce.boolean().optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLearningQuery = z.infer<typeof listLearningQuerySchema>;
 
