@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import { AccountingPostingService } from './accounting-posting.service';
 import type { AuthUser } from '@eims/types';
@@ -183,27 +184,41 @@ export class AccountingService {
     await this.posting.ensureDefaultChart();
     const effectiveBranchId = branchId ?? query.branchId;
 
-    const accounts = await this.prisma.account.findMany({
-      where: {
-        deletedAt: null,
-        ...(query.type ? { type: query.type } : {}),
-        ...(query.activeOnly ? { isActive: true } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { code: { contains: query.search, mode: 'insensitive' } },
-                { name: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-        ...(effectiveBranchId
-          ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] }
-          : {}),
-      },
-      orderBy: [{ code: 'asc' }],
-    });
+    const where = {
+      deletedAt: null,
+      ...(query.type ? { type: query.type } : {}),
+      ...(query.activeOnly ? { isActive: true } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+      ...(effectiveBranchId
+        ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return { data: accounts.map((account) => this.toAccountResponse(account)) };
+    const [accounts, total] = await Promise.all([
+      this.prisma.account.findMany({
+        where,
+        orderBy: [{ code: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.account.count({ where }),
+    ]);
+
+    return paginatedResult(
+      accounts.map((account) => this.toAccountResponse(account)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async createAccount(input: CreateAccountInput, user: AuthUser, branchId: string | null) {
@@ -313,26 +328,40 @@ export class AccountingService {
     const effectiveBranchId = branchId ?? query.branchId;
     const dateFilter = this.dateRange(query.from, query.to);
 
-    const vouchers = await this.prisma.journalVoucher.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.voucherType ? { voucherType: query.voucherType } : {}),
-        ...(dateFilter ? { voucherDate: dateFilter } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { voucherNo: { contains: query.search, mode: 'insensitive' } },
-                { narration: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ voucherDate: 'desc' }, { voucherNo: 'desc' }],
-      include: voucherInclude,
-    });
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.voucherType ? { voucherType: query.voucherType } : {}),
+      ...(dateFilter ? { voucherDate: dateFilter } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { voucherNo: { contains: query.search, mode: 'insensitive' as const } },
+              { narration: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return { data: vouchers.map((voucher) => this.toVoucherResponse(voucher)) };
+    const [vouchers, total] = await Promise.all([
+      this.prisma.journalVoucher.findMany({
+        where,
+        orderBy: [{ voucherDate: 'desc' }, { voucherNo: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: voucherInclude,
+      }),
+      this.prisma.journalVoucher.count({ where }),
+    ]);
+
+    return paginatedResult(
+      vouchers.map((voucher) => this.toVoucherResponse(voucher)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async findVoucher(id: string, branchId: string | null) {
@@ -564,17 +593,26 @@ export class AccountingService {
 
   async findAllBudgets(query: ListBudgetsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const budgets = await this.prisma.budget.findMany({
-      where: {
-        ...(effectiveBranchId ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] } : {}),
-        ...(query.year ? { year: query.year } : {}),
-      },
-      orderBy: [{ year: 'desc' }, { name: 'asc' }],
-      include: budgetInclude,
-    });
+    const where = {
+      ...(effectiveBranchId ? { OR: [{ branchId: null }, { branchId: effectiveBranchId }] } : {}),
+      ...(query.year ? { year: query.year } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return {
-      data: budgets.map((budget) => ({
+    const [budgets, total] = await Promise.all([
+      this.prisma.budget.findMany({
+        where,
+        orderBy: [{ year: 'desc' }, { name: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: budgetInclude,
+      }),
+      this.prisma.budget.count({ where }),
+    ]);
+
+    return paginatedResult(
+      budgets.map((budget) => ({
         id: budget.id,
         branchId: budget.branchId,
         year: budget.year,
@@ -588,7 +626,10 @@ export class AccountingService {
           account: line.account,
         })),
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   async createBudget(input: CreateBudgetInput, user: AuthUser, branchId: string | null) {

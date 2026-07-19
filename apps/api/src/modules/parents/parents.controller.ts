@@ -17,9 +17,9 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createParentSchema, listParentsQuerySchema, linkParentStudentSchema } from '@eims/shared';
+import { createParentSchema, listParentsQuerySchema, linkParentStudentSchema, listParentStudentsQuerySchema, listStudentParentsQuerySchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput } from '@eims/shared';
+import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput, ListParentStudentsQuery, ListStudentParentsQuery } from '@eims/shared';
 
 @ApiTags('parents')
 @ApiBearerAuth()
@@ -38,6 +38,15 @@ export class ParentsController {
   @Permissions('students.read')
   findAll(@Query(createZodPipe(listParentsQuerySchema)) query: ListParentsQuery) {
     return this.parentsService.findAll(query);
+  }
+
+  @Get(':id/students')
+  @Permissions('students.read')
+  listLinkedStudents(
+    @Param('id') id: string,
+    @Query(createZodPipe(listParentStudentsQuerySchema)) query: ListParentStudentsQuery,
+  ) {
+    return this.parentsService.listLinkedStudents(id, query);
   }
 
   @Get(':id')
@@ -86,7 +95,10 @@ export class StudentParentsController {
 
   @Get(':studentId/parents')
   @Permissions('students.read')
-  getStudentParents(@Param('studentId') studentId: string) {
-    return this.parentsService.getStudentParents(studentId);
+  getStudentParents(
+    @Param('studentId') studentId: string,
+    @Query(createZodPipe(listStudentParentsQuerySchema)) query: ListStudentParentsQuery,
+  ) {
+    return this.parentsService.getStudentParents(studentId, query);
   }
 }

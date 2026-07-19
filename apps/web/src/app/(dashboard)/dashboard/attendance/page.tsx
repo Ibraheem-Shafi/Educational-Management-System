@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -63,12 +63,6 @@ export default function AttendancePage() {
       apiClient<AttendanceTrendResponse>(`/attendance/trend?month=${viewMonth}`, { token }),
     enabled: !!token,
   });
-
-  useEffect(() => {
-    if (!batchId && batches?.data.length) {
-      setBatchId(batches.data[0].id);
-    }
-  }, [batches, batchId]);
 
   const gridQueryKey = ['attendance-grid', viewMonth, mode, batchId, effectiveBranchId];
 

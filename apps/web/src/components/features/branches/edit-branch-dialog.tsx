@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, X } from 'lucide-react';
+import { updateBranchSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import type { BranchDetailResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,7 @@ import {
   parsePhoneForBranchForm,
   type BranchFormValues,
 } from '@/lib/branch-form';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +35,16 @@ function branchToForm(branch: BranchDetailResponse): BranchFormValues {
     email: branch.email ?? '',
     phoneCountryCode,
     phone,
+  };
+}
+
+function branchFormToUpdatePayload(form: BranchFormValues) {
+  const phone = buildBranchPhonePayload(form);
+  return {
+    name: form.name.trim(),
+    address: form.address.trim() || undefined,
+    email: form.email.trim() || undefined,
+    ...(phone ? { phone } : {}),
   };
 }
 
@@ -48,6 +61,8 @@ export function EditBranchDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<BranchFormValues>(emptyBranchForm);
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } =
+    useFormErrors(updateBranchSchema);
 
   const { data: branch, isLoading } = useQuery({
     queryKey: queryKeys.branchDetail(branchId ?? ''),
@@ -58,25 +73,19 @@ export function EditBranchDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyBranchForm);
+      clearAll();
       return;
     }
     if (branch) setForm(branchToForm(branch));
-  }, [open, branch]);
+  }, [open, branch, clearAll]);
 
   const updateMutation = useMutation({
-    mutationFn: (payload: BranchFormValues) => {
-      const fullPhone = buildBranchPhonePayload(payload);
-      return apiClient(`/branches/${branchId}`, {
+    mutationFn: (payload: ReturnType<typeof branchFormToUpdatePayload>) =>
+      apiClient(`/branches/${branchId}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({
-          name: payload.name.trim(),
-          address: payload.address.trim() || undefined,
-          email: payload.email.trim() || undefined,
-          ...(fullPhone ? { phone: fullPhone } : {}),
-        }),
-      });
-    },
+        body: JSON.stringify(payload),
+      }),
     onSuccess: () => {
       toast.success('Branch updated');
       queryClient.invalidateQueries({ queryKey: ['branches'] });
@@ -86,14 +95,15 @@ export function EditBranchDialog({
       }
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update branch'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Failed to update branch');
+    },
   });
 
   const update = (key: keyof BranchFormValues, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
-
-  const canSubmit = form.name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -125,11 +135,9 @@ export function EditBranchDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!form.name.trim()) {
-              toast.error('Enter a valid branch name');
-              return;
-            }
-            updateMutation.mutate(form);
+            const payload = branchFormToUpdatePayload(form);
+            if (!validate(payload)) return;
+            updateMutation.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
@@ -140,7 +148,13 @@ export function EditBranchDialog({
                 ))}
               </div>
             ) : (
-              <BranchFormFields form={form} onChange={update} />
+              <BranchFormFields
+                form={form}
+                onChange={update}
+                errors={errors}
+                fieldClassName={fieldClassName}
+                clearField={clearField}
+              />
             )}
           </div>
 
@@ -159,7 +173,7 @@ export function EditBranchDialog({
             </button>
             <button
               type="submit"
-              disabled={updateMutation.isPending || isLoading || !canSubmit}
+              disabled={updateMutation.isPending || isLoading}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white',

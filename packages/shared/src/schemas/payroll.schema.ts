@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalString,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const salaryComponentKinds = ['allowance', 'deduction'] as const;
 export const payrollRunStatuses = [
@@ -9,8 +16,8 @@ export const payrollRunStatuses = [
 ] as const;
 
 export const salaryComponentSchema = z.object({
-  kind: z.enum(salaryComponentKinds),
-  name: z.string().min(1).max(100),
+  kind: z.enum(salaryComponentKinds, { errorMap: () => ({ message: MSG.select('component kind') }) }),
+  name: requiredString('Name', 1, 100),
   amount: z.coerce.number().min(0),
   percentOfBasic: z.coerce.number().min(0).max(100).optional().nullable(),
 });
@@ -18,10 +25,10 @@ export const salaryComponentSchema = z.object({
 export type SalaryComponentInput = z.infer<typeof salaryComponentSchema>;
 
 export const createSalaryStructureSchema = z.object({
-  userId: z.string().min(1),
-  branchId: z.string().min(1),
+  userId: requiredId('User'),
+  branchId: requiredId('Branch'),
   basicSalary: z.coerce.number().min(0),
-  effectiveFrom: z.string().min(1),
+  effectiveFrom: requiredId('Effective from'),
   effectiveTo: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
   components: z.array(salaryComponentSchema).default([]),
@@ -35,40 +42,44 @@ export const updateSalaryStructureSchema = createSalaryStructureSchema
 
 export type UpdateSalaryStructureInput = z.infer<typeof updateSalaryStructureSchema>;
 
-export const listSalaryStructuresQuerySchema = z.object({
-  branchId: z.string().optional(),
-  userId: z.string().optional(),
-  isActive: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === 'true')),
-  search: z.string().optional(),
-});
+export const listSalaryStructuresQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    userId: z.string().optional(),
+    isActive: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListSalaryStructuresQuery = z.infer<typeof listSalaryStructuresQuerySchema>;
 
 export const createPayrollRunSchema = z.object({
-  branchId: z.string().min(1),
+  branchId: requiredId('Branch'),
   year: z.coerce.number().int().min(2000).max(2100),
   month: z.coerce.number().int().min(1).max(12),
-  notes: z.string().max(2000).optional().nullable(),
+  notes: optionalString(2000).nullable(),
 });
 
 export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
 
 export const adjustPayrollLineSchema = z.object({
   adjustmentsTotal: z.coerce.number(),
-  reason: z.string().max(500).optional().nullable(),
+  reason: optionalString(500).nullable(),
 });
 
 export type AdjustPayrollLineInput = z.infer<typeof adjustPayrollLineSchema>;
 
-export const listPayrollRunsQuerySchema = z.object({
-  branchId: z.string().optional(),
-  year: z.coerce.number().int().optional(),
-  month: z.coerce.number().int().min(1).max(12).optional(),
-  status: z.enum(payrollRunStatuses).optional(),
-});
+export const listPayrollRunsQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    year: z.coerce.number().int().optional(),
+    month: z.coerce.number().int().min(1).max(12).optional(),
+    status: z.enum(payrollRunStatuses).optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListPayrollRunsQuery = z.infer<typeof listPayrollRunsQuerySchema>;
 

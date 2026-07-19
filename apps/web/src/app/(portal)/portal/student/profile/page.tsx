@@ -3,22 +3,28 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserRound } from 'lucide-react';
+import { updateProfileSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import type { PortalStudentProfileResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { Button } from '@/components/ui/button';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 
 export default function StudentProfilePage() {
   const { session, user } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [phone, setPhone] = useState('');
+  const { errors, clearField, validate, applyApiErrors, fieldClassName } =
+    useFormErrors(updateProfileSchema);
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.portalStudentProfile,
@@ -27,17 +33,22 @@ export default function StudentProfilePage() {
   });
 
   const save = useMutation({
-    mutationFn: () => apiClient('/auth/me', { method: 'PATCH', body: { phone: phone || null }, token }),
+    mutationFn: (payload: { phone: string | null }) =>
+      apiClient('/auth/me', { method: 'PATCH', body: payload, token }),
     onSuccess: async () => {
       toast.success('Profile updated');
       await queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentProfile });
     },
-    onError: () => toast.error('Unable to update profile'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error('Unable to update profile');
+    },
   });
 
   if (isLoading && !data) return <PortalPageSkeleton />;
 
   const profile = data?.user ?? user;
+  const phoneValue = phone || data?.user.phone || '';
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -52,12 +63,28 @@ export default function StudentProfilePage() {
             <label className="mt-3 block">
               <span className="text-xs text-[var(--text-sub-500)]">Phone</span>
               <input
-                className="mt-1 w-full max-w-xs rounded-lg border border-stroke-soft-200 px-3 py-2"
-                defaultValue={data?.user.phone ?? ''}
-                onChange={(e) => setPhone(e.target.value)}
+                className={fieldClassName(
+                  'phone',
+                  'mt-1 w-full max-w-xs rounded-lg border border-stroke-soft-200 px-3 py-2',
+                )}
+                value={phoneValue}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  clearField('phone');
+                }}
               />
+              <FormFieldError message={errors.phone} />
             </label>
-            <Button className="mt-3" size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => {
+                const payload = { phone: phoneValue.trim() || null };
+                if (!validate(payload)) return;
+                save.mutate(payload);
+              }}
+              disabled={save.isPending}
+            >
               Save phone
             </Button>
           </div>

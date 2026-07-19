@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
@@ -25,6 +26,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { TripDialog } from './trip-dialog';
 import { TripAttendanceDialog } from './trip-attendance-dialog';
@@ -38,14 +40,26 @@ export function TripsPanel({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.TRANSPORT_MANAGE);
 
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTrip, setEditTrip] = useState<TransportTrip | null>(null);
   const [attendanceTrip, setAttendanceTrip] = useState<TransportTrip | null>(null);
 
+  const queryParams = { page, limit };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.transportTrips(branchId),
-    queryFn: () =>
-      apiClient<{ data: TransportTrip[] }>(`/transport/trips?branchId=${branchId}`, { token }),
+    queryKey: queryKeys.transportTrips(branchId, queryParams),
+    queryFn: () => {
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
+      return apiClient<PaginatedResponse<TransportTrip>>(`/transport/trips?${params.toString()}`, {
+        token,
+      });
+    },
     enabled: !!token && !!branchId,
   });
 
@@ -54,7 +68,7 @@ export function TripsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Trips (${rows.length})`}
+        title={`Trips (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -67,70 +81,84 @@ export function TripsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load trips.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[960px]')}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Date</th>
-                  <th className={dataTableThClass}>Route</th>
-                  <th className={dataTableThClass}>Vehicle</th>
-                  <th className={dataTableThClass}>Direction</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>Attendance</th>
-                  <th className={dataTableThClass}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child>td]:border-b-0">
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={7} rows={5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[960px]')}>
+                <thead>
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
-                      No trips scheduled
-                    </td>
+                    <th className={dataTableThClass}>Date</th>
+                    <th className={dataTableThClass}>Route</th>
+                    <th className={dataTableThClass}>Vehicle</th>
+                    <th className={dataTableThClass}>Direction</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Attendance</th>
+                    <th className={dataTableThClass}>Actions</th>
                   </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
-                      <td className={dataTableTdClass}>{formatDate(row.tripDate)}</td>
-                      <td className={dataTableTdClass}>{row.route?.name ?? '—'}</td>
-                      <td className={dataTableTdClass}>{row.vehicle?.plateNumber ?? '—'}</td>
-                      <td className={dataTableTdClass}>{formatLabel(row.direction)}</td>
-                      <td className={dataTableTdClass}>
-                        <StatusBadge label={formatLabel(row.status)} code={statusBadgeCode(row.status)} />
-                      </td>
-                      <td className={dataTableTdClass}>{row._count?.attendance ?? 0}</td>
-                      <td className={dataTableTdClass}>
-                        <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditTrip(row)}
-                              aria-label="Edit trip"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setAttendanceTrip(row)}
-                              aria-label="Mark attendance"
-                              disabled={!canManage}
-                            >
-                              <ClipboardCheck className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </PermissionGate>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={7} rows={limit} />
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
+                        No trips scheduled
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    rows.map((row) => (
+                      <tr key={row.id} className={dataTableRowHoverClass}>
+                        <td className={dataTableTdClass}>{formatDate(row.tripDate)}</td>
+                        <td className={dataTableTdClass}>{row.route?.name ?? '—'}</td>
+                        <td className={dataTableTdClass}>{row.vehicle?.plateNumber ?? '—'}</td>
+                        <td className={dataTableTdClass}>{formatLabel(row.direction)}</td>
+                        <td className={dataTableTdClass}>
+                          <StatusBadge label={formatLabel(row.status)} code={statusBadgeCode(row.status)} />
+                        </td>
+                        <td className={dataTableTdClass}>{row._count?.attendance ?? 0}</td>
+                        <td className={dataTableTdClass}>
+                          <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditTrip(row)}
+                                aria-label="Edit trip"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setAttendanceTrip(row)}
+                                aria-label="Mark attendance"
+                                disabled={!canManage}
+                              >
+                                <ClipboardCheck className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </PermissionGate>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

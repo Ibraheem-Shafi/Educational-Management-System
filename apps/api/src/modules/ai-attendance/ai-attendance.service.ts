@@ -4,11 +4,13 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import type { AuthUser } from '@eims/types';
 import type {
   AnalyzeOcrSessionInput,
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
+  ListOcrSessionsQuery,
 } from '@eims/shared';
 import { detectAttendanceCode, nameSimilarity } from '@eims/shared';
 
@@ -166,6 +168,8 @@ export class AiAttendanceService {
         branchId: session.branchId,
         batchId: session.batchId,
         date: dateStr,
+        notifyAbsences: false,
+        notifyChannel: 'sms',
         records: input.records,
       },
       user,
@@ -192,13 +196,21 @@ export class AiAttendanceService {
     return this.toResponse(session);
   }
 
-  async list(branchId: string | null) {
-    const sessions = await this.prisma.attendanceOcrSession.findMany({
-      where: branchId ? { branchId } : {},
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
-    return { data: sessions.map((s) => this.toResponse(s)) };
+  async list(query: ListOcrSessionsQuery, branchId: string | null) {
+    const where = branchId ? { branchId } : {};
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.attendanceOcrSession.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.attendanceOcrSession.count({ where }),
+    ]);
+    return paginatedResult(sessions.map((s) => this.toResponse(s)), total, page, limit);
   }
 
   private async findSession(id: string, branchId: string | null) {

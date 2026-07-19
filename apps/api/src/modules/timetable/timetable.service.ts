@@ -23,6 +23,19 @@ function timesOverlap(startA: string, endA: string, startB: string, endB: string
   return a0 < b1 && b0 < a1;
 }
 
+function roomSearchWhere(roomQuery: string) {
+  const terms = roomQuery.trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return {};
+  if (terms.length === 1) {
+    return { room: { contains: terms[0], mode: 'insensitive' as const } };
+  }
+  return {
+    AND: terms.map((term) => ({
+      room: { contains: term, mode: 'insensitive' as const },
+    })),
+  };
+}
+
 const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
@@ -78,7 +91,8 @@ export class TimetableService {
         ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
         ...(query.batchId ? { batchId: query.batchId } : {}),
         ...(query.teacherId ? { teacherId: query.teacherId } : {}),
-        ...(query.room ? { room: query.room } : {}),
+        ...(query.subjectId ? { subjectId: query.subjectId } : {}),
+        ...roomSearchWhere(query.room ?? ''),
       },
       orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });

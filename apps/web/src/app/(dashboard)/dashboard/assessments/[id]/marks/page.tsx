@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, bulkMarksSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LinkButton } from '@/components/ui/link-button';
@@ -48,6 +51,7 @@ export default function MarksEntryPage() {
   const [subjectId, setSubjectId] = useState('');
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const { errors, validate, clearField, applyApiErrors } = useFormErrors(bulkMarksSchema);
 
   const { data: batches } = useQuery({
     queryKey: ['batches', user?.branchId],
@@ -104,27 +108,43 @@ export default function MarksEntryPage() {
   }, []);
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const records = Object.entries(marks)
-        .filter(([, v]) => v !== '')
-        .map(([studentId, obtainedMarks]) => ({
-          studentId,
-          subjectId,
-          obtainedMarks: Number(obtainedMarks),
-          ...(remarks[studentId] ? { remarks: remarks[studentId] } : {}),
-        }));
-      return apiClient(`/assessments/${id}/marks/bulk`, {
+    mutationFn: (body: {
+      batchId: string;
+      records: Array<{
+        studentId: string;
+        subjectId: string;
+        obtainedMarks: number;
+        remarks?: string;
+      }>;
+    }) =>
+      apiClient(`/assessments/${id}/marks/bulk`, {
         method: 'POST',
         token,
-        body: JSON.stringify({ batchId, records }),
-      });
-    },
+        body: JSON.stringify(body),
+      }),
     onSuccess: () => {
       toast.success('Marks saved');
       queryClient.invalidateQueries({ queryKey: sheetKey });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSave = () => {
+    const records = Object.entries(marks)
+      .filter(([, v]) => v !== '')
+      .map(([studentId, obtainedMarks]) => ({
+        studentId,
+        subjectId,
+        obtainedMarks: Number(obtainedMarks),
+        ...(remarks[studentId] ? { remarks: remarks[studentId] } : {}),
+      }));
+    const payload = { batchId, records };
+    if (!validate(payload)) return;
+    saveMutation.mutate(payload);
+  };
 
   return (
     <div className="space-y-6">
@@ -175,38 +195,49 @@ export default function MarksEntryPage() {
       <Card>
         <CardContent className="pt-6">
           <FilterBar>
-            <select
-              className={filterSelectClass}
-              value={batchId}
-              onChange={(e) => setBatchId(e.target.value)}
-            >
-              <option value="">Select batch</option>
-              {batches?.data.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className={filterSelectClass}
-              value={subjectId}
-              onChange={(e) => setSubjectId(e.target.value)}
-              disabled={!batchId}
-            >
-              <option value="">Select subject</option>
-              {subjects?.data.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <PermissionGate permission={PERMISSIONS.ASSESSMENTS_MARKS_ENTER}>
-              <Button
-                onClick={() => saveMutation.mutate()}
-                disabled={!batchId || !subjectId || saveMutation.isPending || isPublished}
+            <div>
+              <select
+                className={filterSelectClass}
+                value={batchId}
+                onChange={(e) => {
+                  setBatchId(e.target.value);
+                  clearField('batchId');
+                }}
               >
-                Save marks
-              </Button>
+                <option value="">Select batch</option>
+                {batches?.data.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <FormFieldError message={errors.batchId} />
+            </div>
+            <div>
+              <select
+                className={filterSelectClass}
+                value={subjectId}
+                onChange={(e) => setSubjectId(e.target.value)}
+                disabled={!batchId}
+              >
+                <option value="">Select subject</option>
+                {subjects?.data.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <PermissionGate permission={PERMISSIONS.ASSESSMENTS_MARKS_ENTER}>
+              <div>
+                <Button
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending || isPublished}
+                >
+                  Save marks
+                </Button>
+                <FormFieldError message={errors.records} />
+              </div>
             </PermissionGate>
           </FilterBar>
         </CardContent>

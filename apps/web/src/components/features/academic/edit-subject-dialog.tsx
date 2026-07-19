@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { updateSubjectSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -39,36 +43,37 @@ export function EditSubjectDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(updateSubjectSchema);
 
   useEffect(() => {
     if (!open || !subject) {
       setName('');
       setCode('');
+      clearAll();
       return;
     }
     setName(subject.name);
     setCode(subject.code ?? '');
-  }, [open, subject]);
+  }, [open, subject, clearAll]);
 
   const updateSubject = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: { name: string; code?: string }) =>
       apiClient(`/subjects/${subject!.id}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({
-          name: name.trim(),
-          ...(code.trim() ? { code: code.trim() } : {}),
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Subject updated');
       invalidateAcademic(queryClient);
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
-
-  const canSubmit = !!subject && name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -95,29 +100,40 @@ export function EditSubjectDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            updateSubject.mutate();
+            const payload = {
+              name: name.trim(),
+              ...(code.trim() ? { code: code.trim() } : {}),
+            };
+            if (!validate(payload)) return;
+            updateSubject.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Subject name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('name', modalFieldClassName)}
                 placeholder="Subject name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                minLength={2}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearField('name');
+                }}
               />
+              <FormFieldError message={errors.name} />
             </div>
             <div>
               <FormFieldLabel>Code</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('code', modalFieldClassName)}
                 placeholder="Code (optional)"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  clearField('code');
+                }}
               />
+              <FormFieldError message={errors.code} />
             </div>
           </div>
 
@@ -135,7 +151,7 @@ export function EditSubjectDialog({
             </button>
             <button
               type="submit"
-              disabled={updateSubject.isPending || !canSubmit}
+              disabled={updateSubject.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

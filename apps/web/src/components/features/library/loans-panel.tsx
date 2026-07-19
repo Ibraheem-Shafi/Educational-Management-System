@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { LIBRARY_MAX_RENEWALS, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -26,6 +27,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { IssueLoanDialog } from './issue-loan-dialog';
 import type { LibraryLoan } from './types';
@@ -39,10 +41,19 @@ export function LoansPanel({ branchId }: { branchId: string }) {
   const canManage = can(PERMISSIONS.LIBRARY_MANAGE);
 
   const [activeOnly, setActiveOnly] = useState('true');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [issueOpen, setIssueOpen] = useState(false);
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     activeOnly: activeOnly === 'true',
     ...(activeOnly === 'overdue' ? { activeOnly: true, overdueOnly: true } : {}),
   };
@@ -50,16 +61,23 @@ export function LoansPanel({ branchId }: { branchId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.libraryLoans(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (activeOnly === 'overdue') {
         params.set('activeOnly', 'true');
         params.set('overdueOnly', 'true');
       } else if (activeOnly === 'true') {
         params.set('activeOnly', 'true');
       }
-      return apiClient<{ data: LibraryLoan[] }>(`/library/loans?${params.toString()}`, { token });
+      return apiClient<PaginatedResponse<LibraryLoan>>(`/library/loans?${params.toString()}`, {
+        token,
+      });
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const returnLoan = useMutation({
@@ -89,7 +107,7 @@ export function LoansPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Loans (${rows.length})`}
+        title={`Loans (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.LIBRARY_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setIssueOpen(true)}>
@@ -105,7 +123,10 @@ export function LoansPanel({ branchId }: { branchId: string }) {
               aria-label="Loan filter"
               placeholder="Filter"
               value={activeOnly}
-              onValueChange={setActiveOnly}
+              onValueChange={(next) => {
+                setActiveOnly(next);
+                setPage(1);
+              }}
               options={[
                 { value: 'true', label: 'Active loans' },
                 { value: 'overdue', label: 'Overdue only' },
@@ -119,23 +140,24 @@ export function LoansPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-center text-sm text-red-600">Failed to load loans</p>
         ) : (
-          <div className={cn(dataTableWrapperClass, 'border-0')}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Book</th>
-                  <th className={dataTableThClass}>Copy</th>
-                  <th className={dataTableThClass}>Borrower</th>
-                  <th className={dataTableThClass}>Issued</th>
-                  <th className={dataTableThClass}>Due</th>
-                  <th className={dataTableThClass}>Renewals</th>
-                  {canManage && <th className={dataTableThClass}>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 7 : 6} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={cn(dataTableWrapperClass, 'border-0')}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Book</th>
+                    <th className={dataTableThClass}>Copy</th>
+                    <th className={dataTableThClass}>Borrower</th>
+                    <th className={dataTableThClass}>Issued</th>
+                    <th className={dataTableThClass}>Due</th>
+                    <th className={dataTableThClass}>Renewals</th>
+                    {canManage && <th className={dataTableThClass}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 7 : 6} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={canManage ? 7 : 6}
@@ -205,6 +227,16 @@ export function LoansPanel({ branchId }: { branchId: string }) {
               </tbody>
             </table>
           </div>
+            {data && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={handleLimitChange}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

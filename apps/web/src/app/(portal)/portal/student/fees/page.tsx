@@ -16,7 +16,7 @@ export default function StudentFeesPage() {
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(8);
 
   const params = { page, limit };
   const { data, isLoading, error } = useQuery({

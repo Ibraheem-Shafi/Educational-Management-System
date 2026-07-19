@@ -4,15 +4,19 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { StickyNote, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createActivityNoteSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 
@@ -30,26 +34,45 @@ export function ActivityNoteDialog({
   const queryClient = useQueryClient();
   const [summary, setSummary] = useState('');
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } =
+    useFormErrors(createActivityNoteSchema);
+
   useEffect(() => {
-    if (!open) setSummary('');
-  }, [open]);
+    if (!open) {
+      setSummary('');
+      clearAll();
+    }
+  }, [open, clearAll]);
+
+  const buildPayload = () => ({
+    branchId,
+    summary: summary.trim(),
+  });
 
   const mutation = useMutation({
-    mutationFn: () => {
-      if (!summary.trim()) throw new Error('Note is required');
-      return apiClient('/reception/activities', {
+    mutationFn: (payload: ReturnType<typeof buildPayload>) =>
+      apiClient('/reception/activities', {
         method: 'POST',
         token,
-        body: { branchId, summary: summary.trim() },
-      });
-    },
+        body: payload,
+      }),
     onSuccess: () => {
       toast.success('Note added');
       queryClient.invalidateQueries({ queryKey: queryKeys.frontOfficeActivities(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Unable to add note');
+    },
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,24 +95,21 @@ export function ActivityNoteDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Note</FormFieldLabel>
               <textarea
-                className={cn(modalFieldClassName, 'min-h-[100px] resize-y py-3')}
+                className={cn(fieldClassName('summary', modalFieldClassName), 'min-h-[100px] resize-y py-3')}
                 placeholder="What happened at reception?"
                 value={summary}
-                onChange={(e) => setSummary(e.target.value)}
+                onChange={(e) => {
+                  setSummary(e.target.value);
+                  clearField('summary');
+                }}
                 maxLength={500}
-                required
               />
+              <FormFieldError message={errors.summary} />
             </div>
           </div>
 
@@ -107,7 +127,7 @@ export function ActivityNoteDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !summary.trim()}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

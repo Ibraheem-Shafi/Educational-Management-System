@@ -4,9 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { voucherTypes } from '@eims/shared';
+import { createVoucherSchema, voucherTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -42,6 +45,8 @@ export function VoucherDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const isView = mode === 'view';
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createVoucherSchema);
 
   const [voucherType, setVoucherType] = useState('journal');
   const [voucherDate, setVoucherDate] = useState(new Date().toISOString().slice(0, 10));
@@ -52,7 +57,7 @@ export function VoucherDialog({
     queryKey: queryKeys.accountingAccounts(branchId),
     queryFn: () =>
       apiClient<{ data: AccountingAccount[] }>(
-        `/accounting/accounts?branchId=${branchId}&activeOnly=true`,
+        `/accounting/accounts?branchId=${branchId}&activeOnly=true&limit=100`,
         { token },
       ),
     enabled: !!token && !!branchId && open,
@@ -87,7 +92,8 @@ export function VoucherDialog({
     setVoucherDate(new Date().toISOString().slice(0, 10));
     setNarration('');
     setLines([emptyLine(), emptyLine()]);
-  }, [open, isView, voucher]);
+    clearAll();
+  }, [open, isView, voucher, clearAll]);
 
   const totals = useMemo(() => {
     const debit = lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
@@ -96,28 +102,41 @@ export function VoucherDialog({
   }, [lines]);
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        branchId,
-        voucherType,
-        voucherDate,
-        narration: narration.trim() || undefined,
-        lines: lines.map((line) => ({
-          accountId: line.accountId,
-          debit: Number(line.debit) || 0,
-          credit: Number(line.credit) || 0,
-          memo: line.memo.trim() || undefined,
-        })),
-      };
-      return apiClient('/accounting/vouchers', { method: 'POST', token, body: payload });
-    },
+    mutationFn: async (payload: ReturnType<typeof buildPayload>) =>
+      apiClient('/accounting/vouchers', { method: 'POST', token, body: payload }),
     onSuccess: async () => {
       toast.success('Voucher created');
       await queryClient.invalidateQueries({ queryKey: queryKeys.accountingVouchers(branchId) });
       onOpenChange(false);
     },
-    onError: () => toast.error('Unable to create voucher'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  function buildPayload() {
+    return {
+      branchId,
+      voucherType,
+      voucherDate,
+      narration: narration.trim() || undefined,
+      lines: lines.map((line) => ({
+        accountId: line.accountId,
+        debit: Number(line.debit) || 0,
+        credit: Number(line.credit) || 0,
+        memo: line.memo.trim() || undefined,
+      })),
+    };
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (isView) return;
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,35 +154,40 @@ export function VoucherDialog({
         </div>
         <DialogDescription className="sr-only">Journal voucher form</DialogDescription>
 
-        <form
-          className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!isView) mutation.mutate();
-          }}
-        >
+        <form className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <FormFieldLabel>Type</FormFieldLabel>
               <SelectDropdown
                 aria-label="Voucher type"
                 value={voucherType}
-                onValueChange={setVoucherType}
-                disabled={isView}
+                onValueChange={(value) => {
+                  if (isView) return;
+                  clearField('voucherType');
+                  setVoucherType(value);
+                }}
                 options={voucherTypes.map((t) => ({ value: t, label: formatLabel(t) }))}
-                className="w-full"
+                className={cn(
+                  fieldClassName('voucherType', 'w-full'),
+                  isView && 'pointer-events-none opacity-60',
+                )}
               />
+              <FormFieldError message={errors.voucherType} />
             </div>
             <div>
               <FormFieldLabel htmlFor="voucher-date">Date</FormFieldLabel>
               <input
                 id="voucher-date"
                 type="date"
-                className={modalFieldClassName}
+                className={fieldClassName('voucherDate', modalFieldClassName)}
                 value={voucherDate}
                 disabled={isView}
-                onChange={(e) => setVoucherDate(e.target.value)}
+                onChange={(e) => {
+                  clearField('voucherDate');
+                  setVoucherDate(e.target.value);
+                }}
               />
+              <FormFieldError message={errors.voucherDate} />
             </div>
             <div>
               <FormFieldLabel>Status</FormFieldLabel>
@@ -179,12 +203,16 @@ export function VoucherDialog({
             <FormFieldLabel htmlFor="voucher-narration">Narration</FormFieldLabel>
             <input
               id="voucher-narration"
-              className={modalFieldClassName}
+              className={fieldClassName('narration', modalFieldClassName)}
               value={narration}
               disabled={isView}
-              onChange={(e) => setNarration(e.target.value)}
+              onChange={(e) => {
+                clearField('narration');
+                setNarration(e.target.value);
+              }}
               placeholder="Optional description"
             />
+            <FormFieldError message={errors.narration} />
           </div>
 
           <div className="space-y-2">
@@ -202,6 +230,7 @@ export function VoucherDialog({
                 </Button>
               ) : null}
             </div>
+            <FormFieldError message={errors.lines} />
 
             {lines.map((line, index) => (
               <div key={index} className="grid gap-2 rounded-lg border border-stroke-soft-200 p-3 sm:grid-cols-12">
@@ -210,65 +239,76 @@ export function VoucherDialog({
                     aria-label={`Account line ${index + 1}`}
                     placeholder="Select account"
                     value={line.accountId}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
+                      if (isView) return;
+                      clearField(`lines.${index}.accountId`);
                       setLines((prev) =>
                         prev.map((item, i) => (i === index ? { ...item, accountId: value } : item)),
-                      )
-                    }
-                    disabled={isView}
+                      );
+                    }}
                     options={accountOptions}
-                    className="w-full"
+                    className={cn(
+                      fieldClassName(`lines.${index}.accountId`, 'w-full'),
+                      isView && 'pointer-events-none opacity-60',
+                    )}
                   />
+                  <FormFieldError message={errors[`lines.${index}.accountId`]} />
                 </div>
                 <div className="sm:col-span-2">
                   <input
-                    className={modalFieldClassName}
+                    className={fieldClassName(`lines.${index}.debit`, modalFieldClassName)}
                     placeholder="Debit"
                     value={line.debit}
                     disabled={isView}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      clearField(`lines.${index}.debit`);
                       setLines((prev) =>
                         prev.map((item, i) =>
                           i === index ? { ...item, debit: e.target.value, credit: e.target.value ? '' : item.credit } : item,
                         ),
-                      )
-                    }
+                      );
+                    }}
                   />
+                  <FormFieldError message={errors[`lines.${index}.debit`]} />
                 </div>
                 <div className="sm:col-span-2">
                   <input
-                    className={modalFieldClassName}
+                    className={fieldClassName(`lines.${index}.credit`, modalFieldClassName)}
                     placeholder="Credit"
                     value={line.credit}
                     disabled={isView}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      clearField(`lines.${index}.credit`);
                       setLines((prev) =>
                         prev.map((item, i) =>
                           i === index ? { ...item, credit: e.target.value, debit: e.target.value ? '' : item.debit } : item,
                         ),
-                      )
-                    }
+                      );
+                    }}
                   />
+                  <FormFieldError message={errors[`lines.${index}.credit`]} />
                 </div>
                 <div className="sm:col-span-2">
                   <input
-                    className={modalFieldClassName}
+                    className={fieldClassName(`lines.${index}.memo`, modalFieldClassName)}
                     placeholder="Memo"
                     value={line.memo}
                     disabled={isView}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      clearField(`lines.${index}.memo`);
                       setLines((prev) =>
                         prev.map((item, i) => (i === index ? { ...item, memo: e.target.value } : item)),
-                      )
-                    }
+                      );
+                    }}
                   />
+                  <FormFieldError message={errors[`lines.${index}.memo`]} />
                 </div>
                 {!isView && lines.length > 2 ? (
                   <div className="flex items-center justify-end sm:col-span-1">
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
+                      size="sm"
                       aria-label="Remove line"
                       onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}
                     >

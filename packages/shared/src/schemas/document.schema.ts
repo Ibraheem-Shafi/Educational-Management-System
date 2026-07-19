@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  MSG,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
 
 export const documentCategories = [
   'admission_form',
@@ -14,12 +19,12 @@ export const documentCategories = [
 
 export const createDocumentSchema = z
   .object({
-    branchId: z.string().min(1),
-    studentId: z.string().min(1).optional(),
-    userId: z.string().min(1).optional(),
-    category: z.enum(documentCategories),
-    title: z.string().min(1).max(200),
-    storagePath: z.string().min(1),
+    branchId: requiredId('Branch'),
+    studentId: requiredId('Student').optional(),
+    userId: requiredId('User').optional(),
+    category: z.enum(documentCategories, { errorMap: () => ({ message: MSG.select('category') }) }),
+    title: requiredString('Title', 1, 200),
+    storagePath: requiredId('Storage path'),
     mimeType: z.string().optional(),
     sizeBytes: z.number().int().positive().optional(),
   })
@@ -34,6 +39,9 @@ export const listDocumentsQuerySchema = z.object({
   userId: z.string().optional(),
   category: z.enum(documentCategories).optional(),
   branchId: z.string().optional(),
+  search: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
 });
 
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;

@@ -7,12 +7,15 @@ import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { calculateGrade, calculatePercentage } from '@eims/shared';
-import type { AssessmentsStatsResponse, AuthUser } from '@eims/types';
+import type { AssessmentsStatsResponse, AuthUser, PaginatedResponse } from '@eims/types';
 import type {
   CreateAssessmentInput,
   UpdateAssessmentInput,
   ListAssessmentsQuery,
+  ListAssessmentTypesQuery,
+  ListAssessmentSeriesQuery,
   MarksSheetQuery,
   BulkMarksInput,
   ReportCardsQuery,
@@ -73,12 +76,22 @@ export class AssessmentsService {
     return result;
   }
 
-  async listTypes(includeInactive = false) {
-    const types = await this.prisma.assessmentType.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: { name: 'asc' },
-    });
-    return { data: types };
+  async listTypes(query: ListAssessmentTypesQuery): Promise<PaginatedResponse<AssessmentType>> {
+    const includeInactive = query.all === true;
+    const where = includeInactive ? {} : { isActive: true };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [types, total] = await Promise.all([
+      this.prisma.assessmentType.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.assessmentType.count({ where }),
+    ]);
+    return paginatedResult(types, total, page, limit);
   }
 
   async createType(input: CreateAssessmentTypeInput, user: AuthUser) {
@@ -125,11 +138,19 @@ export class AssessmentsService {
     return type;
   }
 
-  async listSeries() {
-    const series = await this.prisma.assessmentSeries.findMany({
-      orderBy: { name: 'asc' },
-    });
-    return { data: series };
+  async listSeries(query: ListAssessmentSeriesQuery) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [series, total] = await Promise.all([
+      this.prisma.assessmentSeries.findMany({
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.assessmentSeries.count(),
+    ]);
+    return paginatedResult(series, total, page, limit);
   }
 
   async createSeries(input: CreateAssessmentSeriesInput, user: AuthUser) {
@@ -198,15 +219,24 @@ export class AssessmentsService {
 
   async findAll(query: ListAssessmentsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const assessments = await this.prisma.assessment.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.typeId ? { typeId: query.typeId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.publishedOnly ? { status: 'published' } : {}),
-      },
-      orderBy: { conductedAt: 'desc' },
-    });
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.typeId ? { typeId: query.typeId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.publishedOnly ? { status: 'published' as const } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [assessments, total] = await Promise.all([
+      this.prisma.assessment.findMany({
+        where,
+        orderBy: { conductedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.assessment.count({ where }),
+    ]);
 
     const typeIds = [...new Set(assessments.map((a) => a.typeId))];
     const types = typeIds.length
@@ -214,9 +244,12 @@ export class AssessmentsService {
       : [];
     const typeMap = new Map(types.map((t) => [t.id, t]));
 
-    return {
-      data: assessments.map((a) => this.mapAssessment(a, typeMap.get(a.typeId) ?? null)),
-    };
+    return paginatedResult(
+      assessments.map((a) => this.mapAssessment(a, typeMap.get(a.typeId) ?? null)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async findOne(id: string, branchId: string | null) {

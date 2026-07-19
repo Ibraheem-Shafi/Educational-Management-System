@@ -8,6 +8,7 @@ import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { StructureDialog } from './structure-dialog';
 import type { SalaryStructure } from './types';
@@ -47,13 +49,25 @@ export function StructuresPanel({
 
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editStructure, setEditStructure] = useState<SalaryStructure | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     ...(userId ? { userId } : {}),
     ...(activeFilter ? { isActive: activeFilter } : {}),
     ...(search ? { search } : {}),
@@ -62,15 +76,21 @@ export function StructuresPanel({
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.payrollStructures(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (userId) params.set('userId', userId);
       if (activeFilter) params.set('isActive', activeFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: SalaryStructure[] }>(`/payroll/structures?${params.toString()}`, {
-        token,
-      });
+      return apiClient<PaginatedResponse<SalaryStructure>>(
+        `/payroll/structures?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const remove = useMutation({
@@ -88,7 +108,7 @@ export function StructuresPanel({
   return (
     <>
       <ContentPanel
-        title={`Salary structures (${rows.length})`}
+        title={`Salary structures (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.PAYROLL_MANAGE}>
             <button
@@ -114,7 +134,10 @@ export function StructuresPanel({
               aria-label="Active filter"
               placeholder="All statuses"
               value={activeFilter}
-              onValueChange={setActiveFilter}
+              onValueChange={(next) => {
+                setActiveFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 { value: 'true', label: 'Active' },
@@ -130,6 +153,7 @@ export function StructuresPanel({
                 onClick={() => {
                   setSearch('');
                   setActiveFilter('');
+                  setPage(1);
                 }}
               >
                 Clear
@@ -152,7 +176,7 @@ export function StructuresPanel({
             </thead>
             <tbody>
               {isLoading ? (
-                <DataTableSkeletonRows columns={canManage ? 6 : 5} />
+                <DataTableSkeletonRows columns={canManage ? 6 : 5} rows={limit} />
               ) : error ? (
                 <tr>
                   <td colSpan={canManage ? 6 : 5} className={dataTableTdClass}>
@@ -216,6 +240,15 @@ export function StructuresPanel({
             </tbody>
           </table>
         </div>
+        {data && !error && (
+          <PaginationBar
+            page={page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={handleLimitChange}
+          />
+        )}
       </ContentPanel>
 
       <StructureDialog

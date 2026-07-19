@@ -4,15 +4,22 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MapPin, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  createTransportRouteSchema,
+  updateTransportRouteSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -52,12 +59,17 @@ export function RouteDialog({
   const [isActive, setIsActive] = useState(true);
   const [stops, setStops] = useState<StopForm[]>([emptyStop()]);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateTransportRouteSchema : createTransportRouteSchema,
+  );
+
   useEffect(() => {
     if (!open) {
       setName('');
       setCode('');
       setIsActive(true);
       setStops([emptyStop()]);
+      clearAll();
       return;
     }
     if (route) {
@@ -75,28 +87,31 @@ export function RouteDialog({
           : [emptyStop()],
       );
     }
-  }, [open, route]);
+  }, [open, route, clearAll]);
+
+  const buildPayload = () => {
+    const stopPayload = stops
+      .filter((stop) => stop.name.trim())
+      .map((stop) => ({
+        name: stop.name.trim(),
+        sequence: Number(stop.sequence),
+        pickupTime: stop.pickupTime.trim() || null,
+        dropoffTime: stop.dropoffTime.trim() || null,
+      }));
+
+    const payload = {
+      name: name.trim(),
+      code: code.trim() || null,
+      isActive,
+      stops: stopPayload,
+    };
+
+    if (isEdit && route) return payload;
+    return { branchId, ...payload };
+  };
 
   const mutation = useMutation({
-    mutationFn: () => {
-      const stopPayload = stops
-        .filter((stop) => stop.name.trim())
-        .map((stop) => ({
-          name: stop.name.trim(),
-          sequence: Number(stop.sequence),
-          pickupTime: stop.pickupTime.trim() || null,
-          dropoffTime: stop.dropoffTime.trim() || null,
-        }));
-
-      if (stopPayload.length === 0) throw new Error('At least one stop is required');
-
-      const payload = {
-        name: name.trim(),
-        code: code.trim() || null,
-        isActive,
-        stops: stopPayload,
-      };
-
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && route) {
         return apiClient(`/transport/routes/${route.id}`, {
           method: 'PATCH',
@@ -108,7 +123,7 @@ export function RouteDialog({
       return apiClient('/transport/routes', {
         method: 'POST',
         token,
-        body: { branchId, ...payload },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -116,10 +131,18 @@ export function RouteDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.transportRoutes(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update route' : 'Unable to create route'));
+    },
   });
 
-  const canSubmit = name.trim().length >= 1 && stops.some((s) => s.name.trim());
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,22 +162,32 @@ export function RouteDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel required>Route name</FormFieldLabel>
-                <input className={modalFieldClassName} value={name} onChange={(e) => setName(e.target.value)} />
+                <input
+                  className={fieldClassName('name', modalFieldClassName)}
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    clearField('name');
+                  }}
+                />
+                <FormFieldError message={errors.name} />
               </div>
               <div>
                 <FormFieldLabel>Code</FormFieldLabel>
-                <input className={modalFieldClassName} value={code} onChange={(e) => setCode(e.target.value)} />
+                <input
+                  className={fieldClassName('code', modalFieldClassName)}
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    clearField('code');
+                  }}
+                />
+                <FormFieldError message={errors.code} />
               </div>
             </div>
 
@@ -178,6 +211,7 @@ export function RouteDialog({
                   Add stop
                 </Button>
               </div>
+              <FormFieldError message={errors.stops} />
 
               {stops.map((stop, index) => (
                 <div key={index} className="rounded-lg border border-stroke-soft-200 p-3">
@@ -195,48 +229,65 @@ export function RouteDialog({
                     ) : null}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-4">
-                    <input
-                      className={modalFieldClassName}
-                      placeholder="Stop name"
-                      value={stop.name}
-                      onChange={(e) =>
-                        setStops((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)),
-                        )
-                      }
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      className={modalFieldClassName}
-                      placeholder="Seq"
-                      value={stop.sequence}
-                      onChange={(e) =>
-                        setStops((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, sequence: e.target.value } : item)),
-                        )
-                      }
-                    />
-                    <input
-                      className={modalFieldClassName}
-                      placeholder="Pickup (07:30)"
-                      value={stop.pickupTime}
-                      onChange={(e) =>
-                        setStops((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, pickupTime: e.target.value } : item)),
-                        )
-                      }
-                    />
-                    <input
-                      className={modalFieldClassName}
-                      placeholder="Dropoff (14:00)"
-                      value={stop.dropoffTime}
-                      onChange={(e) =>
-                        setStops((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, dropoffTime: e.target.value } : item)),
-                        )
-                      }
-                    />
+                    <div>
+                      <input
+                        className={fieldClassName(`stops.${index}.name`, modalFieldClassName)}
+                        placeholder="Stop name"
+                        value={stop.name}
+                        onChange={(e) => {
+                          setStops((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)),
+                          );
+                          clearField(`stops.${index}.name`);
+                          clearField('stops');
+                        }}
+                      />
+                      <FormFieldError message={errors[`stops.${index}.name`]} />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        min={1}
+                        className={fieldClassName(`stops.${index}.sequence`, modalFieldClassName)}
+                        placeholder="Seq"
+                        value={stop.sequence}
+                        onChange={(e) => {
+                          setStops((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, sequence: e.target.value } : item)),
+                          );
+                          clearField(`stops.${index}.sequence`);
+                        }}
+                      />
+                      <FormFieldError message={errors[`stops.${index}.sequence`]} />
+                    </div>
+                    <div>
+                      <input
+                        className={fieldClassName(`stops.${index}.pickupTime`, modalFieldClassName)}
+                        placeholder="Pickup (07:30)"
+                        value={stop.pickupTime}
+                        onChange={(e) => {
+                          setStops((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, pickupTime: e.target.value } : item)),
+                          );
+                          clearField(`stops.${index}.pickupTime`);
+                        }}
+                      />
+                      <FormFieldError message={errors[`stops.${index}.pickupTime`]} />
+                    </div>
+                    <div>
+                      <input
+                        className={fieldClassName(`stops.${index}.dropoffTime`, modalFieldClassName)}
+                        placeholder="Dropoff (14:00)"
+                        value={stop.dropoffTime}
+                        onChange={(e) => {
+                          setStops((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, dropoffTime: e.target.value } : item)),
+                          );
+                          clearField(`stops.${index}.dropoffTime`);
+                        }}
+                      />
+                      <FormFieldError message={errors[`stops.${index}.dropoffTime`]} />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -249,7 +300,7 @@ export function RouteDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] text-sm text-white disabled:opacity-50',
               )}

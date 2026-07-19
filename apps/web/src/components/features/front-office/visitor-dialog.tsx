@@ -4,15 +4,19 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { DoorOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createVisitorSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 
@@ -38,36 +42,55 @@ export function VisitorDialog({
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } =
+    useFormErrors(createVisitorSchema);
+
   useEffect(() => {
-    if (!open) setForm(emptyForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyForm);
+      clearAll();
+    }
+  }, [open, clearAll]);
+
+  const buildPayload = () => ({
+    branchId,
+    fullName: form.fullName.trim(),
+    ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+    ...(form.purpose.trim() ? { purpose: form.purpose.trim() } : {}),
+    ...(form.hostName.trim() ? { hostName: form.hostName.trim() } : {}),
+    ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
+  });
 
   const mutation = useMutation({
-    mutationFn: () => {
-      if (!form.fullName.trim()) throw new Error('Full name is required');
-      return apiClient('/visitors', {
+    mutationFn: (payload: ReturnType<typeof buildPayload>) =>
+      apiClient('/visitors', {
         method: 'POST',
         token,
-        body: {
-          branchId,
-          fullName: form.fullName.trim(),
-          ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
-          ...(form.purpose.trim() ? { purpose: form.purpose.trim() } : {}),
-          ...(form.hostName.trim() ? { hostName: form.hostName.trim() } : {}),
-          ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
-        },
-      });
-    },
+        body: payload,
+      }),
     onSuccess: () => {
       toast.success('Visitor checked in');
       queryClient.invalidateQueries({ queryKey: queryKeys.frontOfficeVisitors(branchId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.frontOfficeActivities(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Unable to check in visitor');
+    },
   });
 
-  const canSubmit = form.fullName.trim().length >= 2 && branchId;
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -90,64 +113,62 @@ export function VisitorDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Full name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('fullName', modalFieldClassName)}
                 placeholder="Visitor name"
                 value={form.fullName}
-                onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                required
+                onChange={(e) => updateForm('fullName', e.target.value)}
               />
+              <FormFieldError message={errors.fullName} />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('phone', modalFieldClassName)}
                   placeholder="Phone"
                   value={form.phone}
-                  onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => updateForm('phone', e.target.value)}
                 />
+                <FormFieldError message={errors.phone} />
               </div>
               <div>
                 <FormFieldLabel>Host</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('hostName', modalFieldClassName)}
                   placeholder="Person visiting"
                   value={form.hostName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, hostName: e.target.value }))}
+                  onChange={(e) => updateForm('hostName', e.target.value)}
                 />
+                <FormFieldError message={errors.hostName} />
               </div>
             </div>
 
             <div>
               <FormFieldLabel>Purpose</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('purpose', modalFieldClassName)}
                 placeholder="Purpose of visit"
                 value={form.purpose}
-                onChange={(e) => setForm((prev) => ({ ...prev, purpose: e.target.value }))}
+                onChange={(e) => updateForm('purpose', e.target.value)}
               />
+              <FormFieldError message={errors.purpose} />
             </div>
 
             <div>
               <FormFieldLabel>Notes</FormFieldLabel>
               <textarea
-                className={cn(modalFieldClassName, 'min-h-[80px] resize-y py-3')}
+                className={cn(fieldClassName('notes', modalFieldClassName), 'min-h-[80px] resize-y py-3')}
                 placeholder="Notes"
                 value={form.notes}
-                onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                onChange={(e) => updateForm('notes', e.target.value)}
               />
+              <FormFieldError message={errors.notes} />
             </div>
           </div>
 
@@ -165,7 +186,7 @@ export function VisitorDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

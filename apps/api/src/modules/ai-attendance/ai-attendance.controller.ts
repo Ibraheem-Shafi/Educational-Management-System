@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -19,12 +20,14 @@ import {
   analyzeOcrSessionSchema,
   confirmOcrSessionSchema,
   createOcrSessionSchema,
+  listOcrSessionsQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
   AnalyzeOcrSessionInput,
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
+  ListOcrSessionsQuery,
 } from '@eims/shared';
 
 @ApiTags('ai-attendance')
@@ -36,8 +39,11 @@ export class AiAttendanceController {
 
   @Get('sessions')
   @Permissions('ai_attendance.use')
-  list(@BranchId() branchId: string | null) {
-    return this.service.list(branchId);
+  list(
+    @Query(createZodPipe(listOcrSessionsQuerySchema)) query: ListOcrSessionsQuery,
+    @BranchId() branchId: string | null,
+  ) {
+    return this.service.list(query, branchId);
   }
 
   @Get('sessions/:id')

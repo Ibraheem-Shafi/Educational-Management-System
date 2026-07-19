@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Eye, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, voucherStatuses, voucherTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { VoucherDialog } from './voucher-dialog';
 import type { JournalVoucher } from './types';
 import { formatLabel, formatMoney } from './types';
@@ -41,18 +43,38 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [viewVoucher, setViewVoucher] = useState<JournalVoucher | null>(null);
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const queryParams = {
+    branchId,
+    page,
+    limit,
+    ...(search ? { search } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+  };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.accountingVouchers(branchId, { search, status: statusFilter }),
+    queryKey: queryKeys.accountingVouchers(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
-      return apiClient<{ data: JournalVoucher[] }>(`/accounting/vouchers?${params.toString()}`, {
-        token,
-      });
+      return apiClient<PaginatedResponse<JournalVoucher>>(
+        `/accounting/vouchers?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
   });
@@ -91,7 +113,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Vouchers (${rows.length})`}
+        title={`Vouchers (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.ACCOUNTING_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -105,7 +127,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
           <FilterBar>
             <SearchInput
               value={search}
-              onValueChange={setSearch}
+              onValueChange={handleSearchChange}
               placeholder="Search voucher no or narration"
               className="min-w-[220px] flex-1 sm:max-w-xs"
             />
@@ -113,7 +135,10 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
               aria-label="Status filter"
               placeholder="All statuses"
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(next) => {
+                setStatusFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 ...voucherStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -126,22 +151,23 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load vouchers.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>No</th>
-                  <th className={dataTableThClass}>Date</th>
-                  <th className={dataTableThClass}>Type</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>Amount</th>
-                  {canManage ? <th className={dataTableThClass} /> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 6 : 5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>No</th>
+                    <th className={dataTableThClass}>Date</th>
+                    <th className={dataTableThClass}>Type</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Amount</th>
+                    {canManage ? <th className={dataTableThClass} /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 6 : 5} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={canManage ? 6 : 5} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
                       No vouchers found.
@@ -166,7 +192,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 aria-label="View voucher"
                                 onClick={() => setViewVoucher(row)}
                               >
@@ -177,7 +203,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                                   <Button
                                     type="button"
                                     variant="ghost"
-                                    size="icon"
+                                    size="sm"
                                     aria-label="Post voucher"
                                     onClick={() => post.mutate(row.id)}
                                   >
@@ -187,7 +213,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                                     <Button
                                       type="button"
                                       variant="ghost"
-                                      size="icon"
+                                      size="sm"
                                       aria-label="Delete voucher"
                                       onClick={() => remove.mutate(row.id)}
                                     >
@@ -199,7 +225,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="icon"
+                                  size="sm"
                                   aria-label="Unpost voucher"
                                   onClick={() => unpost.mutate(row.id)}
                                 >
@@ -212,10 +238,23 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                       </tr>
                     );
                   })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

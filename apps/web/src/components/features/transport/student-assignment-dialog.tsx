@@ -4,16 +4,23 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { transportDirections } from '@eims/shared';
+import {
+  createStudentTransportSchema,
+  transportDirections,
+  updateStudentTransportSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -39,6 +46,10 @@ export function StudentAssignmentDialog({
   const [routeId, setRouteId] = useState('');
   const [stopId, setStopId] = useState('');
   const [direction, setDirection] = useState('both');
+
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateStudentTransportSchema : createStudentTransportSchema,
+  );
 
   const { data: studentsData } = useQuery({
     queryKey: queryKeys.students({ branchId, limit: 100 }),
@@ -68,6 +79,7 @@ export function StudentAssignmentDialog({
       setRouteId('');
       setStopId('');
       setDirection('both');
+      clearAll();
       return;
     }
     if (assignment) {
@@ -76,7 +88,7 @@ export function StudentAssignmentDialog({
       setStopId(assignment.stopId);
       setDirection(assignment.direction);
     }
-  }, [open, assignment]);
+  }, [open, assignment, clearAll]);
 
   useEffect(() => {
     if (!selectedRoute?.stops?.some((stop) => stop.id === stopId)) {
@@ -84,9 +96,14 @@ export function StudentAssignmentDialog({
     }
   }, [selectedRoute, stopId]);
 
+  const buildPayload = () => {
+    const payload = { studentId, routeId, stopId, direction };
+    if (isEdit && assignment) return payload;
+    return { branchId, ...payload };
+  };
+
   const mutation = useMutation({
-    mutationFn: () => {
-      const payload = { studentId, routeId, stopId, direction };
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && assignment) {
         return apiClient(`/transport/student-assignments/${assignment.id}`, {
           method: 'PATCH',
@@ -97,7 +114,7 @@ export function StudentAssignmentDialog({
       return apiClient('/transport/student-assignments', {
         method: 'POST',
         token,
-        body: { branchId, ...payload },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -105,10 +122,18 @@ export function StudentAssignmentDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.transportStudentAssignments(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update assignment' : 'Unable to assign student'));
+    },
   });
 
-  const canSubmit = studentId && routeId && stopId && direction;
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -126,23 +151,21 @@ export function StudentAssignmentDialog({
           </button>
         </div>
 
-        <form
-          className="flex flex-col gap-4 px-4 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex flex-col gap-4 px-4 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel required>Student</FormFieldLabel>
             <SelectDropdown
               aria-label="Student"
               placeholder="Select student"
               value={studentId}
-              onValueChange={setStudentId}
+              onValueChange={(value) => {
+                setStudentId(value);
+                clearField('studentId');
+              }}
               options={(studentsData?.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
-              className="w-full"
+              className={fieldClassName('studentId', 'w-full')}
             />
+            <FormFieldError message={errors.studentId} />
           </div>
           <div>
             <FormFieldLabel required>Route</FormFieldLabel>
@@ -150,10 +173,14 @@ export function StudentAssignmentDialog({
               aria-label="Route"
               placeholder="Select route"
               value={routeId}
-              onValueChange={setRouteId}
+              onValueChange={(value) => {
+                setRouteId(value);
+                clearField('routeId');
+              }}
               options={(routesData?.data ?? []).map((r) => ({ value: r.id, label: r.name }))}
-              className="w-full"
+              className={fieldClassName('routeId', 'w-full')}
             />
+            <FormFieldError message={errors.routeId} />
           </div>
           <div>
             <FormFieldLabel required>Stop</FormFieldLabel>
@@ -161,23 +188,31 @@ export function StudentAssignmentDialog({
               aria-label="Stop"
               placeholder="Select stop"
               value={stopId}
-              onValueChange={setStopId}
+              onValueChange={(value) => {
+                setStopId(value);
+                clearField('stopId');
+              }}
               options={(selectedRoute?.stops ?? []).map((s) => ({
                 value: s.id,
                 label: `${s.sequence}. ${s.name}`,
               }))}
-              className="w-full"
+              className={fieldClassName('stopId', 'w-full')}
             />
+            <FormFieldError message={errors.stopId} />
           </div>
           <div>
             <FormFieldLabel required>Direction</FormFieldLabel>
             <SelectDropdown
               aria-label="Direction"
               value={direction}
-              onValueChange={setDirection}
+              onValueChange={(value) => {
+                setDirection(value);
+                clearField('direction');
+              }}
               options={transportDirections.map((d) => ({ value: d, label: formatLabel(d) }))}
-              className="w-full"
+              className={fieldClassName('direction', 'w-full')}
             />
+            <FormFieldError message={errors.direction} />
           </div>
 
           <div className="flex gap-4 pt-2">
@@ -186,7 +221,7 @@ export function StudentAssignmentDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] text-sm text-white disabled:opacity-50',
               )}

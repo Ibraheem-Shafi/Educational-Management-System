@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { LIBRARY_FINE_PER_DAY_PKR, PERMISSIONS, libraryFineStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -20,6 +21,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import type { LibraryFine } from './types';
 import { borrowerName, formatDate, formatLabel, statusBadgeCode } from './types';
@@ -32,17 +34,31 @@ export function FinesPanel({ branchId }: { branchId: string }) {
   const canManage = can(PERMISSIONS.LIBRARY_MANAGE);
 
   const [statusFilter, setStatusFilter] = useState('unpaid');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
 
-  const queryParams = { branchId, ...(statusFilter ? { status: statusFilter } : {}) };
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const queryParams = { branchId, page, limit, ...(statusFilter ? { status: statusFilter } : {}) };
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.libraryFines(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (statusFilter) params.set('status', statusFilter);
-      return apiClient<{ data: LibraryFine[] }>(`/library/fines?${params.toString()}`, { token });
+      return apiClient<PaginatedResponse<LibraryFine>>(`/library/fines?${params.toString()}`, {
+        token,
+      });
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const updateStatus = useMutation({
@@ -59,14 +75,17 @@ export function FinesPanel({ branchId }: { branchId: string }) {
   const rows = data?.data ?? [];
 
   return (
-    <ContentPanel title={`Fines (${rows.length})`}>
+    <ContentPanel title={`Fines (${data?.meta.total ?? 0})`}>
       <div className="border-b border-stroke-soft-200 px-5 py-4">
         <FilterBar>
           <SelectDropdown
             aria-label="Status filter"
             placeholder="All statuses"
             value={statusFilter}
-            onValueChange={setStatusFilter}
+            onValueChange={(next) => {
+              setStatusFilter(next);
+              setPage(1);
+            }}
             options={[
               { value: '', label: 'All statuses' },
               ...libraryFineStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -82,23 +101,24 @@ export function FinesPanel({ branchId }: { branchId: string }) {
       {error ? (
         <p className="px-5 py-8 text-center text-sm text-red-600">Failed to load fines</p>
       ) : (
-        <div className={cn(dataTableWrapperClass, 'border-0')}>
-          <table className={dataTableClass}>
-            <thead>
-              <tr>
-                <th className={dataTableThClass}>Borrower</th>
-                <th className={dataTableThClass}>Book</th>
-                <th className={dataTableThClass}>Amount (PKR)</th>
-                <th className={dataTableThClass}>Reason</th>
-                <th className={dataTableThClass}>Status</th>
-                <th className={dataTableThClass}>Created</th>
-                {canManage && <th className={dataTableThClass}>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <DataTableSkeletonRows columns={canManage ? 7 : 6} />
-              ) : rows.length === 0 ? (
+        <>
+          <div className={cn(dataTableWrapperClass, 'border-0')}>
+            <table className={dataTableClass}>
+              <thead>
+                <tr>
+                  <th className={dataTableThClass}>Borrower</th>
+                  <th className={dataTableThClass}>Book</th>
+                  <th className={dataTableThClass}>Amount (PKR)</th>
+                  <th className={dataTableThClass}>Reason</th>
+                  <th className={dataTableThClass}>Status</th>
+                  <th className={dataTableThClass}>Created</th>
+                  {canManage && <th className={dataTableThClass}>Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <DataTableSkeletonRows columns={canManage ? 7 : 6} rows={limit} />
+                ) : rows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={canManage ? 7 : 6}
@@ -154,6 +174,16 @@ export function FinesPanel({ branchId }: { branchId: string }) {
             </tbody>
           </table>
         </div>
+          {data && (
+            <PaginationBar
+              page={page}
+              totalPages={data.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={handleLimitChange}
+            />
+          )}
+        </>
       )}
     </ContentPanel>
   );

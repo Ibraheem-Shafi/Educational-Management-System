@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, X } from 'lucide-react';
+import { sendMessageSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -34,17 +38,22 @@ export function SendMessageDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } =
+    useFormErrors(sendMessageSchema);
 
   useEffect(() => {
-    if (!open) setForm(emptyForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyForm);
+      clearAll();
+    }
+  }, [open, clearAll]);
 
   const sendMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: typeof emptyForm) =>
       apiClient('/communications/send', {
         method: 'POST',
         token,
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       }),
     onSuccess: () => {
       toast.success('Message queued');
@@ -52,10 +61,16 @@ export function SendMessageDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.communicationsStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
-  const canSubmit = form.recipient.trim() && form.body.trim();
+  const updateField = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,7 +97,13 @@ export function SendMessageDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            sendMutation.mutate();
+            const payload = {
+              channel: form.channel,
+              recipient: form.recipient.trim(),
+              body: form.body.trim(),
+            };
+            if (!validate(payload)) return;
+            sendMutation.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
@@ -92,37 +113,36 @@ export function SendMessageDialog({
                 aria-label="Channel"
                 placeholder="Select channel"
                 value={form.channel}
-                onValueChange={(value) =>
-                  setForm((prev) => ({ ...prev, channel: value as 'sms' | 'whatsapp' }))
-                }
+                onValueChange={(value) => updateField('channel', value as 'sms' | 'whatsapp')}
                 options={[
                   { value: 'sms', label: 'SMS' },
                   { value: 'whatsapp', label: 'WhatsApp' },
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.channel} />
             </div>
 
             <div>
               <FormFieldLabel required>Recipient phone</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('recipient', modalFieldClassName)}
                 placeholder="Recipient phone (+92...)"
                 value={form.recipient}
-                onChange={(e) => setForm((prev) => ({ ...prev, recipient: e.target.value }))}
-                required
+                onChange={(e) => updateField('recipient', e.target.value)}
               />
+              <FormFieldError message={errors.recipient} />
             </div>
 
             <div>
               <FormFieldLabel required>Message body</FormFieldLabel>
               <textarea
-                className={cn(modalFieldClassName, 'min-h-[100px] resize-y py-3')}
+                className={cn(fieldClassName('body', modalFieldClassName), 'min-h-[100px] resize-y py-3')}
                 placeholder="Message body"
                 value={form.body}
-                onChange={(e) => setForm((prev) => ({ ...prev, body: e.target.value }))}
-                required
+                onChange={(e) => updateField('body', e.target.value)}
               />
+              <FormFieldError message={errors.body} />
             </div>
           </div>
 
@@ -140,7 +160,7 @@ export function SendMessageDialog({
             </button>
             <button
               type="submit"
-              disabled={sendMutation.isPending || !canSubmit}
+              disabled={sendMutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

@@ -17,9 +17,9 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createFormFieldSchema, updateFormFieldSchema } from '@eims/shared';
+import { createFormFieldSchema, listFormFieldsQuerySchema, updateFormFieldSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateFormFieldInput, UpdateFormFieldInput } from '@eims/shared';
+import type { CreateFormFieldInput, ListFormFieldsQuery, UpdateFormFieldInput } from '@eims/shared';
 
 @ApiTags('form-fields')
 @ApiBearerAuth()
@@ -30,8 +30,8 @@ export class FormFieldsController {
 
   @Get()
   @Permissions('students.read')
-  findAll(@Query('all') all?: string) {
-    return this.formFieldsService.findAll(all !== 'true');
+  findAll(@Query(createZodPipe(listFormFieldsQuerySchema)) query: ListFormFieldsQuery) {
+    return this.formFieldsService.findAll(query);
   }
 
   @Post()

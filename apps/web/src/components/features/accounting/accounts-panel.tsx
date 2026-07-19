@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, accountTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { AccountDialog } from './account-dialog';
 import type { AccountingAccount } from './types';
 import { formatLabel } from './types';
@@ -41,21 +43,40 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<AccountingAccount | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const queryParams = {
+    branchId,
+    page,
+    limit,
+    activeOnly: true,
+    ...(search ? { search } : {}),
+    ...(typeFilter ? { type: typeFilter } : {}),
+  };
 
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.accountingAccounts(branchId, { search, type: typeFilter }),
+    queryKey: queryKeys.accountingAccounts(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+        activeOnly: 'true',
+      });
       if (search) params.set('search', search);
       if (typeFilter) params.set('type', typeFilter);
-      params.set('activeOnly', 'true');
-      return apiClient<{ data: AccountingAccount[] }>(`/accounting/accounts?${params.toString()}`, {
-        token,
-      });
+      return apiClient<PaginatedResponse<AccountingAccount>>(
+        `/accounting/accounts?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
   });
@@ -74,7 +95,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Chart of accounts (${rows.length})`}
+        title={`Chart of accounts (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.ACCOUNTING_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -96,7 +117,10 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
               aria-label="Account type"
               placeholder="All types"
               value={typeFilter}
-              onValueChange={setTypeFilter}
+              onValueChange={(next) => {
+                setTypeFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All types' },
                 ...accountTypes.map((t) => ({ value: t, label: formatLabel(t) })),
@@ -109,21 +133,22 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load accounts.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Code</th>
-                  <th className={dataTableThClass}>Name</th>
-                  <th className={dataTableThClass}>Type</th>
-                  <th className={dataTableThClass}>Scope</th>
-                  {canManage ? <th className={dataTableThClass} /> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 5 : 4} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Code</th>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Type</th>
+                    <th className={dataTableThClass}>Scope</th>
+                    {canManage ? <th className={dataTableThClass} /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={canManage ? 5 : 4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
                       No accounts found.
@@ -147,7 +172,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 aria-label="Edit account"
                                 onClick={() => setEditAccount(row)}
                               >
@@ -156,7 +181,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 aria-label="Delete account"
                                 onClick={() => remove.mutate(row.id)}
                               >
@@ -168,10 +193,23 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
                       ) : null}
                     </tr>
                   ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

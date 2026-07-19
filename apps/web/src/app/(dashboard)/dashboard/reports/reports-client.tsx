@@ -15,7 +15,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import type { ReportsOverviewResponse } from '@eims/types';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import type { PaginatedResponse, ReportsOverviewResponse } from '@eims/types';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 
@@ -46,6 +48,13 @@ export default function ReportsPage() {
   const canViewReports = can(PERMISSIONS.REPORTS_VIEW);
   const canViewAnalytics = can(PERMISSIONS.ANALYTICS_READ);
   const [correlationBatchId, setCorrelationBatchId] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+
+  const defaultersQueryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }).toString();
 
   const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
 
@@ -56,10 +65,14 @@ export default function ReportsPage() {
   });
 
   const { data: defaulters, isLoading: defaultersLoading } = useQuery({
-    queryKey: ['reports-fee-defaulters'],
+    queryKey: queryKeys.reportsFeeDefaulters({ page, limit }),
     queryFn: () =>
-      apiClient<{ data: FeeDefaulter[]; total: number }>('/reports/fee-defaulters', { token }),
+      apiClient<PaginatedResponse<FeeDefaulter>>(
+        `/reports/fee-defaulters?${defaultersQueryParams}`,
+        { token },
+      ),
     enabled: !!token && canViewReports,
+    placeholderData: (previous) => previous,
   });
 
   const { data: batches } = useBatches(token, effectiveBranchId, undefined, !!canViewAnalytics);
@@ -202,7 +215,7 @@ export default function ReportsPage() {
       )}
 
       <ContentPanel
-        title={`Fee defaulters (${defaulters?.total ?? 0})`}
+        title={`Fee defaulters (${defaulters?.meta.total ?? 0})`}
         actions={
           <Button
             size="sm"
@@ -239,24 +252,15 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {defaultersLoading &&
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 5 }).map((__, j) => (
-                      <td key={j} className={tdClass}>
-                        <div className="h-4 w-20 animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              {!defaultersLoading && defaulters?.data.length === 0 && (
+              {defaultersLoading ? (
+                <DataTableSkeletonRows columns={5} rows={limit} />
+              ) : defaulters?.data.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
                     No overdue invoices
                   </td>
                 </tr>
-              )}
-              {!defaultersLoading &&
+              ) : (
                 defaulters?.data.map((inv) => (
                   <tr key={inv.id} className="hover:bg-[var(--neutral-50)]/50">
                     <td className={tdClass}>{inv.student.fullName}</td>
@@ -265,10 +269,24 @@ export default function ReportsPage() {
                     <td className={tdClass}>{formatCurrency(inv.netAmount)}</td>
                     <td className={tdClass}>{inv.dueDate ?? '—'}</td>
                   </tr>
-                ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
+
+        {defaulters?.meta && (
+          <PaginationBar
+            page={page}
+            totalPages={defaulters.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
+        )}
       </ContentPanel>
 
       {canViewAnalytics && (

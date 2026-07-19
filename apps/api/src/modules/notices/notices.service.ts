@@ -70,15 +70,55 @@ export class NoticesService {
     await this.promoteDueScheduledNotices();
 
     const effectiveBranchId = branchId ?? query.branchId;
-    const notices = await this.prisma.notice.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.audience ? { audience: query.audience } : {}),
-        ...(query.publishedOnly ? { isPublished: true } : {}),
+    const now = new Date();
+
+    const statusWhere =
+      query.status === 'published'
+        ? { isPublished: true }
+        : query.status === 'scheduled'
+          ? { isPublished: false, publishedAt: { gt: now } }
+          : query.status === 'draft'
+            ? { isPublished: false, publishedAt: null }
+            : {};
+
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.audience ? { audience: query.audience } : {}),
+      ...(query.publishedOnly ? { isPublished: true } : {}),
+      ...statusWhere,
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' as const } },
+              { body: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [notices, total] = await Promise.all([
+      this.prisma.notice.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.notice.count({ where }),
+    ]);
+
+    return {
+      data: notices.map(this.toResponse),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { data: notices.map(this.toResponse) };
+    };
   }
 
   async findOne(id: string, branchId: string | null) {

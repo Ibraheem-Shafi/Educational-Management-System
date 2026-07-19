@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { PERMISSIONS, libraryReservationStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -26,6 +27,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { ReservationDialog } from './reservation-dialog';
 import type { LibraryReservation } from './types';
@@ -39,21 +41,33 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
   const canManage = can(PERMISSIONS.LIBRARY_MANAGE);
 
   const [statusFilter, setStatusFilter] = useState('active');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const queryParams = { branchId, ...(statusFilter ? { status: statusFilter } : {}) };
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const queryParams = { branchId, page, limit, ...(statusFilter ? { status: statusFilter } : {}) };
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.libraryReservations(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (statusFilter) params.set('status', statusFilter);
-      return apiClient<{ data: LibraryReservation[] }>(
+      return apiClient<PaginatedResponse<LibraryReservation>>(
         `/library/reservations?${params.toString()}`,
         { token },
       );
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const remove = useMutation({
@@ -86,7 +100,7 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Reservations (${rows.length})`}
+        title={`Reservations (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.LIBRARY_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -102,7 +116,10 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
               aria-label="Status filter"
               placeholder="All statuses"
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(next) => {
+                setStatusFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 ...libraryReservationStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -115,21 +132,22 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-center text-sm text-red-600">Failed to load reservations</p>
         ) : (
-          <div className={cn(dataTableWrapperClass, 'border-0')}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Book</th>
-                  <th className={dataTableThClass}>Borrower</th>
-                  <th className={dataTableThClass}>Reserved</th>
-                  <th className={dataTableThClass}>Status</th>
-                  {canManage && <th className={dataTableThClass}>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 5 : 4} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={cn(dataTableWrapperClass, 'border-0')}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Book</th>
+                    <th className={dataTableThClass}>Borrower</th>
+                    <th className={dataTableThClass}>Reserved</th>
+                    <th className={dataTableThClass}>Status</th>
+                    {canManage && <th className={dataTableThClass}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={canManage ? 5 : 4}
@@ -178,6 +196,16 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
               </tbody>
             </table>
           </div>
+            {data && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={handleLimitChange}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

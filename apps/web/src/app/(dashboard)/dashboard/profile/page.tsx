@@ -1,18 +1,25 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, User } from 'lucide-react';
 import { toast } from 'sonner';
+import { updateProfileSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { normalizePakistanPhone } from '@/lib/form-validation';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import { cn } from '@/lib/utils';
 
@@ -60,34 +67,56 @@ export default function ProfilePage() {
 
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [phone, setPhone] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const { errors, validate, clearField, fieldClassName, applyApiErrors } =
+    useFormErrors(updateProfileSchema);
 
   useEffect(() => {
     if (user?.fullName) setFullName(user.fullName);
   }, [user?.fullName]);
 
   const { data: sessions } = useQuery({
-    queryKey: ['auth-sessions'],
+    queryKey: ['auth-sessions', page, limit],
     queryFn: () =>
-      apiClient<{ data: { id: string; deviceInfo: string | null; lastActiveAt: string }[] }>(
-        '/auth/sessions',
+      apiClient<PaginatedResponse<{ id: string; deviceInfo: string | null; lastActiveAt: string }>>(
+        `/auth/sessions?page=${page}&limit=${limit}`,
         { token },
       ),
     enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
   const saveMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Record<string, unknown>) =>
       apiClient('/auth/me', {
         method: 'PATCH',
         token,
-        body: JSON.stringify({ fullName, phone: phone || null }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Profile updated');
       queryClient.invalidateQueries({ queryKey: ['auth-me'] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSaveProfile = () => {
+    const payload = {
+      fullName: fullName.trim(),
+      phone: phone.trim() ? normalizePakistanPhone(phone.trim()) : null,
+    };
+    if (!validate(payload)) return;
+    saveMutation.mutate(payload);
+  };
 
   const revokeMutation = useMutation({
     mutationFn: (id: string) =>
@@ -127,9 +156,31 @@ export default function ProfilePage() {
 
       <ContentPanel title="Account">
         <div className="space-y-4 px-5 py-5">
-          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" />
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" />
-          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          <div>
+            <Input
+              value={fullName}
+              onChange={(e) => {
+                setFullName(e.target.value);
+                clearField('fullName');
+              }}
+              placeholder="Full name"
+              className={fieldClassName('fullName', '')}
+            />
+            <FormFieldError message={errors.fullName} />
+          </div>
+          <div>
+            <Input
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                clearField('phone');
+              }}
+              placeholder="Phone"
+              className={fieldClassName('phone', '')}
+            />
+            <FormFieldError message={errors.phone} />
+          </div>
+          <Button onClick={handleSaveProfile} disabled={saveMutation.isPending}>
             Save profile
           </Button>
         </div>
@@ -169,6 +220,15 @@ export default function ProfilePage() {
             </tbody>
           </table>
         </div>
+        {sessions?.meta && sessions.meta.totalPages > 0 && (
+          <PaginationBar
+            page={page}
+            totalPages={sessions.meta.totalPages}
+            onPageChange={setPage}
+            limit={limit}
+            onLimitChange={handleLimitChange}
+          />
+        )}
       </ContentPanel>
     </div>
   );

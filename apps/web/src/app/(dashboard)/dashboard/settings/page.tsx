@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, updateInstitutionSettingsSchema, requiredString } from '@eims/shared';
+import { z } from 'zod';
 import { useAuth } from '@/providers/auth-provider';
 import { useInstitution } from '@/providers/institution-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { uploadInstitutionAsset } from '@/lib/upload-institution-asset';
 import type { InstitutionSettingsResponse } from '@eims/types';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,14 @@ import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import { PermissionGate } from '@/components/auth/permission-gate';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { cn } from '@/lib/utils';
+
+const studentStatusSchema = z.object({
+  code: requiredString('Code', 1, 50),
+  label: requiredString('Label', 1, 200),
+});
 
 interface LookupStatus {
   id: string;
@@ -58,6 +68,20 @@ export default function SettingsPage() {
   const [currency, setCurrency] = useState('PKR');
   const [newStatusCode, setNewStatusCode] = useState('');
   const [newStatusLabel, setNewStatusLabel] = useState('');
+  const {
+    errors: settingsErrors,
+    clearField: clearSettingsField,
+    validate: validateSettings,
+    applyApiErrors: applySettingsApiErrors,
+    fieldClassName: settingsFieldClassName,
+  } = useFormErrors(updateInstitutionSettingsSchema);
+  const {
+    errors: statusErrors,
+    clearField: clearStatusField,
+    validate: validateStatus,
+    applyApiErrors: applyStatusApiErrors,
+    fieldClassName: statusFieldClassName,
+  } = useFormErrors(studentStatusSchema);
 
   useEffect(() => {
     if (!data) return;
@@ -86,7 +110,10 @@ export default function SettingsPage() {
       toast.success('Settings saved');
       queryClient.invalidateQueries({ queryKey: queryKeys.institutionSettings });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applySettingsApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const createStatusMutation = useMutation({
@@ -102,7 +129,10 @@ export default function SettingsPage() {
       setNewStatusCode('');
       setNewStatusLabel('');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyStatusApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const updateStatusMutation = useMutation({
@@ -122,7 +152,7 @@ export default function SettingsPage() {
   if (isLoading && !data) return <PageContentSkeleton />;
 
   const handleSave = () => {
-    saveMutation.mutate({
+    const payload = {
       name,
       primaryColor,
       phone: phone || null,
@@ -141,11 +171,13 @@ export default function SettingsPage() {
         parentPortal,
         studentPortal,
       },
-    });
+    };
+    if (!validateSettings(payload)) return;
+    saveMutation.mutate(payload);
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 font-[family-name:var(--font-inter)]">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
         icon={Settings}
         title="Settings"
@@ -154,12 +186,78 @@ export default function SettingsPage() {
 
       <ContentPanel title="Branding">
         <div className="space-y-4 px-5 py-5">
-          <Input placeholder="Institution name" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input placeholder="Primary color (#hex)" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} />
-          <Input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input placeholder="Timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
-          <Input placeholder="Currency (PKR)" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+          <div>
+            <Input
+              placeholder="Institution name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                clearSettingsField('name');
+              }}
+              className={settingsFieldClassName('name', '')}
+            />
+            <FormFieldError message={settingsErrors.name} />
+          </div>
+          <div>
+            <Input
+              placeholder="Primary color (#hex)"
+              value={primaryColor}
+              onChange={(e) => {
+                setPrimaryColor(e.target.value);
+                clearSettingsField('primaryColor');
+              }}
+              className={settingsFieldClassName('primaryColor', '')}
+            />
+            <FormFieldError message={settingsErrors.primaryColor} />
+          </div>
+          <div>
+            <Input
+              placeholder="Phone"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                clearSettingsField('phone');
+              }}
+              className={settingsFieldClassName('phone', '')}
+            />
+            <FormFieldError message={settingsErrors.phone} />
+          </div>
+          <div>
+            <Input
+              placeholder="Email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearSettingsField('email');
+              }}
+              className={settingsFieldClassName('email', '')}
+            />
+            <FormFieldError message={settingsErrors.email} />
+          </div>
+          <div>
+            <Input
+              placeholder="Timezone"
+              value={timezone}
+              onChange={(e) => {
+                setTimezone(e.target.value);
+                clearSettingsField('timezone');
+              }}
+              className={settingsFieldClassName('timezone', '')}
+            />
+            <FormFieldError message={settingsErrors.timezone} />
+          </div>
+          <div>
+            <Input
+              placeholder="Currency (PKR)"
+              value={currency}
+              onChange={(e) => {
+                setCurrency(e.target.value);
+                clearSettingsField('currency');
+              }}
+              className={settingsFieldClassName('currency', '')}
+            />
+            <FormFieldError message={settingsErrors.currency} />
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-[var(--text-main-900)]">Logo</label>
             <Input
@@ -221,18 +319,39 @@ export default function SettingsPage() {
             ))}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Input
-              placeholder="Code"
-              value={newStatusCode}
-              onChange={(e) => setNewStatusCode(e.target.value)}
-              className="max-w-[140px]"
-            />
-            <Input placeholder="Label" value={newStatusLabel} onChange={(e) => setNewStatusLabel(e.target.value)} />
+            <div>
+              <Input
+                placeholder="Code"
+                value={newStatusCode}
+                onChange={(e) => {
+                  setNewStatusCode(e.target.value);
+                  clearStatusField('code');
+                }}
+                className={cn('max-w-[140px]', statusFieldClassName('code', ''))}
+              />
+              <FormFieldError message={statusErrors.code} />
+            </div>
+            <div>
+              <Input
+                placeholder="Label"
+                value={newStatusLabel}
+                onChange={(e) => {
+                  setNewStatusLabel(e.target.value);
+                  clearStatusField('label');
+                }}
+                className={statusFieldClassName('label', '')}
+              />
+              <FormFieldError message={statusErrors.label} />
+            </div>
             <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
               <Button
                 variant="outline"
-                disabled={!newStatusCode || !newStatusLabel || createStatusMutation.isPending}
-                onClick={() => createStatusMutation.mutate({ code: newStatusCode, label: newStatusLabel })}
+                disabled={createStatusMutation.isPending}
+                onClick={() => {
+                  const payload = { code: newStatusCode.trim(), label: newStatusLabel.trim() };
+                  if (!validateStatus(payload)) return;
+                  createStatusMutation.mutate(payload);
+                }}
               >
                 Add status
               </Button>

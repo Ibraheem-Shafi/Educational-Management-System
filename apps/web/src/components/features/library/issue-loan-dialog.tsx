@@ -4,17 +4,21 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { issueLibraryLoanSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 import type { LibraryBook } from './types';
 
@@ -34,6 +38,9 @@ export function IssueLoanDialog({
   const [borrowerType, setBorrowerType] = useState<'student' | 'user'>('student');
   const [studentId, setStudentId] = useState('');
   const [copyId, setCopyId] = useState('');
+
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } =
+    useFormErrors(issueLibraryLoanSchema);
 
   const { data: booksData } = useQuery({
     queryKey: queryKeys.libraryBooks(branchId),
@@ -67,24 +74,24 @@ export function IssueLoanDialog({
       setBorrowerType('student');
       setStudentId('');
       setCopyId('');
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
+
+  const buildPayload = () => ({
+    branchId,
+    copyId,
+    borrowerType,
+    ...(borrowerType === 'student' ? { studentId } : {}),
+  });
 
   const mutation = useMutation({
-    mutationFn: () => {
-      if (!copyId) throw new Error('Select a copy');
-      if (borrowerType === 'student' && !studentId) throw new Error('Select a student');
-      return apiClient('/library/loans/issue', {
+    mutationFn: (payload: ReturnType<typeof buildPayload>) =>
+      apiClient('/library/loans/issue', {
         method: 'POST',
         token,
-        body: {
-          branchId,
-          copyId,
-          borrowerType,
-          ...(borrowerType === 'student' ? { studentId } : {}),
-        },
-      });
-    },
+        body: payload,
+      }),
     onSuccess: async () => {
       toast.success('Book issued');
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryLoans(branchId) });
@@ -92,11 +99,17 @@ export function IssueLoanDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Unable to issue book'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Unable to issue book');
+    },
   });
 
-  const canSubmit =
-    !!copyId && (borrowerType === 'student' ? !!studentId : true) && !!branchId;
+  const handleSave = () => {
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,23 +140,33 @@ export function IssueLoanDialog({
                 aria-label="Copy"
                 placeholder="Select copy"
                 value={copyId}
-                onValueChange={setCopyId}
+                onValueChange={(value) => {
+                  setCopyId(value);
+                  clearField('copyId');
+                }}
                 options={availableCopies}
-                className="w-full"
+                className={fieldClassName('copyId', 'w-full')}
               />
+              <FormFieldError message={errors.copyId} />
             </div>
             <div>
               <FormFieldLabel htmlFor="borrower-type">Borrower type</FormFieldLabel>
               <SelectDropdown
                 aria-label="Borrower type"
                 value={borrowerType}
-                onValueChange={(v) => setBorrowerType(v as 'student' | 'user')}
+                onValueChange={(v) => {
+                  setBorrowerType(v as 'student' | 'user');
+                  clearField('borrowerType');
+                  clearField('studentId');
+                  clearField('userId');
+                }}
                 options={[
                   { value: 'student', label: 'Student' },
                   { value: 'user', label: 'Staff' },
                 ]}
-                className="w-full"
+                className={fieldClassName('borrowerType', 'w-full')}
               />
+              <FormFieldError message={errors.borrowerType} />
             </div>
             {borrowerType === 'student' && (
               <div>
@@ -152,13 +175,17 @@ export function IssueLoanDialog({
                   aria-label="Student"
                   placeholder="Select student"
                   value={studentId}
-                  onValueChange={setStudentId}
+                  onValueChange={(value) => {
+                    setStudentId(value);
+                    clearField('studentId');
+                  }}
                   options={(studentsData?.data ?? []).map((s) => ({
                     value: s.id,
                     label: s.fullName,
                   }))}
-                  className="w-full"
+                  className={fieldClassName('studentId', 'w-full')}
                 />
+                <FormFieldError message={errors.studentId} />
               </div>
             )}
           </div>
@@ -174,11 +201,11 @@ export function IssueLoanDialog({
           </button>
           <button
             type="button"
-            disabled={!canSubmit || mutation.isPending}
-            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            onClick={handleSave}
             className={cn(
               'rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white',
-              (!canSubmit || mutation.isPending) && 'opacity-50',
+              mutation.isPending && 'opacity-50',
             )}
           >
             {mutation.isPending ? 'Issuing…' : 'Issue book'}

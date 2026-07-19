@@ -154,7 +154,7 @@ export class UsersService {
         ? {
             OR: [
               { email: { contains: query.search, mode: 'insensitive' as const } },
-              { id: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -218,7 +218,7 @@ export class UsersService {
         ? {
             OR: [
               { email: { contains: query.search, mode: 'insensitive' as const } },
-              { id: { contains: query.search, mode: 'insensitive' as const } },
+              { id: { contains: query.search.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -316,7 +316,9 @@ export class UsersService {
             OR: [
               { fullName: { contains: query.search, mode: 'insensitive' as const } },
               { email: { contains: query.search, mode: 'insensitive' as const } },
-              { id: { contains: query.search, mode: 'insensitive' as const } },
+              // Staff codes render as STF-<last6 of id>; strip the prefix so
+              // searching by the visible staff ID matches the underlying id.
+              { id: { contains: query.search.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
             ],
           }
         : {}),

@@ -9,6 +9,7 @@ import { inquiryStatuses, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -29,6 +30,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { InquiryDialog } from './inquiry-dialog';
 import type { AdmissionInquiry } from './types';
@@ -43,22 +45,45 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editInquiry, setEditInquiry] = useState<AdmissionInquiry | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
-  const queryParams = { branchId, ...(statusFilter ? { status: statusFilter } : {}), ...(search ? { search } : {}) };
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const queryParams = {
+    branchId,
+    page,
+    limit,
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(search ? { search } : {}),
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.frontOfficeInquiries(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (statusFilter) params.set('status', statusFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: AdmissionInquiry[] }>(`/inquiries?${params.toString()}`, { token });
+      return apiClient<PaginatedResponse<AdmissionInquiry>>(`/inquiries?${params.toString()}`, {
+        token,
+      });
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const remove = useMutation({
@@ -76,7 +101,7 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Inquiries (${rows.length})`}
+        title={`Inquiries (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.FRONT_OFFICE_MANAGE}>
             <button
@@ -102,7 +127,10 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
               aria-label="Status filter"
               placeholder="All statuses"
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(next) => {
+                setStatusFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 ...inquiryStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -117,6 +145,7 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
                 onClick={() => {
                   setSearch('');
                   setStatusFilter('');
+                  setPage(1);
                 }}
               >
                 Clear filters
@@ -128,23 +157,24 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load inquiries.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[960px]')}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Name</th>
-                  <th className={dataTableThClass}>Phone</th>
-                  <th className={dataTableThClass}>Email</th>
-                  <th className={dataTableThClass}>Program</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>Follow-up</th>
-                  <th className={dataTableThClass}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child>td]:border-b-0">
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={7} rows={5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[960px]')}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Phone</th>
+                    <th className={dataTableThClass}>Email</th>
+                    <th className={dataTableThClass}>Program</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Follow-up</th>
+                    <th className={dataTableThClass}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={7} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
                       No inquiries found
@@ -208,6 +238,16 @@ export function InquiriesPanel({ branchId }: { branchId: string }) {
               </tbody>
             </table>
           </div>
+            {data && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={handleLimitChange}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

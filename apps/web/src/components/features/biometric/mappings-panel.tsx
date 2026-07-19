@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, biometricEntityTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { MappingDialog } from './mapping-dialog';
 import type { BiometricMapping } from './types';
@@ -42,13 +44,20 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editMapping, setEditMapping] = useState<BiometricMapping | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     ...(entityTypeFilter ? { entityType: entityTypeFilter } : {}),
     ...(search ? { search } : {}),
   };
@@ -56,12 +65,13 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.biometricMappings(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({ branchId, page: String(page), limit: String(limit) });
       if (entityTypeFilter) params.set('entityType', entityTypeFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: BiometricMapping[] }>(`/biometric/mappings?${params.toString()}`, {
-        token,
-      });
+      return apiClient<PaginatedResponse<BiometricMapping>>(
+        `/biometric/mappings?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
   });
@@ -81,7 +91,7 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`ID mappings (${rows.length})`}
+        title={`ID mappings (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.BIOMETRIC_MANAGE}>
             <button
@@ -107,7 +117,10 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
               aria-label="Entity type filter"
               placeholder="All types"
               value={entityTypeFilter}
-              onValueChange={setEntityTypeFilter}
+              onValueChange={(next) => {
+                setEntityTypeFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All types' },
                 ...biometricEntityTypes.map((t) => ({ value: t, label: formatLabel(t) })),
@@ -120,8 +133,9 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load mappings.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[960px]')}>
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[960px]')}>
               <thead>
                 <tr>
                   <th className={dataTableThClass}>External ID</th>
@@ -133,7 +147,7 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
                 {isLoading ? (
-                  <DataTableSkeletonRows columns={5} rows={5} />
+                  <DataTableSkeletonRows columns={5} rows={limit} />
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
@@ -186,8 +200,21 @@ export function MappingsPanel({ branchId }: { branchId: string }) {
                   ))
                 )}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

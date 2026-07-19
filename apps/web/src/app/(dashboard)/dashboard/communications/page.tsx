@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, Radio } from 'lucide-react';
 import { PERMISSIONS } from '@eims/shared';
@@ -79,9 +79,12 @@ export default function CommunicationsPage() {
     page: String(logPage),
     limit: String(logLimit),
   });
+  if (search) queryParams.set('search', search);
+  if (channelFilter) queryParams.set('channel', channelFilter);
+  if (statusFilter) queryParams.set('status', statusFilter);
 
   const { data: logs, isLoading, error } = useQuery({
-    queryKey: ['communication-logs', logPage, logLimit],
+    queryKey: ['communication-logs', logPage, logLimit, search, channelFilter, statusFilter],
     queryFn: () =>
       apiClient<PaginatedResponse<CommunicationLog>>(
         `/communications/logs?${queryParams.toString()}`,
@@ -90,18 +93,7 @@ export default function CommunicationsPage() {
     enabled: !!token,
   });
 
-  const filteredLogs = useMemo(() => {
-    const list = logs?.data ?? [];
-    return list.filter((log) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (!log.recipient.toLowerCase().includes(q)) return false;
-      }
-      if (channelFilter && log.channel !== channelFilter) return false;
-      if (statusFilter && log.status !== statusFilter) return false;
-      return true;
-    });
-  }, [logs?.data, search, channelFilter, statusFilter]);
+  const filteredLogs = logs?.data ?? [];
 
   const smsTotal = stats?.smsCount.total ?? 0;
   const whatsappTotal = stats?.whatsappCount.total ?? 0;
@@ -287,7 +279,7 @@ export default function CommunicationsPage() {
           </table>
         </div>
 
-        {logs && (
+        {logs?.meta && (
           <PaginationBar
             page={logPage}
             totalPages={logs.meta.totalPages}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Download, Pencil, Play, Send, Check, Lock } from 'lucide-react';
@@ -9,6 +9,7 @@ import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
@@ -26,6 +27,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { CreateRunDialog } from './create-run-dialog';
 import { AdjustLineDialog } from './adjust-line-dialog';
 import type { PayrollLine, PayrollRunDetail, PayrollRunSummary } from './types';
@@ -311,19 +313,35 @@ function RunDetail({
 export function RunsPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();
   const token = session?.access_token;
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const queryParams = { branchId, page, limit, excludeFinalized: true };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.payrollRuns(branchId, { excludeFinalized: true }),
+    queryKey: queryKeys.payrollRuns(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
-      return apiClient<{ data: PayrollRunSummary[] }>(`/payroll/runs?${params.toString()}`, {
-        token,
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
       });
+      return apiClient<PaginatedResponse<PayrollRunSummary>>(
+        `/payroll/runs?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
     select: (res) => ({
+      ...res,
       data: res.data.filter((r) => r.status !== 'finalized'),
     }),
   });
@@ -333,7 +351,7 @@ export function RunsPanel({ branchId }: { branchId: string }) {
   return (
     <div className="space-y-4">
       <ContentPanel
-        title={`Active runs (${rows.length})`}
+        title={`Active runs (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.PAYROLL_MANAGE}>
             <button
@@ -359,7 +377,7 @@ export function RunsPanel({ branchId }: { branchId: string }) {
             </thead>
             <tbody>
               {isLoading ? (
-                <DataTableSkeletonRows columns={4} />
+                <DataTableSkeletonRows columns={4} rows={limit} />
               ) : error ? (
                 <tr>
                   <td colSpan={4} className={dataTableTdClass}>
@@ -404,6 +422,15 @@ export function RunsPanel({ branchId }: { branchId: string }) {
             </tbody>
           </table>
         </div>
+        {data && !error && (
+          <PaginationBar
+            page={page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={handleLimitChange}
+          />
+        )}
       </ContentPanel>
 
       {selectedRunId && <RunDetail branchId={branchId} runId={selectedRunId} />}

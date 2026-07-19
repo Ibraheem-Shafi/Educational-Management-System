@@ -4,16 +4,25 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquareWarning, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { complaintStatuses, complaintTypes, priorities } from '@eims/shared';
+import {
+  complaintStatuses,
+  complaintTypes,
+  createComplaintSchema,
+  priorities,
+  updateComplaintSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -47,9 +56,14 @@ export function ComplaintDialog({
   const isEdit = Boolean(complaint);
   const [form, setForm] = useState(emptyForm);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateComplaintSchema : createComplaintSchema,
+  );
+
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (complaint) {
@@ -65,47 +79,45 @@ export function ComplaintDialog({
     } else {
       setForm(emptyForm);
     }
-  }, [open, complaint]);
+  }, [open, complaint, clearAll]);
+
+  const buildPayload = () => {
+    const payload = {
+      type: form.type,
+      subject: form.subject.trim(),
+      body: form.body.trim(),
+      status: form.status,
+      priority: form.priority,
+      ...(form.requesterName.trim()
+        ? { requesterName: form.requesterName.trim() }
+        : isEdit
+          ? { requesterName: '' }
+          : {}),
+      ...(form.requesterPhone.trim()
+        ? { requesterPhone: form.requesterPhone.trim() }
+        : isEdit
+          ? { requesterPhone: '' }
+          : {}),
+    };
+
+    if (isEdit && complaint) return payload;
+    return { branchId, ...payload };
+  };
 
   const mutation = useMutation({
-    mutationFn: () => {
-      if (!form.subject.trim() || !form.body.trim()) {
-        throw new Error('Subject and description are required');
-      }
-
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && complaint) {
         return apiClient(`/complaints/${complaint.id}`, {
           method: 'PATCH',
           token,
-          body: {
-            type: form.type,
-            subject: form.subject.trim(),
-            body: form.body.trim(),
-            status: form.status,
-            priority: form.priority,
-            ...(form.requesterName.trim()
-              ? { requesterName: form.requesterName.trim() }
-              : { requesterName: '' }),
-            ...(form.requesterPhone.trim()
-              ? { requesterPhone: form.requesterPhone.trim() }
-              : { requesterPhone: '' }),
-          },
+          body: payload,
         });
       }
 
       return apiClient('/complaints', {
         method: 'POST',
         token,
-        body: {
-          branchId,
-          type: form.type,
-          subject: form.subject.trim(),
-          body: form.body.trim(),
-          status: form.status,
-          priority: form.priority,
-          ...(form.requesterName.trim() ? { requesterName: form.requesterName.trim() } : {}),
-          ...(form.requesterPhone.trim() ? { requesterPhone: form.requesterPhone.trim() } : {}),
-        },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -114,10 +126,23 @@ export function ComplaintDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.frontOfficeActivities(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update record' : 'Unable to create record'));
+    },
   });
 
-  const canSubmit = form.subject.trim() && form.body.trim() && branchId;
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -142,13 +167,7 @@ export function ComplaintDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
@@ -157,10 +176,11 @@ export function ComplaintDialog({
                   aria-label="Type"
                   placeholder="Select type"
                   value={form.type}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, type: value }))}
+                  onValueChange={(value) => updateForm('type', value)}
                   options={complaintTypes.map((t) => ({ value: t, label: formatLabel(t) }))}
-                  className="w-full"
+                  className={fieldClassName('type', 'w-full')}
                 />
+                <FormFieldError message={errors.type} />
               </div>
               <div>
                 <FormFieldLabel>Status</FormFieldLabel>
@@ -168,10 +188,11 @@ export function ComplaintDialog({
                   aria-label="Status"
                   placeholder="Select status"
                   value={form.status}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}
+                  onValueChange={(value) => updateForm('status', value)}
                   options={complaintStatuses.map((s) => ({ value: s, label: formatLabel(s) }))}
-                  className="w-full"
+                  className={fieldClassName('status', 'w-full')}
                 />
+                <FormFieldError message={errors.status} />
               </div>
               <div>
                 <FormFieldLabel>Priority</FormFieldLabel>
@@ -179,53 +200,56 @@ export function ComplaintDialog({
                   aria-label="Priority"
                   placeholder="Select priority"
                   value={form.priority}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, priority: value }))}
+                  onValueChange={(value) => updateForm('priority', value)}
                   options={priorities.map((p) => ({ value: p, label: formatLabel(p) }))}
-                  className="w-full"
+                  className={fieldClassName('priority', 'w-full')}
                 />
+                <FormFieldError message={errors.priority} />
               </div>
             </div>
 
             <div>
               <FormFieldLabel required>Subject</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('subject', modalFieldClassName)}
                 placeholder="Subject"
                 value={form.subject}
-                onChange={(e) => setForm((prev) => ({ ...prev, subject: e.target.value }))}
-                required
+                onChange={(e) => updateForm('subject', e.target.value)}
               />
+              <FormFieldError message={errors.subject} />
             </div>
 
             <div>
               <FormFieldLabel required>Description</FormFieldLabel>
               <textarea
-                className={cn(modalFieldClassName, 'min-h-[100px] resize-y py-3')}
+                className={cn(fieldClassName('body', modalFieldClassName), 'min-h-[100px] resize-y py-3')}
                 placeholder="Details"
                 value={form.body}
-                onChange={(e) => setForm((prev) => ({ ...prev, body: e.target.value }))}
-                required
+                onChange={(e) => updateForm('body', e.target.value)}
               />
+              <FormFieldError message={errors.body} />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Requester name</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('requesterName', modalFieldClassName)}
                   placeholder="Name"
                   value={form.requesterName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, requesterName: e.target.value }))}
+                  onChange={(e) => updateForm('requesterName', e.target.value)}
                 />
+                <FormFieldError message={errors.requesterName} />
               </div>
               <div>
                 <FormFieldLabel>Requester phone</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('requesterPhone', modalFieldClassName)}
                   placeholder="Phone"
                   value={form.requesterPhone}
-                  onChange={(e) => setForm((prev) => ({ ...prev, requesterPhone: e.target.value }))}
+                  onChange={(e) => updateForm('requesterPhone', e.target.value)}
                 />
+                <FormFieldError message={errors.requesterPhone} />
               </div>
             </div>
           </div>
@@ -244,7 +268,7 @@ export function ComplaintDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

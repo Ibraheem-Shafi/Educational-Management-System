@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -26,6 +27,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { RouteDialog } from './route-dialog';
 import type { TransportRoute } from './types';
@@ -37,17 +39,24 @@ export function RoutesPanel({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editRoute, setEditRoute] = useState<TransportRoute | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const queryParams = { search, page, limit };
 
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.transportRoutes(branchId, { search }),
+    queryKey: queryKeys.transportRoutes(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({ branchId, page: String(page), limit: String(limit) });
       if (search) params.set('search', search);
-      return apiClient<{ data: TransportRoute[] }>(`/transport/routes?${params.toString()}`, {
+      return apiClient<PaginatedResponse<TransportRoute>>(`/transport/routes?${params.toString()}`, {
         token,
       });
     },
@@ -69,7 +78,7 @@ export function RoutesPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Routes (${rows.length})`}
+        title={`Routes (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE}>
             <button
@@ -97,74 +106,88 @@ export function RoutesPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load routes.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[900px]')}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Name</th>
-                  <th className={dataTableThClass}>Code</th>
-                  <th className={dataTableThClass}>Stops</th>
-                  <th className={dataTableThClass}>Students</th>
-                  <th className={dataTableThClass}>Trips</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child>td]:border-b-0">
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={7} rows={5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[900px]')}>
+                <thead>
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
-                      No routes found
-                    </td>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Code</th>
+                    <th className={dataTableThClass}>Stops</th>
+                    <th className={dataTableThClass}>Students</th>
+                    <th className={dataTableThClass}>Trips</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Actions</th>
                   </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
-                      <td className={dataTableTdClass}>{row.name}</td>
-                      <td className={dataTableTdClass}>{row.code ?? '—'}</td>
-                      <td className={dataTableTdClass}>{row.stops?.length ?? 0}</td>
-                      <td className={dataTableTdClass}>{row._count?.assignments ?? 0}</td>
-                      <td className={dataTableTdClass}>{row._count?.trips ?? 0}</td>
-                      <td className={dataTableTdClass}>
-                        <StatusBadge
-                          label={row.isActive ? 'Active' : 'Inactive'}
-                          code={statusBadgeCode(row.isActive ? 'active' : 'inactive')}
-                        />
-                      </td>
-                      <td className={dataTableTdClass}>
-                        <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditRoute(row)}
-                              aria-label="Edit route"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (window.confirm('Remove this route?')) remove.mutate(row.id);
-                              }}
-                              aria-label="Remove route"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </PermissionGate>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={7} rows={limit} />
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
+                        No routes found
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    rows.map((row) => (
+                      <tr key={row.id} className={dataTableRowHoverClass}>
+                        <td className={dataTableTdClass}>{row.name}</td>
+                        <td className={dataTableTdClass}>{row.code ?? '—'}</td>
+                        <td className={dataTableTdClass}>{row.stops?.length ?? 0}</td>
+                        <td className={dataTableTdClass}>{row._count?.assignments ?? 0}</td>
+                        <td className={dataTableTdClass}>{row._count?.trips ?? 0}</td>
+                        <td className={dataTableTdClass}>
+                          <StatusBadge
+                            label={row.isActive ? 'Active' : 'Inactive'}
+                            code={statusBadgeCode(row.isActive ? 'active' : 'inactive')}
+                          />
+                        </td>
+                        <td className={dataTableTdClass}>
+                          <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditRoute(row)}
+                                aria-label="Edit route"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  if (window.confirm('Remove this route?')) remove.mutate(row.id);
+                                }}
+                                aria-label="Remove route"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </PermissionGate>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

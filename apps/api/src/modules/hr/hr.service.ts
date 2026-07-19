@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -20,15 +21,25 @@ export class HrService {
 
   async findContracts(query: ListContractsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const contracts = await this.prisma.employmentContract.findMany({
-      where: {
-        userId: query.userId,
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-      },
-      orderBy: { startDate: 'desc' },
-    });
-    return { data: contracts.map(this.toContractResponse) };
+    const where = {
+      userId: query.userId,
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [contracts, total] = await Promise.all([
+      this.prisma.employmentContract.findMany({
+        where,
+        orderBy: { startDate: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.employmentContract.count({ where }),
+    ]);
+
+    return paginatedResult(contracts.map(this.toContractResponse), total, page, limit);
   }
 
   async findContract(id: string, branchId: string | null) {
@@ -129,18 +140,28 @@ export class HrService {
 
   async findReviews(query: ListReviewsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const reviews = await this.prisma.performanceReview.findMany({
-      where: {
-        userId: query.userId,
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-      },
-      orderBy: { reviewedAt: 'desc' },
-      include: {
-        reviewedBy: { select: { id: true, fullName: true } },
-      },
-    });
-    return { data: reviews.map(this.toReviewResponse) };
+    const where = {
+      userId: query.userId,
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.performanceReview.findMany({
+        where,
+        orderBy: { reviewedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          reviewedBy: { select: { id: true, fullName: true } },
+        },
+      }),
+      this.prisma.performanceReview.count({ where }),
+    ]);
+
+    return paginatedResult(reviews.map(this.toReviewResponse), total, page, limit);
   }
 
   async findReview(id: string, branchId: string | null) {

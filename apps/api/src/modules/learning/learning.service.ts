@@ -390,7 +390,7 @@ export class LearningService {
     limit?: number;
   }): Promise<PaginatedResponse<LearningResourceResponse>> {
     const page = params.page ?? 1;
-    const limit = params.limit ?? 20;
+    const limit = params.limit ?? 8;
     const audienceFilter =
       params.audience === 'students'
         ? { audience: { in: ['students', 'all'] } }

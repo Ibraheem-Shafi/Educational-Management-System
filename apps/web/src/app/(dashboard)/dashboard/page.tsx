@@ -8,7 +8,6 @@ import { useInstitution } from '@/providers/institution-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type {
-  DashboardBranchPerformanceResponse,
   DashboardMonthlyRevenueResponse,
   DashboardRecentActivitiesResponse,
   DashboardStatsResponse,
@@ -77,13 +76,6 @@ export default function DashboardPage() {
     enabled: !!token && canReadFees,
   });
 
-  const { data: branchPerformance, isLoading: branchPerformanceLoading } = useQuery({
-    queryKey: queryKeys.dashboardBranchPerformance,
-    queryFn: () =>
-      apiClient<DashboardBranchPerformanceResponse>('/dashboard/branch-performance', { token }),
-    enabled: !!token && canReadBranches,
-  });
-
   const { data: recentActivities, isLoading: recentActivitiesLoading } = useQuery({
     queryKey: queryKeys.dashboardRecentActivities,
     queryFn: () =>
@@ -94,7 +86,6 @@ export default function DashboardPage() {
   const showStatsSkeleton = !!token && (statsLoading || (showFeesStats && feesStatsLoading));
   const showChartsSkeleton =
     !!token && ((canReadAttendance && todayAttendanceLoading) || (canReadFees && monthlyRevenueLoading));
-  const showBranchPerformanceSkeleton = !!token && canReadBranches && branchPerformanceLoading;
   const showRecentActivitiesSkeleton = !!token && showRecentActivities && recentActivitiesLoading;
 
   const welcomeName = user?.fullName?.trim() || 'there';
@@ -212,11 +203,7 @@ export default function DashboardPage() {
           )}
 
           {canReadBranches && (
-            <BranchPerformanceCard
-              data={branchPerformance}
-              isLoading={showBranchPerformanceSkeleton}
-              showViewAll={canManageBranches}
-            />
+            <BranchPerformanceCard showViewAll={canManageBranches} />
           )}
 
           <div

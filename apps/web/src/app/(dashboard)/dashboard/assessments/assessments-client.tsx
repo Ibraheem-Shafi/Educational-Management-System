@@ -1,17 +1,15 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
-import type { AssessmentsStatsResponse } from '@eims/types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import type { AssessmentsStatsResponse, PaginatedResponse } from '@eims/types';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -20,10 +18,14 @@ import {
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { FilterBar } from '@/components/layout/filter-bar';
-import { ContentPanel } from '@/components/layout/content-panel';
-import { ListRow } from '@/components/layout/list-row';
+import { Button } from '@/components/ui/button';
+import { Tabs } from '@/components/ui/tabs';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { CreateAssessmentDialog } from '@/components/features/assessments/create-assessment-dialog';
+import {
+  AssessmentTaxonomyDialog,
+  type AssessmentTaxonomyKind,
+} from '@/components/features/assessments/assessment-taxonomy-dialog';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -32,9 +34,12 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { queryKeys } from '@/lib/query-keys';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
+
+type AssessmentsTab = 'assessments' | 'series' | 'types';
 
 interface Assessment {
   id: string;
@@ -88,6 +93,10 @@ function formatCount(value: number): string {
   return value.toLocaleString('en-US');
 }
 
+const editIcon = (
+  <Pencil className="h-4 w-4 shrink-0 text-[var(--text-soft-400,#868C98)]" strokeWidth={1.5} />
+);
+
 export default function AssessmentsPage() {
   const { session, user } = useAuth();
   const { can } = usePermissions();
@@ -96,29 +105,55 @@ export default function AssessmentsPage() {
   const canEnterMarks = can(PERMISSIONS.ASSESSMENTS_MARKS_ENTER);
   const canPublish = can(PERMISSIONS.ASSESSMENTS_PUBLISH);
   const canManageAcademic = can(PERMISSIONS.ACADEMIC_MANAGE);
+
+  const [tab, setTab] = useState<AssessmentsTab>('assessments');
   const [createOpen, setCreateOpen] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [search, setSearch] = useState('');
-  const [showSeries, setShowSeries] = useState(false);
-  const [showTypes, setShowTypes] = useState(false);
-  const [seriesName, setSeriesName] = useState('');
-  const [seriesCode, setSeriesCode] = useState('');
-  const [typeName, setTypeName] = useState('');
-  const [typeCode, setTypeCode] = useState('');
-  const [editSeriesId, setEditSeriesId] = useState<string | null>(null);
-  const [editSeriesName, setEditSeriesName] = useState('');
-  const [editSeriesCode, setEditSeriesCode] = useState('');
-  const [editSeriesActive, setEditSeriesActive] = useState(true);
-  const [editTypeId, setEditTypeId] = useState<string | null>(null);
-  const [editTypeName, setEditTypeName] = useState('');
-  const [editTypeCode, setEditTypeCode] = useState('');
-  const [editTypeActive, setEditTypeActive] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const [taxonomyDialog, setTaxonomyDialog] = useState<{
+    kind: AssessmentTaxonomyKind;
+    item: AssessmentSeries | AssessmentType | null;
+  } | null>(null);
 
   const { effectiveBranchId } = useEffectiveBranchId(token, user?.branchId);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
+    setPage(1);
   }, []);
+
+  const assessmentsQueryParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (effectiveBranchId) params.set('branchId', effectiveBranchId);
+    return params.toString();
+  }, [page, limit, effectiveBranchId]);
+
+  const typesQueryParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+      all: 'true',
+    });
+    return params.toString();
+  }, [page, limit]);
+
+  const seriesQueryParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    return params.toString();
+  }, [page, limit]);
+
+  const handleTabChange = (next: string) => {
+    setTab(next as AssessmentsTab);
+    setPage(1);
+  };
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: queryKeys.assessmentsStats,
@@ -127,75 +162,31 @@ export default function AssessmentsPage() {
   });
 
   const { data: assessments, isLoading, error } = useQuery({
-    queryKey: ['assessments', effectiveBranchId],
+    queryKey: queryKeys.assessments({ branchId: effectiveBranchId, page, limit }),
     queryFn: () =>
-      apiClient<{ data: Assessment[] }>(
-        `/assessments${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ''}`,
-        { token },
-      ),
-    enabled: !!token,
+      apiClient<PaginatedResponse<Assessment>>(`/assessments?${assessmentsQueryParams}`, { token }),
+    enabled: !!token && tab === 'assessments',
+    placeholderData: (previous) => previous,
   });
 
-  const { data: types } = useQuery({
-    queryKey: ['assessment-types', showTypes],
+  const { data: types, isLoading: typesLoading } = useQuery({
+    queryKey: queryKeys.assessmentTypes({ all: true, page, limit }),
     queryFn: () =>
-      apiClient<{ data: AssessmentType[] }>(
-        `/assessment-types${showTypes ? '?all=true' : ''}`,
-        { token },
-      ),
-    enabled: !!token && (showTypes || createOpen),
+      apiClient<PaginatedResponse<AssessmentType>>(`/assessment-types?${typesQueryParams}`, {
+        token,
+      }),
+    enabled: !!token && tab === 'types',
+    placeholderData: (previous) => previous,
   });
 
-  const { data: seriesList } = useQuery({
-    queryKey: ['assessment-series'],
-    queryFn: () => apiClient<{ data: AssessmentSeries[] }>('/assessment-series', { token }),
-    enabled: !!token && showSeries,
-  });
-
-  const createSeriesMutation = useMutation({
-    mutationFn: (body: { name: string; code: string }) =>
-      apiClient('/assessment-series', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Series created');
-      queryClient.invalidateQueries({ queryKey: ['assessment-series'] });
-      setSeriesName('');
-      setSeriesCode('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateSeriesMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiClient(`/assessment-series/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Series updated');
-      queryClient.invalidateQueries({ queryKey: ['assessment-series'] });
-      setEditSeriesId(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const createTypeMutation = useMutation({
-    mutationFn: (body: { name: string; code: string }) =>
-      apiClient('/assessment-types', { method: 'POST', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Type created');
-      queryClient.invalidateQueries({ queryKey: ['assessment-types'] });
-      setTypeName('');
-      setTypeCode('');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateTypeMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiClient(`/assessment-types/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Type updated');
-      queryClient.invalidateQueries({ queryKey: ['assessment-types'] });
-      setEditTypeId(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
+  const { data: seriesList, isLoading: seriesLoading } = useQuery({
+    queryKey: queryKeys.assessmentSeries({ page, limit }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<AssessmentSeries>>(`/assessment-series?${seriesQueryParams}`, {
+        token,
+      }),
+    enabled: !!token && tab === 'series',
+    placeholderData: (previous) => previous,
   });
 
   const submitReviewMutation = useMutation({
@@ -203,7 +194,7 @@ export default function AssessmentsPage() {
       apiClient(`/assessments/${id}/submit-review`, { method: 'POST', token }),
     onSuccess: () => {
       toast.success('Submitted for review');
-      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -212,7 +203,7 @@ export default function AssessmentsPage() {
     mutationFn: (id: string) => apiClient(`/assessments/${id}/publish`, { method: 'POST', token }),
     onSuccess: () => {
       toast.success('Assessment published');
-      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -221,19 +212,39 @@ export default function AssessmentsPage() {
     mutationFn: (id: string) => apiClient(`/assessments/${id}/unpublish`, { method: 'POST', token }),
     onSuccess: () => {
       toast.success('Assessment unpublished');
-      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const filteredAssessments = (assessments?.data ?? []).filter((a) => {
-    if (!search) return true;
+  const filteredAssessments = useMemo(() => {
+    const list = assessments?.data ?? [];
+    if (!search) return list;
     const q = search.toLowerCase();
-    return (
-      a.name.toLowerCase().includes(q) ||
-      (a.type?.name ?? '').toLowerCase().includes(q)
+    return list.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) || (a.type?.name ?? '').toLowerCase().includes(q),
     );
-  });
+  }, [assessments?.data, search]);
+
+  const createAction = (() => {
+    if (tab === 'assessments' && canEnterMarks) {
+      return { label: 'New assessment', onClick: () => setCreateOpen(true) };
+    }
+    if (tab === 'series' && canManageAcademic) {
+      return {
+        label: 'Add series',
+        onClick: () => setTaxonomyDialog({ kind: 'series', item: null }),
+      };
+    }
+    if (tab === 'types' && canManageAcademic) {
+      return {
+        label: 'Add type',
+        onClick: () => setTaxonomyDialog({ kind: 'types', item: null }),
+      };
+    }
+    return null;
+  })();
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -242,29 +253,32 @@ export default function AssessmentsPage() {
         title="Assessments"
         description="Tests, exams, and marks entry"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {canManageAcademic && (
-              <>
-                <Button variant="outline" onClick={() => setShowSeries(!showSeries)}>
-                  {showSeries ? 'Hide series' : 'Manage series'}
-                </Button>
-                <Button variant="outline" onClick={() => setShowTypes(!showTypes)}>
-                  {showTypes ? 'Hide types' : 'Manage types'}
-                </Button>
-              </>
-            )}
-            {canEnterMarks && (
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className={pageHeaderActionClassName}
-              >
-                <PageHeaderActionIcon />
-                New assessment
-              </button>
-            )}
-          </div>
+          createAction ? (
+            <button
+              type="button"
+              onClick={createAction.onClick}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              {createAction.label}
+            </button>
+          ) : undefined
         }
+      />
+
+      <Tabs
+        aria-label="Assessment sections"
+        tabs={[
+          { id: 'assessments', label: 'Assessments' },
+          ...(canManageAcademic
+            ? [
+                { id: 'series', label: 'Series' },
+                { id: 'types', label: 'Types' },
+              ]
+            : []),
+        ]}
+        value={tab}
+        onValueChange={handleTabChange}
       />
 
       <CreateAssessmentDialog
@@ -277,6 +291,15 @@ export default function AssessmentsPage() {
         }}
         branchId={effectiveBranchId}
         assessment={editingAssessment}
+      />
+
+      <AssessmentTaxonomyDialog
+        open={Boolean(taxonomyDialog)}
+        onOpenChange={(open) => {
+          if (!open) setTaxonomyDialog(null);
+        }}
+        kind={taxonomyDialog?.kind ?? 'series'}
+        item={taxonomyDialog?.item}
       />
 
       <MainStatsSection
@@ -305,271 +328,284 @@ export default function AssessmentsPage() {
         ]}
       />
 
-      {canManageAcademic && showSeries && (
-        <ContentPanel title="Assessment series">
-          <div className="space-y-4 p-5">
-            <form
-              className="flex flex-wrap gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createSeriesMutation.mutate({ name: seriesName, code: seriesCode });
-              }}
-            >
-              <Input placeholder="Name (FLP-5)" value={seriesName} onChange={(e) => setSeriesName(e.target.value)} required />
-              <Input placeholder="Code (flp_5)" value={seriesCode} onChange={(e) => setSeriesCode(e.target.value)} required />
-              <Button type="submit" disabled={createSeriesMutation.isPending}>
-                Add series
+      {tab === 'assessments' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={search} onValueChange={handleSearchChange} />
+            {search && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
               </Button>
-            </form>
-            <div className="divide-y divide-[var(--stroke-soft-200,#E2E4E9)]">
-              {seriesList?.data.map((s) => (
-                <div key={s.id} className="py-2">
-                  {editSeriesId === s.id ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Input value={editSeriesName} onChange={(e) => setEditSeriesName(e.target.value)} placeholder="Name" />
-                      <Input value={editSeriesCode} onChange={(e) => setEditSeriesCode(e.target.value)} placeholder="Code" />
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked={editSeriesActive} onChange={(e) => setEditSeriesActive(e.target.checked)} />
-                        Active
-                      </label>
-                      <Button
-                        size="sm"
-                        disabled={updateSeriesMutation.isPending}
-                        onClick={() =>
-                          updateSeriesMutation.mutate({
-                            id: s.id,
-                            body: { name: editSeriesName, code: editSeriesCode, isActive: editSeriesActive },
-                          })
-                        }
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditSeriesId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <ListRow
-                      actions={
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs ${s.isActive ? 'text-green-600' : 'text-[var(--text-sub-500)]'}`}>
-                            {s.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditSeriesId(s.id);
-                              setEditSeriesName(s.name);
-                              setEditSeriesCode(s.code);
-                              setEditSeriesActive(s.isActive);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        </div>
-                      }
-                    >
-                      <p className="text-sm font-medium">
-                        {s.name} <span className="text-[var(--text-sub-500)]">({s.code})</span>
-                      </p>
-                    </ListRow>
+            )}
+          </FilterBar>
+
+          <div className="bg-white">
+            <div className={dataTableWrapperClass}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Type</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Total marks</th>
+                    <th className={cn(dataTableThClass, 'w-12')} />
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? <DataTableSkeletonRows columns={5} rows={limit} /> : null}
+
+                  {error && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
+                        Failed to load assessments
+                      </td>
+                    </tr>
                   )}
-                </div>
-              ))}
+
+                  {!isLoading && !error && filteredAssessments.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                      >
+                        No assessments found
+                      </td>
+                    </tr>
+                  )}
+
+                  {!isLoading &&
+                    !error &&
+                    filteredAssessments.map((assessment) => (
+                      <tr
+                        key={assessment.id}
+                        className={cn('transition-colors', dataTableRowHoverClass)}
+                      >
+                        <td className={dataTableTdClass}>{assessment.name}</td>
+                        <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
+                        <td className={dataTableTdClass}>
+                          <StatusBadge
+                            label={assessmentStatusLabel(assessment.status)}
+                            code={assessmentStatusCode(assessment.status)}
+                          />
+                        </td>
+                        <td className={dataTableTdClass}>{assessment.totalMarks}</td>
+                        <td className={cn(dataTableTdClass, 'text-right')}>
+                          {canEnterMarks || canPublish ? (
+                            <RowActionsMenu
+                              items={[
+                                ...(canEnterMarks && assessment.status !== 'published'
+                                  ? [
+                                      {
+                                        label: 'Enter marks',
+                                        href: `/dashboard/assessments/${assessment.id}/marks`,
+                                      },
+                                    ]
+                                  : []),
+                                ...(canEnterMarks && assessment.status !== 'published'
+                                  ? [
+                                      {
+                                        label: 'Edit',
+                                        onClick: () => setEditingAssessment(assessment),
+                                      },
+                                    ]
+                                  : []),
+                                ...(canEnterMarks && assessment.status === 'draft'
+                                  ? [
+                                      {
+                                        label: 'Submit for review',
+                                        onClick: () => submitReviewMutation.mutate(assessment.id),
+                                      },
+                                    ]
+                                  : []),
+                                ...(canPublish &&
+                                (assessment.status === 'draft' ||
+                                  assessment.status === 'in_review')
+                                  ? [
+                                      {
+                                        label: 'Publish',
+                                        onClick: () => publishMutation.mutate(assessment.id),
+                                      },
+                                    ]
+                                  : []),
+                                ...(canPublish && assessment.status === 'published'
+                                  ? [
+                                      {
+                                        label: 'Unpublish',
+                                        onClick: () => unpublishMutation.mutate(assessment.id),
+                                      },
+                                    ]
+                                  : []),
+                              ]}
+                            />
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
+
+            {assessments?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={assessments.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
           </div>
-        </ContentPanel>
+        </>
       )}
 
-      {canManageAcademic && showTypes && (
-        <ContentPanel title="Assessment types">
-          <div className="space-y-4 p-5">
-            <form
-              className="flex flex-wrap gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createTypeMutation.mutate({ name: typeName, code: typeCode });
-              }}
-            >
-              <Input placeholder="Name (Midterm)" value={typeName} onChange={(e) => setTypeName(e.target.value)} required />
-              <Input placeholder="Code (midterm)" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} required />
-              <Button type="submit" disabled={createTypeMutation.isPending}>
-                Add type
-              </Button>
-            </form>
-            <div className="divide-y divide-[var(--stroke-soft-200,#E2E4E9)]">
-              {types?.data.map((t) => (
-                <div key={t.id} className="py-2">
-                  {editTypeId === t.id ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Input value={editTypeName} onChange={(e) => setEditTypeName(e.target.value)} placeholder="Name" />
-                      <Input value={editTypeCode} onChange={(e) => setEditTypeCode(e.target.value)} placeholder="Code" />
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked={editTypeActive} onChange={(e) => setEditTypeActive(e.target.checked)} />
-                        Active
-                      </label>
-                      <Button
-                        size="sm"
-                        disabled={updateTypeMutation.isPending}
-                        onClick={() =>
-                          updateTypeMutation.mutate({
-                            id: t.id,
-                            body: { name: editTypeName, code: editTypeCode, isActive: editTypeActive },
-                          })
-                        }
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditTypeId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <ListRow
-                      actions={
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs ${t.isActive ? 'text-green-600' : 'text-[var(--text-sub-500)]'}`}>
-                            {t.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditTypeId(t.id);
-                              setEditTypeName(t.name);
-                              setEditTypeCode(t.code);
-                              setEditTypeActive(t.isActive);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                        </div>
-                      }
+      {tab === 'series' && (
+        <div className="bg-white">
+          <div className={dataTableWrapperClass}>
+            <table className={dataTableClass}>
+              <thead>
+                <tr>
+                  <th className={dataTableThClass}>Name</th>
+                  <th className={dataTableThClass}>Code</th>
+                  <th className={dataTableThClass}>Status</th>
+                  <th className={cn(dataTableThClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {seriesLoading ? (
+                  <DataTableSkeletonRows columns={4} rows={limit} />
+                ) : (seriesList?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                     >
-                      <p className="text-sm font-medium">
-                        {t.name} <span className="text-[var(--text-sub-500)]">({t.code})</span>
-                      </p>
-                    </ListRow>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </ContentPanel>
-      )}
-
-      <FilterBar className="items-center">
-        <SearchInput value={search} onValueChange={handleSearchChange} />
-        {search && (
-          <Button variant="ghost" onClick={() => setSearch('')}>
-            Clear filters
-          </Button>
-        )}
-      </FilterBar>
-
-      <div className="bg-white">
-        <div className={dataTableWrapperClass}>
-          <table className={dataTableClass}>
-            <thead>
-              <tr>
-                <th className={dataTableThClass}>Name</th>
-                <th className={dataTableThClass}>Type</th>
-                <th className={dataTableThClass}>Status</th>
-                <th className={dataTableThClass}>Total marks</th>
-                <th className={cn(dataTableThClass, 'w-12')} />
-              </tr>
-            </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={5} rows={8} />}
-
-              {error && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
-                    Failed to load assessments
-                  </td>
-                </tr>
-              )}
-
-              {!isLoading && !error && filteredAssessments.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
-                  >
-                    No assessments found
-                  </td>
-                </tr>
-              )}
-
-              {!isLoading &&
-                !error &&
-                filteredAssessments.map((assessment) => (
-                  <tr key={assessment.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                    <td className={dataTableTdClass}>{assessment.name}</td>
-                    <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
-                    <td className={dataTableTdClass}>
-                      <StatusBadge
-                        label={assessmentStatusLabel(assessment.status)}
-                        code={assessmentStatusCode(assessment.status)}
-                      />
-                    </td>
-                    <td className={dataTableTdClass}>{assessment.totalMarks}</td>
-                    <td className={cn(dataTableTdClass, 'text-right')}>
-                      {(canEnterMarks || canPublish) ? (
-                        <RowActionsMenu
-                          items={[
-                            ...(canEnterMarks && assessment.status !== 'published'
-                              ? [
-                                  {
-                                    label: 'Enter marks',
-                                    href: `/dashboard/assessments/${assessment.id}/marks`,
-                                  },
-                                ]
-                              : []),
-                            ...(canEnterMarks && assessment.status !== 'published'
-                              ? [
-                                  {
-                                    label: 'Edit',
-                                    onClick: () => setEditingAssessment(assessment),
-                                  },
-                                ]
-                              : []),
-                            ...(canEnterMarks && assessment.status === 'draft'
-                              ? [
-                                  {
-                                    label: 'Submit for review',
-                                    onClick: () => submitReviewMutation.mutate(assessment.id),
-                                  },
-                                ]
-                              : []),
-                            ...(canPublish &&
-                            (assessment.status === 'draft' || assessment.status === 'in_review')
-                              ? [
-                                  {
-                                    label: 'Publish',
-                                    onClick: () => publishMutation.mutate(assessment.id),
-                                  },
-                                ]
-                              : []),
-                            ...(canPublish && assessment.status === 'published'
-                              ? [
-                                  {
-                                    label: 'Unpublish',
-                                    onClick: () => unpublishMutation.mutate(assessment.id),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        />
-                      ) : null}
+                      No series found
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
+                ) : (
+                  seriesList?.data.map((s) => (
+                    <tr key={s.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={dataTableTdClass}>{s.name}</td>
+                      <td className={dataTableTdClass}>{s.code}</td>
+                      <td className={dataTableTdClass}>
+                        <StatusBadge
+                          label={s.isActive ? 'Active' : 'Inactive'}
+                          code={s.isActive ? 'active' : 'draft'}
+                        />
+                      </td>
+                      <td className={cn(dataTableTdClass, 'text-right')}>
+                        {canManageAcademic ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                icon: editIcon,
+                                onClick: () => setTaxonomyDialog({ kind: 'series', item: s }),
+                              },
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {seriesList?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={seriesList.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
         </div>
-      </div>
+      )}
+
+      {tab === 'types' && (
+        <div className="bg-white">
+          <div className={dataTableWrapperClass}>
+            <table className={dataTableClass}>
+              <thead>
+                <tr>
+                  <th className={dataTableThClass}>Name</th>
+                  <th className={dataTableThClass}>Code</th>
+                  <th className={dataTableThClass}>Status</th>
+                  <th className={cn(dataTableThClass, 'w-12')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child>td]:border-b-0">
+                {typesLoading ? (
+                  <DataTableSkeletonRows columns={4} rows={limit} />
+                ) : (types?.data.length ?? 0) === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
+                    >
+                      No types found
+                    </td>
+                  </tr>
+                ) : (
+                  types?.data.map((t) => (
+                    <tr key={t.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={dataTableTdClass}>{t.name}</td>
+                      <td className={dataTableTdClass}>{t.code}</td>
+                      <td className={dataTableTdClass}>
+                        <StatusBadge
+                          label={t.isActive ? 'Active' : 'Inactive'}
+                          code={t.isActive ? 'active' : 'draft'}
+                        />
+                      </td>
+                      <td className={cn(dataTableTdClass, 'text-right')}>
+                        {canManageAcademic ? (
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Edit',
+                                icon: editIcon,
+                                onClick: () => setTaxonomyDialog({ kind: 'types', item: t }),
+                              },
+                            ]}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {types?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={types.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,16 +4,23 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { inquiryStatuses } from '@eims/shared';
+import {
+  createInquirySchema,
+  inquiryStatuses,
+  updateInquirySchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -55,9 +62,14 @@ export function InquiryDialog({
   const isEdit = Boolean(inquiry);
   const [form, setForm] = useState(emptyForm);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateInquirySchema : createInquirySchema,
+  );
+
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (inquiry) {
@@ -73,46 +85,43 @@ export function InquiryDialog({
     } else {
       setForm(emptyForm);
     }
-  }, [open, inquiry]);
+  }, [open, inquiry, clearAll]);
 
-  const mutation = useMutation({
-    mutationFn: () => {
-      if (!form.fullName.trim()) throw new Error('Full name is required');
-      const followUpAt = form.followUpAt.trim()
-        ? new Date(form.followUpAt).toISOString()
+  const buildPayload = () => {
+    const followUpAt = form.followUpAt.trim()
+      ? new Date(form.followUpAt).toISOString()
+      : isEdit
+        ? null
         : undefined;
 
+    const base = {
+      fullName: form.fullName.trim(),
+      phone: form.phone.trim() || (isEdit ? '' : undefined),
+      email: form.email.trim() || (isEdit ? '' : undefined),
+      programInterest: form.programInterest.trim() || (isEdit ? '' : undefined),
+      status: form.status,
+      notes: form.notes.trim() || (isEdit ? '' : undefined),
+      ...(followUpAt !== undefined ? { followUpAt } : {}),
+    };
+
+    if (isEdit && inquiry) return base;
+    return { branchId, ...base };
+  };
+
+  const mutation = useMutation({
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && inquiry) {
         return apiClient(`/inquiries/${inquiry.id}`, {
           method: 'PATCH',
           token,
-          body: {
-            fullName: form.fullName.trim(),
-            ...(form.phone.trim() ? { phone: form.phone.trim() } : { phone: '' }),
-            ...(form.email.trim() ? { email: form.email.trim() } : { email: '' }),
-            ...(form.programInterest.trim()
-              ? { programInterest: form.programInterest.trim() }
-              : { programInterest: '' }),
-            status: form.status,
-            ...(form.notes.trim() ? { notes: form.notes.trim() } : { notes: '' }),
-            followUpAt: followUpAt ?? null,
-          },
+          body: payload,
         });
       }
 
       return apiClient('/inquiries', {
         method: 'POST',
         token,
-        body: {
-          branchId,
-          fullName: form.fullName.trim(),
-          ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
-          ...(form.email.trim() ? { email: form.email.trim() } : {}),
-          ...(form.programInterest.trim() ? { programInterest: form.programInterest.trim() } : {}),
-          status: form.status,
-          ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
-          ...(followUpAt ? { followUpAt } : {}),
-        },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -121,10 +130,23 @@ export function InquiryDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.frontOfficeActivities(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update inquiry' : 'Unable to create inquiry'));
+    },
   });
 
-  const canSubmit = form.fullName.trim().length >= 2 && branchId;
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,55 +171,52 @@ export function InquiryDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Full name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('fullName', modalFieldClassName)}
                 placeholder="Full name"
                 value={form.fullName}
-                onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                required
+                onChange={(e) => updateForm('fullName', e.target.value)}
               />
+              <FormFieldError message={errors.fullName} />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('phone', modalFieldClassName)}
                   placeholder="Phone"
                   value={form.phone}
-                  onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => updateForm('phone', e.target.value)}
                 />
+                <FormFieldError message={errors.phone} />
               </div>
               <div>
                 <FormFieldLabel>Email</FormFieldLabel>
                 <input
                   type="email"
-                  className={modalFieldClassName}
+                  className={fieldClassName('email', modalFieldClassName)}
                   placeholder="Email"
                   value={form.email}
-                  onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                  onChange={(e) => updateForm('email', e.target.value)}
                 />
+                <FormFieldError message={errors.email} />
               </div>
             </div>
 
             <div>
               <FormFieldLabel>Program interest</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('programInterest', modalFieldClassName)}
                 placeholder="Program or course of interest"
                 value={form.programInterest}
-                onChange={(e) => setForm((prev) => ({ ...prev, programInterest: e.target.value }))}
+                onChange={(e) => updateForm('programInterest', e.target.value)}
               />
+              <FormFieldError message={errors.programInterest} />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -207,30 +226,33 @@ export function InquiryDialog({
                   aria-label="Status"
                   placeholder="Select status"
                   value={form.status}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}
+                  onValueChange={(value) => updateForm('status', value)}
                   options={inquiryStatuses.map((s) => ({ value: s, label: formatLabel(s) }))}
-                  className="w-full"
+                  className={fieldClassName('status', 'w-full')}
                 />
+                <FormFieldError message={errors.status} />
               </div>
               <div>
                 <FormFieldLabel>Follow-up at</FormFieldLabel>
                 <input
                   type="datetime-local"
-                  className={modalFieldClassName}
+                  className={fieldClassName('followUpAt', modalFieldClassName)}
                   value={form.followUpAt}
-                  onChange={(e) => setForm((prev) => ({ ...prev, followUpAt: e.target.value }))}
+                  onChange={(e) => updateForm('followUpAt', e.target.value)}
                 />
+                <FormFieldError message={errors.followUpAt} />
               </div>
             </div>
 
             <div>
               <FormFieldLabel>Notes</FormFieldLabel>
               <textarea
-                className={cn(modalFieldClassName, 'min-h-[80px] resize-y py-3')}
+                className={cn(fieldClassName('notes', modalFieldClassName), 'min-h-[80px] resize-y py-3')}
                 placeholder="Notes"
                 value={form.notes}
-                onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                onChange={(e) => updateForm('notes', e.target.value)}
               />
+              <FormFieldError message={errors.notes} />
             </div>
           </div>
 
@@ -248,7 +270,7 @@ export function InquiryDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

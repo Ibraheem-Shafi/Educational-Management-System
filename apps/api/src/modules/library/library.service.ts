@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, CountWithTrend } from '@eims/types';
 import {
@@ -79,18 +80,28 @@ export class LibraryService {
 
   async findAllCategories(query: ListLibraryCategoriesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const categories = await this.prisma.libraryCategory.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.search
-          ? { name: { contains: query.search, mode: 'insensitive' } }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-      include: { _count: { select: { books: { where: { deletedAt: null } } } } },
-    });
-    return { data: categories };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.search
+        ? { name: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [categories, total] = await Promise.all([
+      this.prisma.libraryCategory.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { _count: { select: { books: { where: { deletedAt: null } } } } },
+      }),
+      this.prisma.libraryCategory.count({ where }),
+    ]);
+
+    return paginatedResult(categories, total, page, limit);
   }
 
   async findOneCategory(id: string, branchId: string | null) {
@@ -169,30 +180,40 @@ export class LibraryService {
 
   async findAllBooks(query: ListLibraryBooksQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const books = await this.prisma.libraryBook.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { title: { contains: query.search, mode: 'insensitive' } },
-                { author: { contains: query.search, mode: 'insensitive' } },
-                { isbn: { contains: query.search, mode: 'insensitive' } },
-                { accessionNo: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { title: 'asc' },
-      include: {
-        category: { select: { id: true, name: true } },
-        copies: { where: { deletedAt: null }, select: { id: true, copyCode: true, status: true } },
-        _count: { select: { reservations: { where: { deletedAt: null, status: 'active' } } } },
-      },
-    });
-    return { data: books };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' as const } },
+              { author: { contains: query.search, mode: 'insensitive' as const } },
+              { isbn: { contains: query.search, mode: 'insensitive' as const } },
+              { accessionNo: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [books, total] = await Promise.all([
+      this.prisma.libraryBook.findMany({
+        where,
+        orderBy: { title: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          category: { select: { id: true, name: true } },
+          copies: { where: { deletedAt: null }, select: { id: true, copyCode: true, status: true } },
+          _count: { select: { reservations: { where: { deletedAt: null, status: 'active' } } } },
+        },
+      }),
+      this.prisma.libraryBook.count({ where }),
+    ]);
+
+    return paginatedResult(books, total, page, limit);
   }
 
   async findOneBook(id: string, branchId: string | null) {
@@ -383,31 +404,41 @@ export class LibraryService {
   async findAllLoans(query: ListLibraryLoansQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
     const now = new Date();
-    const loans = await this.prisma.libraryLoan.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.activeOnly ? { returnedAt: null } : {}),
-        ...(query.borrowerType ? { borrowerType: query.borrowerType } : {}),
-        ...(query.studentId ? { studentId: query.studentId } : {}),
-        ...(query.userId ? { userId: query.userId } : {}),
-        ...(query.overdueOnly
-          ? { returnedAt: null, dueAt: { lt: now } }
-          : {}),
-      },
-      orderBy: { issuedAt: 'desc' },
-      include: {
-        copy: {
-          include: {
-            book: { select: { id: true, title: true, author: true } },
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.activeOnly ? { returnedAt: null } : {}),
+      ...(query.borrowerType ? { borrowerType: query.borrowerType } : {}),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.overdueOnly
+        ? { returnedAt: null, dueAt: { lt: now } }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [loans, total] = await Promise.all([
+      this.prisma.libraryLoan.findMany({
+        where,
+        orderBy: { issuedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          copy: {
+            include: {
+              book: { select: { id: true, title: true, author: true } },
+            },
           },
+          student: { select: { id: true, fullName: true } },
+          user: { select: { id: true, fullName: true } },
+          issuedBy: { select: { id: true, fullName: true } },
+          fines: true,
         },
-        student: { select: { id: true, fullName: true } },
-        user: { select: { id: true, fullName: true } },
-        issuedBy: { select: { id: true, fullName: true } },
-        fines: true,
-      },
-    });
-    return { data: loans };
+      }),
+      this.prisma.libraryLoan.count({ where }),
+    ]);
+
+    return paginatedResult(loans, total, page, limit);
   }
 
   async issueLoan(input: IssueLibraryLoanInput, user: AuthUser) {
@@ -565,23 +596,33 @@ export class LibraryService {
 
   async findAllReservations(query: ListLibraryReservationsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const reservations = await this.prisma.libraryReservation.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.bookId ? { bookId: query.bookId } : {}),
-        ...(query.studentId ? { studentId: query.studentId } : {}),
-        ...(query.userId ? { userId: query.userId } : {}),
-      },
-      orderBy: { reservedAt: 'desc' },
-      include: {
-        book: { select: { id: true, title: true, author: true } },
-        student: { select: { id: true, fullName: true } },
-        user: { select: { id: true, fullName: true } },
-      },
-    });
-    return { data: reservations };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.bookId ? { bookId: query.bookId } : {}),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [reservations, total] = await Promise.all([
+      this.prisma.libraryReservation.findMany({
+        where,
+        orderBy: { reservedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          book: { select: { id: true, title: true, author: true } },
+          student: { select: { id: true, fullName: true } },
+          user: { select: { id: true, fullName: true } },
+        },
+      }),
+      this.prisma.libraryReservation.count({ where }),
+    ]);
+
+    return paginatedResult(reservations, total, page, limit);
   }
 
   async createReservation(input: CreateLibraryReservationInput, user: AuthUser) {
@@ -683,24 +724,34 @@ export class LibraryService {
 
   async findAllFines(query: ListLibraryFinesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const fines = await this.prisma.libraryFine.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.loanId ? { loanId: query.loanId } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        loan: {
-          include: {
-            copy: { include: { book: { select: { id: true, title: true } } } },
-            student: { select: { id: true, fullName: true } },
-            user: { select: { id: true, fullName: true } },
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.loanId ? { loanId: query.loanId } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [fines, total] = await Promise.all([
+      this.prisma.libraryFine.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          loan: {
+            include: {
+              copy: { include: { book: { select: { id: true, title: true } } } },
+              student: { select: { id: true, fullName: true } },
+              user: { select: { id: true, fullName: true } },
+            },
           },
         },
-      },
-    });
-    return { data: fines };
+      }),
+      this.prisma.libraryFine.count({ where }),
+    ]);
+
+    return paginatedResult(fines, total, page, limit);
   }
 
   async updateFine(

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Building2, X } from 'lucide-react';
+import { createBranchSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import {
   Dialog,
   DialogContent,
@@ -19,8 +21,21 @@ import {
   slugifyBranchCode,
   type BranchFormValues,
 } from '@/lib/branch-form';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+
+function branchFormToPayload(form: BranchFormValues) {
+  const code = form.code.trim() || slugifyBranchCode(form.name);
+  const phone = buildBranchPhonePayload(form);
+  return {
+    name: form.name.trim(),
+    code,
+    ...(form.address.trim() ? { address: form.address.trim() } : {}),
+    ...(form.email.trim() ? { email: form.email.trim() } : {}),
+    ...(phone ? { phone } : {}),
+  };
+}
 
 export function AddBranchDialog({
   open,
@@ -33,42 +48,38 @@ export function AddBranchDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<BranchFormValues>(emptyBranchForm);
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } =
+    useFormErrors(createBranchSchema);
 
   useEffect(() => {
-    if (!open) setForm(emptyBranchForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyBranchForm);
+      clearAll();
+    }
+  }, [open, clearAll]);
 
   const createMutation = useMutation({
-    mutationFn: (payload: BranchFormValues) => {
-      const fullPhone = buildBranchPhonePayload(payload);
-      const code = payload.code.trim() || slugifyBranchCode(payload.name);
-
-      return apiClient('/branches', {
+    mutationFn: (payload: ReturnType<typeof branchFormToPayload>) =>
+      apiClient('/branches', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          name: payload.name.trim(),
-          code,
-          ...(payload.address.trim() ? { address: payload.address.trim() } : {}),
-          ...(payload.email.trim() ? { email: payload.email.trim() } : {}),
-          ...(fullPhone ? { phone: fullPhone } : {}),
-        }),
-      });
-    },
+        body: JSON.stringify(payload),
+      }),
     onSuccess: () => {
       toast.success('Branch created');
       queryClient.invalidateQueries({ queryKey: ['branches'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.branchesStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create branch'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Failed to create branch');
+    },
   });
 
   const update = (key: keyof BranchFormValues, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
-
-  const canSubmit = form.name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -100,16 +111,20 @@ export function AddBranchDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            const code = form.code.trim() || slugifyBranchCode(form.name);
-            if (!form.name.trim() || code.length < 2) {
-              toast.error('Enter a valid branch name');
-              return;
-            }
-            createMutation.mutate({ ...form, code });
+            const payload = branchFormToPayload(form);
+            if (!validate(payload)) return;
+            createMutation.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-            <BranchFormFields form={form} onChange={update} autoCode />
+            <BranchFormFields
+              form={form}
+              onChange={update}
+              autoCode
+              errors={errors}
+              fieldClassName={fieldClassName}
+              clearField={clearField}
+            />
           </div>
 
           <div className="flex shrink-0 gap-4 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-4 pb-5 pt-4">
@@ -127,7 +142,7 @@ export function AddBranchDialog({
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending || !canSubmit}
+              disabled={createMutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white',

@@ -1,11 +1,13 @@
 'use client';
 
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
@@ -18,22 +20,39 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import type { PayrollRunSummary } from './types';
 import { formatLabel, formatPeriod, statusBadgeCode } from './types';
 
 export function HistoryPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();
   const token = session?.access_token;
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const queryParams = { branchId, status: 'finalized', page, limit };
 
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.payrollHistory(branchId),
+    queryKey: queryKeys.payrollHistory(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId, status: 'finalized' });
-      return apiClient<{ data: PayrollRunSummary[] }>(`/payroll/runs?${params.toString()}`, {
-        token,
+      const params = new URLSearchParams({
+        branchId,
+        status: 'finalized',
+        page: String(page),
+        limit: String(limit),
       });
+      return apiClient<PaginatedResponse<PayrollRunSummary>>(
+        `/payroll/runs?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const rows = data?.data ?? [];
@@ -58,7 +77,7 @@ export function HistoryPanel({ branchId }: { branchId: string }) {
   };
 
   return (
-    <ContentPanel title={`Finalized payroll (${rows.length})`}>
+    <ContentPanel title={`Finalized payroll (${data?.meta.total ?? 0})`}>
       <div className={dataTableWrapperClass}>
         <table className={dataTableClass}>
           <thead>
@@ -72,7 +91,7 @@ export function HistoryPanel({ branchId }: { branchId: string }) {
           </thead>
           <tbody>
             {isLoading ? (
-              <DataTableSkeletonRows columns={5} />
+              <DataTableSkeletonRows columns={5} rows={limit} />
             ) : error ? (
               <tr>
                 <td colSpan={5} className={dataTableTdClass}>
@@ -127,6 +146,15 @@ export function HistoryPanel({ branchId }: { branchId: string }) {
           </tbody>
         </table>
       </div>
+      {data && !error && (
+        <PaginationBar
+          page={page}
+          totalPages={data.meta.totalPages}
+          limit={limit}
+          onPageChange={setPage}
+          onLimitChange={handleLimitChange}
+        />
+      )}
     </ContentPanel>
   );
 }

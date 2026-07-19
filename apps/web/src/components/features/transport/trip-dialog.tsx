@@ -4,16 +4,24 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calendar, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { transportDirections, transportTripStatuses } from '@eims/shared';
+import {
+  createTransportTripSchema,
+  transportDirections,
+  transportTripStatuses,
+  updateTransportTripSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -41,6 +49,10 @@ export function TripDialog({
   const [direction, setDirection] = useState('pickup');
   const [status, setStatus] = useState('scheduled');
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateTransportTripSchema : createTransportTripSchema,
+  );
+
   const { data: routesData } = useQuery({
     queryKey: queryKeys.transportRoutes(branchId),
     queryFn: () =>
@@ -62,6 +74,7 @@ export function TripDialog({
       setTripDate('');
       setDirection('pickup');
       setStatus('scheduled');
+      clearAll();
       return;
     }
     if (trip) {
@@ -71,24 +84,29 @@ export function TripDialog({
       setDirection(trip.direction);
       setStatus(trip.status);
     }
-  }, [open, trip]);
+  }, [open, trip, clearAll]);
+
+  const buildPayload = () => {
+    const payload = {
+      routeId,
+      vehicleId: vehicleId || null,
+      tripDate,
+      direction,
+      status,
+    };
+    if (isEdit && trip) return payload;
+    return { branchId, ...payload };
+  };
 
   const mutation = useMutation({
-    mutationFn: () => {
-      const payload = {
-        routeId,
-        vehicleId: vehicleId || null,
-        tripDate,
-        direction,
-        status,
-      };
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && trip) {
         return apiClient(`/transport/trips/${trip.id}`, { method: 'PATCH', token, body: payload });
       }
       return apiClient('/transport/trips', {
         method: 'POST',
         token,
-        body: { branchId, ...payload },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -96,10 +114,18 @@ export function TripDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.transportTrips(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update trip' : 'Unable to schedule trip'));
+    },
   });
 
-  const canSubmit = routeId && tripDate && direction;
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -117,22 +143,20 @@ export function TripDialog({
           </button>
         </div>
 
-        <form
-          className="flex flex-col gap-4 px-4 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex flex-col gap-4 px-4 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel required>Route</FormFieldLabel>
             <SelectDropdown
               aria-label="Route"
               value={routeId}
-              onValueChange={setRouteId}
+              onValueChange={(value) => {
+                setRouteId(value);
+                clearField('routeId');
+              }}
               options={(routesData?.data ?? []).map((r) => ({ value: r.id, label: r.name }))}
-              className="w-full"
+              className={fieldClassName('routeId', 'w-full')}
             />
+            <FormFieldError message={errors.routeId} />
           </div>
           <div>
             <FormFieldLabel>Vehicle</FormFieldLabel>
@@ -140,7 +164,10 @@ export function TripDialog({
               aria-label="Vehicle"
               placeholder="Optional"
               value={vehicleId}
-              onValueChange={setVehicleId}
+              onValueChange={(value) => {
+                setVehicleId(value);
+                clearField('vehicleId');
+              }}
               options={[
                 { value: '', label: 'None' },
                 ...(vehiclesData?.data ?? []).map((v) => ({
@@ -148,38 +175,51 @@ export function TripDialog({
                   label: v.plateNumber,
                 })),
               ]}
-              className="w-full"
+              className={fieldClassName('vehicleId', 'w-full')}
             />
+            <FormFieldError message={errors.vehicleId} />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <FormFieldLabel required>Trip date</FormFieldLabel>
               <input
                 type="date"
-                className={modalFieldClassName}
+                className={fieldClassName('tripDate', modalFieldClassName)}
                 value={tripDate}
-                onChange={(e) => setTripDate(e.target.value)}
+                onChange={(e) => {
+                  setTripDate(e.target.value);
+                  clearField('tripDate');
+                }}
               />
+              <FormFieldError message={errors.tripDate} />
             </div>
             <div>
               <FormFieldLabel required>Direction</FormFieldLabel>
               <SelectDropdown
                 aria-label="Direction"
                 value={direction}
-                onValueChange={setDirection}
+                onValueChange={(value) => {
+                  setDirection(value);
+                  clearField('direction');
+                }}
                 options={transportDirections.map((d) => ({ value: d, label: formatLabel(d) }))}
-                className="w-full"
+                className={fieldClassName('direction', 'w-full')}
               />
+              <FormFieldError message={errors.direction} />
             </div>
             <div>
               <FormFieldLabel>Status</FormFieldLabel>
               <SelectDropdown
                 aria-label="Status"
                 value={status}
-                onValueChange={setStatus}
+                onValueChange={(value) => {
+                  setStatus(value);
+                  clearField('status');
+                }}
                 options={transportTripStatuses.map((s) => ({ value: s, label: formatLabel(s) }))}
-                className="w-full"
+                className={fieldClassName('status', 'w-full')}
               />
+              <FormFieldError message={errors.status} />
             </div>
           </div>
 
@@ -189,7 +229,7 @@ export function TripDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] text-sm text-white disabled:opacity-50',
               )}

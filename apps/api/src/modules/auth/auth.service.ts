@@ -108,12 +108,21 @@ export class AuthService {
     };
   }
 
-  async listSessions(userId: string) {
-    const sessions = await this.prisma.userSession.findMany({
-      where: { userId },
-      orderBy: { lastActiveAt: 'desc' },
-      take: 20,
-    });
+  async listSessions(userId: string, query: { page?: number; limit?: number } = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const where = { userId };
+    const [sessions, total] = await Promise.all([
+      this.prisma.userSession.findMany({
+        where,
+        orderBy: { lastActiveAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.userSession.count({ where }),
+    ]);
+
     return {
       data: sessions.map((s) => ({
         id: s.id,
@@ -122,6 +131,12 @@ export class AuthService {
         lastActiveAt: s.lastActiveAt.toISOString(),
         createdAt: s.createdAt.toISOString(),
       })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
     };
   }
 
@@ -508,16 +523,7 @@ export class PortalService {
     query: { type?: string; search?: string; page?: number; limit?: number },
   ) {
     const student = await this.resolveStudentContext(user);
-    return this.learningService.listForStudentContext({
-      branchId: student.branchId,
-      programId: student.programId,
-      batchId: student.batchId,
-      audience: 'students',
-      type: query.type,
-      search: query.search,
-      page: query.page,
-      limit: query.limit,
-    });
+    return this.portalSections.getStudentLearning(student, query);
   }
 
   async getStudentLearningDetail(user: AuthUser, id: string) {
@@ -549,16 +555,7 @@ export class PortalService {
     query: { type?: string; search?: string; page?: number; limit?: number },
   ) {
     const student = await this.resolveParentChild(user, studentId);
-    return this.learningService.listForStudentContext({
-      branchId: student.branchId,
-      programId: student.programId,
-      batchId: student.batchId,
-      audience: 'parents',
-      type: query.type,
-      search: query.search,
-      page: query.page,
-      limit: query.limit,
-    });
+    return this.portalSections.getParentLearning(student, query);
   }
 
   async getParentLearningDetail(user: AuthUser, studentId: string, id: string) {
@@ -720,10 +717,10 @@ export class PortalService {
     return this.portalSections.getParentProfile(user);
   }
 
-  async listParentLeaveRequests(user: AuthUser, studentId?: string) {
+  async listParentLeaveRequests(user: AuthUser, studentId?: string, query?: PortalSectionQuery) {
     await this.assertPortalEnabled('parentPortal');
     if (!user.roles.includes('parent')) throw new ForbiddenException('Parent portal access only');
-    return this.portalSections.listParentLeaveRequests(user.email, studentId);
+    return this.portalSections.listParentLeaveRequests(user.email, studentId, query);
   }
 
   async createParentLeaveRequest(user: AuthUser, input: CreateLeaveRequestInput) {
@@ -732,16 +729,21 @@ export class PortalService {
     return this.portalSections.createParentLeaveRequest(user.email, input);
   }
 
-  async listStaffLeaveRequests(branchId: string | null, kind?: string) {
-    return this.portalSections.listStaffLeaveRequests(branchId, kind);
+  async listStaffLeaveRequests(
+    branchId: string | null,
+    kind?: string,
+    page = 1,
+    limit = 8,
+  ) {
+    return this.portalSections.listStaffLeaveRequests(branchId, kind, page, limit);
   }
 
   async createEmployeeLeaveRequest(user: AuthUser, input: CreateEmployeeLeaveRequestInput) {
     return this.portalSections.createEmployeeLeaveRequest(user.id, input);
   }
 
-  async listMyEmployeeLeaveRequests(user: AuthUser) {
-    return this.portalSections.listMyEmployeeLeaveRequests(user.id);
+  async listMyEmployeeLeaveRequests(user: AuthUser, page = 1, limit = 8) {
+    return this.portalSections.listMyEmployeeLeaveRequests(user.id, page, limit);
   }
 
   async reviewLeaveRequest(user: AuthUser, id: string, status: 'approved' | 'rejected') {

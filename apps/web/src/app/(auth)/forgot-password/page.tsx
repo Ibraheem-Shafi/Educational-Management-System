@@ -13,18 +13,24 @@ import {
   authPrimaryButtonClassName,
 } from '@/components/auth/auth-shell';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { forgotPasswordFormSchema } from '@/lib/auth-form-schemas';
 
 export default function ForgotPasswordPage() {
   const { name } = useInstitution();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const { errors, clearField, validate, fieldClassName } = useFormErrors(forgotPasswordFormSchema);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate({ email: email.trim() })) return;
+
     setLoading(true);
     const supabase = createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/login`,
     });
     setLoading(false);
@@ -61,10 +67,13 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="admin@institution.pk"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className={authFieldClassName}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearField('email');
+              }}
+              className={fieldClassName('email', authFieldClassName)}
             />
+            <FormFieldError message={errors.email} />
           </div>
           <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
             {loading ? 'Sending…' : 'Send reset link'}

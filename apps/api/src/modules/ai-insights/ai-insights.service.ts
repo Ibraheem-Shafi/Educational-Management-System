@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
+import type { AtRiskStudentsQuery } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 
 @Injectable()
 export class AiInsightsService {
@@ -11,7 +14,18 @@ export class AiInsightsService {
     private readonly config: ConfigService,
   ) {}
 
-  async getAtRiskStudents(branchId: string | null, threshold = 50) {
+  async getAtRiskStudents(
+    query: AtRiskStudentsQuery,
+    branchId: string | null,
+  ): Promise<PaginatedResponse<{
+    studentId: string;
+    fullName: string;
+    attendanceRate: number | null;
+    averagePercentage: number | null;
+    reasons: string[];
+    riskLevel: string;
+  }>> {
+    const threshold = query.threshold ?? 50;
     const { alerts } = await this.analytics.getWeakSubjects(
       { threshold, branchId: branchId ?? undefined },
       branchId,
@@ -27,7 +41,6 @@ export class AiInsightsService {
     const students = await this.prisma.student.findMany({
       where: { deletedAt: null, ...(branchId ? { branchId } : {}) },
       select: { id: true, fullName: true, batchId: true, phone: true, email: true },
-      take: 300,
     });
 
     const atRisk = [];
@@ -79,7 +92,14 @@ export class AiInsightsService {
     }
 
     atRisk.sort((a, b) => b.reasons.length - a.reasons.length);
-    return { students: atRisk.slice(0, 50) };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const total = atRisk.length;
+    const start = (page - 1) * limit;
+    const pageData = atRisk.slice(start, start + limit);
+
+    return paginatedResult(pageData, total, page, limit);
   }
 
   async getStudentSummary(studentId: string, branchId: string | null) {

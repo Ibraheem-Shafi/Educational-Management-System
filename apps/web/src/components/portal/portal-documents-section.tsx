@@ -31,7 +31,7 @@ export function PortalDocumentsSection({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(8);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const params = { page, limit, studentId };
@@ -119,7 +119,7 @@ export function PortalDocumentsSection({
               </tbody>
             </table>
           </div>
-          {data?.meta && data.meta.totalPages > 1 && (
+          {data?.meta && (
             <div className="border-t border-stroke-soft-200 px-5 py-3">
               <PaginationBar
                 page={data.meta.page}

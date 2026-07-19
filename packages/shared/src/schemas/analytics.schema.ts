@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationQuerySchema } from './common.schema';
 
 export const analyticsTrendsQuerySchema = z.object({
   branchId: z.string().optional(),
@@ -31,3 +32,11 @@ export const analyticsCorrelationQuerySchema = z.object({
 });
 
 export type AnalyticsCorrelationQuery = z.infer<typeof analyticsCorrelationQuerySchema>;
+
+export const atRiskStudentsQuerySchema = z
+  .object({
+    threshold: z.coerce.number().min(0).max(100).default(50),
+  })
+  .merge(paginationQuerySchema);
+
+export type AtRiskStudentsQuery = z.infer<typeof atRiskStudentsQuerySchema>;

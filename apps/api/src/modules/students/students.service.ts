@@ -110,7 +110,9 @@ export class StudentsService {
         ? {
             OR: [
               { fullName: { contains: query.search, mode: 'insensitive' as const } },
-              { id: { contains: query.search, mode: 'insensitive' as const } },
+              // Student IDs render as STD-<last6 of id>; strip the prefix so
+              // searching by the visible student ID matches the underlying id.
+              { id: { contains: query.search.replace(/^STD-/i, ''), mode: 'insensitive' as const } },
               { cnicOrBForm: { contains: query.search, mode: 'insensitive' as const } },
             ],
           }

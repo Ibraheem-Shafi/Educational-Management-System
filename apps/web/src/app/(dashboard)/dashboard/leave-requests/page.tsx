@@ -1,30 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
-import type { LeaveRequestResponse } from '@eims/types';
+import type { LeaveRequestResponse, PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { hasPermission } from '@/lib/permissions';
-import { PageHeader } from '@/components/layout/page-header';
-import { ContentPanel } from '@/components/layout/content-panel';
-import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
+import {
+  PageHeader,
+  PageHeaderActionIcon,
+  pageHeaderActionClassName,
+} from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Tabs } from '@/components/ui/tabs';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PermissionGate } from '@/components/auth/permission-gate';
+import { RequestLeaveDialog } from '@/components/features/leave-requests/request-leave-dialog';
 import {
   dataTableClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { cn } from '@/lib/utils';
 
 type Tab = 'all' | 'student' | 'employee' | 'mine';
@@ -35,19 +38,48 @@ export default function LeaveRequestsPage() {
   const queryClient = useQueryClient();
   const canRead = hasPermission(user, PERMISSIONS.LEAVE_READ);
   const canRequest = hasPermission(user, PERMISSIONS.LEAVE_REQUEST);
+
   const [tab, setTab] = useState<Tab>(canRead ? 'all' : 'mine');
-  const [form, setForm] = useState({ fromDate: '', toDate: '', reason: '' });
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const [requestOpen, setRequestOpen] = useState(false);
+
+  const tabs = useMemo(() => {
+    const items: Array<{ id: Tab; label: string }> = [];
+    if (canRead) {
+      items.push({ id: 'all', label: 'All' });
+      items.push({ id: 'student', label: 'Student' });
+      items.push({ id: 'employee', label: 'Staff' });
+    }
+    if (canRequest) {
+      items.push({ id: 'mine', label: 'My requests' });
+    }
+    return items;
+  }, [canRead, canRequest]);
 
   const listKind = tab === 'student' || tab === 'employee' ? tab : undefined;
 
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+    if (listKind) params.set('kind', listKind);
+    return params.toString();
+  }, [page, limit, listKind]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.leaveRequests, tab],
+    queryKey: [...queryKeys.leaveRequests, tab, page, limit],
     queryFn: () => {
       if (tab === 'mine') {
-        return apiClient<{ data: LeaveRequestResponse[] }>('/leave-requests/mine', { token });
+        return apiClient<PaginatedResponse<LeaveRequestResponse>>(
+          `/leave-requests/mine?${queryString}`,
+          { token },
+        );
       }
-      const qs = listKind ? `?kind=${listKind}` : '';
-      return apiClient<{ data: LeaveRequestResponse[] }>(`/leave-requests${qs}`, { token });
+      return apiClient<PaginatedResponse<LeaveRequestResponse>>(
+        `/leave-requests?${queryString}`,
+        { token },
+      );
     },
     enabled: !!token && (tab === 'mine' ? canRequest : canRead),
   });
@@ -62,31 +94,17 @@ export default function LeaveRequestsPage() {
     onError: () => toast.error('Unable to update request'),
   });
 
-  const createLeave = useMutation({
-    mutationFn: () =>
-      apiClient('/leave-requests', {
-        method: 'POST',
-        body: form,
-        token,
-      }),
-    onSuccess: async () => {
-      toast.success('Leave request submitted');
-      setForm({ fromDate: '', toDate: '', reason: '' });
-      setTab('mine');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.leaveRequests });
-    },
-    onError: () => toast.error('Unable to submit leave request'),
-  });
+  const personLabel = (row: LeaveRequestResponse) =>
+    row.kind === 'employee' ? (row.employeeName ?? 'Staff') : (row.studentName ?? 'Student');
 
-  if (isLoading && !data && tab !== 'mine') return <PortalPageSkeleton />;
-  if (error && canRead && tab !== 'mine') {
+  const handleTabChange = (next: string) => {
+    setTab(next as Tab);
+    setPage(1);
+  };
+
+  if (error && (tab === 'mine' ? canRequest : canRead)) {
     return <p className="text-red-600">Unable to load leave requests.</p>;
   }
-
-  const personLabel = (row: LeaveRequestResponse) =>
-    row.kind === 'employee'
-      ? (row.employeeName ?? 'Staff')
-      : (row.studentName ?? 'Student');
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -94,90 +112,30 @@ export default function LeaveRequestsPage() {
         icon={ClipboardList}
         title="Leave requests"
         description="Review student absences and staff leave, or submit your own leave"
+        actions={
+          canRequest ? (
+            <button
+              type="button"
+              onClick={() => setRequestOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              Request leave
+            </button>
+          ) : undefined
+        }
       />
 
-      <PermissionGate permission={PERMISSIONS.LEAVE_REQUEST}>
-        <ContentPanel title="Request leave">
-          <form
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!form.fromDate || !form.toDate || form.reason.trim().length < 3) {
-                toast.error('Fill dates and a reason (min 3 characters)');
-                return;
-              }
-              createLeave.mutate();
-            }}
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="leave-from">From</Label>
-              <Input
-                id="leave-from"
-                type="date"
-                value={form.fromDate}
-                onChange={(e) => setForm((p) => ({ ...p, fromDate: e.target.value }))}
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="leave-to">To</Label>
-              <Input
-                id="leave-to"
-                type="date"
-                value={form.toDate}
-                onChange={(e) => setForm((p) => ({ ...p, toDate: e.target.value }))}
-                required
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="leave-reason">Reason</Label>
-              <Textarea
-                id="leave-reason"
-                value={form.reason}
-                onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
-                rows={2}
-                required
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createLeave.isPending}>
-                {createLeave.isPending ? 'Submitting…' : 'Submit leave request'}
-              </Button>
-            </div>
-          </form>
-        </ContentPanel>
-      </PermissionGate>
+      {tabs.length > 1 && (
+        <Tabs
+          aria-label="Leave request views"
+          tabs={tabs}
+          value={tab}
+          onValueChange={handleTabChange}
+        />
+      )}
 
-      <div className="flex flex-wrap gap-2">
-        {canRead &&
-          (
-            [
-              ['all', 'All'],
-              ['student', 'Student'],
-              ['employee', 'Staff'],
-            ] as const
-          ).map(([key, label]) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={tab === key ? 'default' : 'outline'}
-              onClick={() => setTab(key)}
-            >
-              {label}
-            </Button>
-          ))}
-        {canRequest && (
-          <Button
-            size="sm"
-            variant={tab === 'mine' ? 'default' : 'outline'}
-            onClick={() => setTab('mine')}
-          >
-            My requests
-          </Button>
-        )}
-      </div>
-
-      <ContentPanel title={`Requests (${data?.data.length ?? 0})`}>
+      <div className="overflow-hidden rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
         <div className={dataTableWrapperClass}>
           <table className={cn(dataTableClass, 'min-w-[720px]')}>
             <thead>
@@ -191,7 +149,9 @@ export default function LeaveRequestsPage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {(data?.data.length ?? 0) === 0 ? (
+              {isLoading ? (
+                <DataTableSkeletonRows columns={6} rows={limit} />
+              ) : (data?.data.length ?? 0) === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
                     No leave requests
@@ -199,12 +159,12 @@ export default function LeaveRequestsPage() {
                 </tr>
               ) : (
                 data?.data.map((row) => (
-                  <tr key={row.id}>
+                  <tr key={row.id} className="transition-colors hover:bg-[var(--neutral-50)]/50">
                     <td className={dataTableTdClass}>
                       {row.kind === 'employee' ? 'Staff' : 'Student'}
                     </td>
                     <td className={dataTableTdClass}>{personLabel(row)}</td>
-                    <td className={dataTableTdClass}>
+                    <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
                       {row.fromDate} – {row.toDate}
                     </td>
                     <td className={dataTableTdClass}>{row.reason}</td>
@@ -218,6 +178,7 @@ export default function LeaveRequestsPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={review.isPending}
                               onClick={() => review.mutate({ id: row.id, status: 'approved' })}
                             >
                               Approve
@@ -225,6 +186,7 @@ export default function LeaveRequestsPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={review.isPending}
                               onClick={() => review.mutate({ id: row.id, status: 'rejected' })}
                             >
                               Reject
@@ -241,7 +203,31 @@ export default function LeaveRequestsPage() {
             </tbody>
           </table>
         </div>
-      </ContentPanel>
+
+        {data?.meta && (
+          <PaginationBar
+            page={data.meta.page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
+        )}
+      </div>
+
+      <PermissionGate permission={PERMISSIONS.LEAVE_REQUEST}>
+        <RequestLeaveDialog
+          open={requestOpen}
+          onOpenChange={setRequestOpen}
+          onSubmitted={() => {
+            setTab('mine');
+            setPage(1);
+          }}
+        />
+      </PermissionGate>
     </div>
   );
 }

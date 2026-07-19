@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createBatchSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -47,6 +51,8 @@ export function CreateBatchDialog({
   const [name, setName] = useState('');
   const [programId, setProgramId] = useState('');
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createBatchSchema);
 
   const { data: subjects } = useQuery({
     queryKey: queryKeys.subjects,
@@ -59,8 +65,9 @@ export function CreateBatchDialog({
       setName('');
       setProgramId('');
       setSubjectIds([]);
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const createBatch = useMutation({
     mutationFn: (body: {
@@ -74,10 +81,11 @@ export function CreateBatchDialog({
       invalidateAcademic(queryClient);
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
-
-  const canSubmit = !!programId && name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -104,12 +112,14 @@ export function CreateBatchDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            createBatch.mutate({
+            const payload = {
               branchId,
               programId,
               name: name.trim(),
               subjectIds,
-            });
+            };
+            if (!validate(payload)) return;
+            createBatch.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
@@ -119,22 +129,28 @@ export function CreateBatchDialog({
                 aria-label="Program"
                 placeholder="Select program"
                 value={programId}
-                onValueChange={setProgramId}
+                onValueChange={(value) => {
+                  setProgramId(value);
+                  clearField('programId');
+                }}
                 options={[{ value: '', label: 'Select program' }, ...programOptions]}
-                className="w-full"
+                className={fieldClassName('programId', 'w-full')}
                 fullWidth
               />
+              <FormFieldError message={errors.programId} />
             </div>
             <div>
               <FormFieldLabel required>Batch name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('name', modalFieldClassName)}
                 placeholder="Batch name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                minLength={2}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearField('name');
+                }}
               />
+              <FormFieldError message={errors.name} />
             </div>
             <div>
               <FormFieldLabel>Subjects</FormFieldLabel>
@@ -160,7 +176,7 @@ export function CreateBatchDialog({
             </button>
             <button
               type="submit"
-              disabled={createBatch.isPending || !canSubmit}
+              disabled={createBatch.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

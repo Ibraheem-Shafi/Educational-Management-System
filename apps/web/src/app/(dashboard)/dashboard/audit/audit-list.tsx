@@ -34,7 +34,7 @@ export function AuditList({
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(8);
   const [search, setSearch] = useState('');
 
   const handleSearchChange = useCallback((value: string) => {
@@ -59,7 +59,7 @@ export function AuditList({
     queryFn: () =>
       apiClient<PaginatedResponse<AuditRow>>(`/audit-logs?${queryParams.toString()}`, { token }),
     enabled: !!token,
-    initialData: page === 1 && limit === 20 && !search ? initialPage : undefined,
+    initialData: page === 1 && limit === 8 && !search ? initialPage : undefined,
   });
 
   return (

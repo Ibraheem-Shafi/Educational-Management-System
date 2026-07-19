@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -24,6 +25,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { BudgetDialog } from './budget-dialog';
 import type { Budget } from './types';
 import { formatMoney } from './types';
@@ -35,13 +37,25 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.ACCOUNTING_MANAGE);
 
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editBudget, setEditBudget] = useState<Budget | null>(null);
 
+  const queryParams = { branchId, page, limit };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.accountingBudgets(branchId),
-    queryFn: () =>
-      apiClient<{ data: Budget[] }>(`/accounting/budgets?branchId=${branchId}`, { token }),
+    queryKey: queryKeys.accountingBudgets(branchId, queryParams),
+    queryFn: () => {
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
+      return apiClient<PaginatedResponse<Budget>>(`/accounting/budgets?${params.toString()}`, {
+        token,
+      });
+    },
     enabled: !!token && !!branchId,
   });
 
@@ -59,7 +73,7 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Budgets (${rows.length})`}
+        title={`Budgets (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.ACCOUNTING_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -72,21 +86,22 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load budgets.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Year</th>
-                  <th className={dataTableThClass}>Name</th>
-                  <th className={dataTableThClass}>Lines</th>
-                  <th className={dataTableThClass}>Total budget</th>
-                  {canManage ? <th className={dataTableThClass} /> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 5 : 4} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Year</th>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Lines</th>
+                    <th className={dataTableThClass}>Total budget</th>
+                    {canManage ? <th className={dataTableThClass} /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={canManage ? 5 : 4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
                       No budgets found.
@@ -107,7 +122,7 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 aria-label="Edit budget"
                                 onClick={() => setEditBudget(row)}
                               >
@@ -116,7 +131,7 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 aria-label="Delete budget"
                                 onClick={() => remove.mutate(row.id)}
                               >
@@ -128,10 +143,23 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
                       </tr>
                     );
                   })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

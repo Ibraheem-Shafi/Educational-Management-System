@@ -116,7 +116,7 @@ export default function UsersPage() {
   const [branchId, setBranchId] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(8);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateUserTarget | null>(null);

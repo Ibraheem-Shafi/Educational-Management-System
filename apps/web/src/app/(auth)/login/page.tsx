@@ -17,6 +17,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { loginFormSchema, totpCodeSchema } from '@/lib/auth-form-schemas';
 import {
   AuthShell,
   authFieldClassName,
@@ -55,6 +58,14 @@ function LoginPageContent() {
   const [mfaFactorId, setMfaFactorId] = useState('');
   const [challengeId, setChallengeId] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const { errors, clearField, validate, setFieldError, fieldClassName } = useFormErrors(loginFormSchema);
+  const {
+    errors: mfaErrors,
+    clearField: clearMfaField,
+    validate: validateMfa,
+    setFieldError: setMfaFieldError,
+    fieldClassName: mfaFieldClassName,
+  } = useFormErrors(totpCodeSchema);
 
   const finishLogin = useCallback((roles: string[]) => {
     if (navigatedRef.current) return;
@@ -90,12 +101,17 @@ function LoginPageContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate({ email: email.trim(), password })) return;
+
     setLoading(true);
     const supabase = createClient();
-    const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
     if (error) {
       setLoading(false);
-      toast.error('Invalid email or password');
+      setFieldError('password', 'Invalid email or password');
       return;
     }
 
@@ -144,6 +160,8 @@ function LoginPageContent() {
 
   const handleMfaVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateMfa({ code: mfaCode })) return;
+
     setLoading(true);
     const supabase = createClient();
     const verify = await supabase.auth.mfa.verify({
@@ -153,7 +171,7 @@ function LoginPageContent() {
     });
     if (verify.error) {
       setLoading(false);
-      toast.error('Invalid verification code');
+      setMfaFieldError('code', 'Invalid verification code');
       return;
     }
     const { data: sessionData } = await supabase.auth.getSession();
@@ -229,11 +247,14 @@ function LoginPageContent() {
             <Input
               placeholder="6-digit code"
               value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value)}
+              onChange={(e) => {
+                setMfaCode(e.target.value);
+                clearMfaField('code');
+              }}
               maxLength={6}
-              required
-              className={authFieldClassName}
+              className={mfaFieldClassName('code', authFieldClassName)}
             />
+            <FormFieldError message={mfaErrors.code} />
           </div>
           <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
             {loading ? 'Verifying…' : 'Verify'}
@@ -248,20 +269,27 @@ function LoginPageContent() {
               type="email"
               placeholder="admin@institution.pk"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className={authFieldClassName}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearField('email');
+                clearField('password');
+              }}
+              className={fieldClassName('email', authFieldClassName)}
             />
+            <FormFieldError message={errors.email} />
           </div>
           <div>
             <FormFieldLabel required>Password</FormFieldLabel>
             <PasswordInput
               id="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className={authFieldClassName}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clearField('password');
+              }}
+              className={fieldClassName('password', authFieldClassName)}
             />
+            <FormFieldError message={errors.password} />
           </div>
           <Button type="submit" className={authPrimaryButtonClassName} disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}

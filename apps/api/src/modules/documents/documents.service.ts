@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
@@ -9,9 +9,11 @@ import type { AuthUser, DocumentsStatsResponse } from '@eims/types';
 import type { CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
+const DOCUMENTS_BUCKET = 'student-documents';
 
 @Injectable()
-export class DocumentsService {
+export class DocumentsService implements OnModuleInit {
+  private readonly logger = new Logger(DocumentsService.name);
   private supabaseAdmin;
 
   constructor(
@@ -24,6 +26,24 @@ export class DocumentsService {
     const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
     if (url && key) {
       this.supabaseAdmin = createClient(url, key);
+    }
+  }
+
+  /** Ensure the storage bucket exists so client uploads don't fail with "Bucket not found". */
+  async onModuleInit(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(DOCUMENTS_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(DOCUMENTS_BUCKET, { public: false });
+        this.logger.log(`Created storage bucket "${DOCUMENTS_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${DOCUMENTS_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 
@@ -66,21 +86,52 @@ export class DocumentsService {
 
   async findAll(query: ListDocumentsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const docs = await this.prisma.document.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.studentId ? { studentId: query.studentId } : {}),
-        ...(query.userId ? { userId: query.userId } : {}),
-        ...(query.category ? { category: query.category } : {}),
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: 'insensitive' as const } },
+              {
+                student: {
+                  fullName: { contains: query.search, mode: 'insensitive' as const },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [docs, total] = await Promise.all([
+      this.prisma.document.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          student: { select: { id: true, fullName: true } },
+          user: { select: { id: true, fullName: true } },
+        },
+      }),
+      this.prisma.document.count({ where }),
+    ]);
+
+    return {
+      data: docs,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        student: { select: { id: true, fullName: true } },
-        user: { select: { id: true, fullName: true } },
-      },
-    });
-    return { data: docs };
+    };
   }
 
   async create(input: CreateDocumentInput, user: AuthUser) {
@@ -156,11 +207,19 @@ export class DocumentsService {
       return { url: doc.storagePath, signed: false };
     }
 
-    const { data, error } = await this.supabaseAdmin.storage
-      .from('student-documents')
-      .createSignedUrl(doc.storagePath, 3600);
+    // Some records (e.g. demo seed) store the path with a redundant bucket
+    // prefix; strip it so the object key resolves correctly inside the bucket.
+    const objectKey = doc.storagePath.replace(/^student-documents\//, '');
 
-    if (error) throw new NotFoundException(error.message);
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrl(objectKey, 3600);
+
+    if (error) {
+      throw new NotFoundException(
+        'This file is no longer available in storage. It may not have been uploaded in this environment.',
+      );
+    }
     return { url: data.signedUrl, signed: true };
   }
 }

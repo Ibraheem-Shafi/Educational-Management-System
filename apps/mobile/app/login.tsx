@@ -16,11 +16,26 @@ import { useAuth } from '@/lib/auth-context';
 import { APP_ROLE } from '@/lib/config';
 import { useTheme } from '@/lib/theme-context';
 
+function validateLogin(email: string, password: string): { email?: string; password?: string } {
+  const errors: { email?: string; password?: string } = {};
+  const trimmedEmail = email.trim();
+  if (!trimmedEmail) {
+    errors.email = 'Email is required';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    errors.email = 'Enter a valid email address';
+  }
+  if (!password) {
+    errors.password = 'Password is required';
+  }
+  return errors;
+}
+
 export default function LoginScreen() {
   const { user, loading, signIn, roleError, clearRoleError } = useAuth();
   const { primaryColor, institutionName } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +45,10 @@ export default function LoginScreen() {
   const handleSubmit = async () => {
     setError(null);
     clearRoleError();
+    const nextErrors = validateLogin(email, password);
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSubmitting(true);
     try {
       await signIn(email.trim(), password);
@@ -61,10 +80,14 @@ export default function LoginScreen() {
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
-            onChangeText={setEmail}
-            style={styles.input}
+            onChangeText={(value) => {
+              setEmail(value);
+              if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+            }}
+            style={[styles.input, fieldErrors.email ? styles.inputError : null]}
             placeholder="you@example.com"
           />
+          {fieldErrors.email ? <Text style={styles.fieldError}>{fieldErrors.email}</Text> : null}
         </View>
 
         <View style={styles.field}>
@@ -72,10 +95,14 @@ export default function LoginScreen() {
           <TextInput
             secureTextEntry
             value={password}
-            onChangeText={setPassword}
-            style={styles.input}
+            onChangeText={(value) => {
+              setPassword(value);
+              if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+            }}
+            style={[styles.input, fieldErrors.password ? styles.inputError : null]}
             placeholder="••••••••"
           />
+          {fieldErrors.password ? <Text style={styles.fieldError}>{fieldErrors.password}</Text> : null}
         </View>
 
         {displayError ? <Text style={styles.error}>{displayError}</Text> : null}
@@ -137,6 +164,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
+  },
+  inputError: {
+    borderColor: '#dc2626',
+  },
+  fieldError: {
+    color: '#dc2626',
+    marginTop: 4,
+    fontSize: 12,
   },
   error: {
     color: '#b91c1c',

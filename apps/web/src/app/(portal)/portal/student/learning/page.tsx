@@ -54,7 +54,7 @@ function StudentLearningContent() {
   );
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(8);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -192,7 +192,7 @@ function StudentLearningContent() {
             </tbody>
           </table>
         </div>
-        {meta && meta.totalPages > 1 && (
+        {meta && (
           <div className="border-t border-stroke-soft-200 px-5 py-3">
             <PaginationBar
               page={meta.page}

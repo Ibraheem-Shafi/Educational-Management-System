@@ -1,12 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
-import type { LeaveRequestResponse } from '@eims/types';
+import { createLeaveRequestSchema } from '@eims/shared';
+import type { LeaveRequestResponse, PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { buildPortalQuery } from '@/lib/portal-api';
 import type { ParentPortalData } from '@/lib/portal-types';
@@ -15,6 +19,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { PortalParentPageShell } from '@/components/portal/portal-parent-page-shell';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { Button } from '@/components/ui/button';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import {
@@ -61,22 +66,36 @@ function ParentLeaveContent({
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [reason, setReason] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const { errors, validate, clearField, fieldClassName, applyApiErrors } =
+    useFormErrors(createLeaveRequestSchema);
+
+  useEffect(() => {
+    setPage(1);
+  }, [childId]);
 
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.portalParentLeave(childId),
+    queryKey: queryKeys.portalParentLeave(childId, page, limit),
     queryFn: () =>
-      apiClient<{ data: LeaveRequestResponse[] }>(
-        `/portal/parent/leave${buildPortalQuery({ studentId: childId })}`,
+      apiClient<PaginatedResponse<LeaveRequestResponse>>(
+        `/portal/parent/leave${buildPortalQuery({ studentId: childId, page, limit })}`,
         { token },
       ),
     enabled: !!token && !!childId,
+    placeholderData: (previous) => previous,
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
   const submit = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: { studentId: string; fromDate: string; toDate: string; reason: string }) =>
       apiClient<LeaveRequestResponse>('/portal/parent/leave', {
         method: 'POST',
-        body: { studentId: childId, fromDate, toDate, reason },
+        body,
         token,
       }),
     onSuccess: async () => {
@@ -85,9 +104,24 @@ function ParentLeaveContent({
       setToDate('');
       setReason('');
       await queryClient.invalidateQueries({ queryKey: queryKeys.portalParentLeave(childId) });
+      setPage(1);
     },
-    onError: () => toast.error('Unable to submit leave request'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSubmit = () => {
+    const payload = {
+      studentId: childId,
+      fromDate,
+      toDate,
+      reason: reason.trim(),
+    };
+    if (!validate(payload)) return;
+    submit.mutate(payload);
+  };
 
   const childOptions = linkedChildren.map((c) => ({
     value: c.student.id,
@@ -112,34 +146,44 @@ function ParentLeaveContent({
               <span className="text-[var(--text-sub-500)]">From</span>
               <input
                 type="date"
-                className="mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2"
+                className={fieldClassName('fromDate', 'mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2')}
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  clearField('fromDate');
+                }}
               />
+              <FormFieldError message={errors.fromDate} />
             </label>
             <label className="text-sm">
               <span className="text-[var(--text-sub-500)]">To</span>
               <input
                 type="date"
-                className="mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2"
+                className={fieldClassName('toDate', 'mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2')}
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  clearField('toDate');
+                }}
               />
+              <FormFieldError message={errors.toDate} />
             </label>
           </div>
           <label className="block text-sm">
             <span className="text-[var(--text-sub-500)]">Reason</span>
             <textarea
-              className="mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2"
+              className={fieldClassName('reason', 'mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2')}
               rows={3}
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => {
+                setReason(e.target.value);
+                clearField('reason');
+              }}
             />
+            <FormFieldError message={errors.reason} />
           </label>
-          <Button
-            onClick={() => submit.mutate()}
-            disabled={!fromDate || !toDate || reason.length < 3 || submit.isPending}
-          >
+          <FormFieldError message={errors.studentId} />
+          <Button onClick={handleSubmit} disabled={submit.isPending}>
             Submit request
           </Button>
         </div>
@@ -149,7 +193,8 @@ function ParentLeaveContent({
         {isLoading && !data ? (
           <PortalPageSkeleton />
         ) : (
-          <div className={dataTableWrapperClass}>
+          <>
+            <div className={dataTableWrapperClass}>
             <table className={cn(dataTableClass, 'min-w-[640px]')}>
               <thead>
                 <tr>
@@ -183,6 +228,16 @@ function ParentLeaveContent({
               </tbody>
             </table>
           </div>
+          {data?.meta && data.meta.totalPages > 0 && (
+            <PaginationBar
+              page={page}
+              totalPages={data.meta.totalPages}
+              onPageChange={setPage}
+              limit={limit}
+              onLimitChange={handleLimitChange}
+            />
+          )}
+          </>
         )}
       </ContentPanel>
     </div>

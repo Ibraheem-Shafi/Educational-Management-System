@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CommunicationsService } from './communications.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -9,6 +9,7 @@ import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   absenceAlertSchema,
   feeReminderSchema,
+  listCommunicationLogsQuerySchema,
   noticeBroadcastSchema,
   sendMessageSchema,
 } from '@eims/shared';
@@ -16,6 +17,7 @@ import type { AuthUser } from '@eims/types';
 import type {
   AbsenceAlertInput,
   FeeReminderInput,
+  ListCommunicationLogsQuery,
   NoticeBroadcastInput,
   SendMessageInput,
 } from '@eims/shared';
@@ -35,8 +37,10 @@ export class CommunicationsController {
 
   @Get('logs')
   @Permissions('communications.send')
-  logs() {
-    return this.service.listLogs();
+  logs(
+    @Query(createZodPipe(listCommunicationLogsQuerySchema)) query: ListCommunicationLogsQuery,
+  ) {
+    return this.service.listLogs(query);
   }
 
   @Post('send')

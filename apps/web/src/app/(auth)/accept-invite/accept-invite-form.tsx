@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { acceptInvitationSchema } from '@eims/shared';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { useInstitution } from '@/providers/institution-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +17,8 @@ import {
   authPrimaryButtonClassName,
 } from '@/components/auth/auth-shell';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 
 export function AcceptInviteForm() {
   const router = useRouter();
@@ -23,6 +27,8 @@ export function AcceptInviteForm() {
   const { name } = useInstitution();
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
+  const { errors, clearField, validate, applyApiErrors, fieldClassName } =
+    useFormErrors(acceptInvitationSchema);
 
   const { data: invite, isLoading, error } = useQuery({
     queryKey: ['invitation', token],
@@ -36,13 +42,16 @@ export function AcceptInviteForm() {
     mutationFn: () =>
       apiClient('/auth/invitations/accept', {
         method: 'POST',
-        body: JSON.stringify({ token, fullName, password }),
+        body: JSON.stringify({ token, fullName: fullName.trim(), password }),
       }),
     onSuccess: () => {
       toast.success('Account created! Please sign in.');
       router.push('/login');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   if (!token) {
@@ -71,6 +80,7 @@ export function AcceptInviteForm() {
           className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!validate({ token, fullName: fullName.trim(), password })) return;
             acceptMutation.mutate();
           }}
         >
@@ -88,20 +98,25 @@ export function AcceptInviteForm() {
             <FormFieldLabel required>Full name</FormFieldLabel>
             <Input
               value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              className={authFieldClassName}
+              onChange={(e) => {
+                setFullName(e.target.value);
+                clearField('fullName');
+              }}
+              className={fieldClassName('fullName', authFieldClassName)}
             />
+            <FormFieldError message={errors.fullName} />
           </div>
           <div>
             <FormFieldLabel required>Password</FormFieldLabel>
             <PasswordInput
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-              className={authFieldClassName}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clearField('password');
+              }}
+              className={fieldClassName('password', authFieldClassName)}
             />
+            <FormFieldError message={errors.password} />
           </div>
           <Button
             type="submit"

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { complaintStatuses, complaintTypes, PERMISSIONS, priorities } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -27,6 +28,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { ComplaintDialog } from './complaint-dialog';
 import type { ComplaintRequest } from './types';
@@ -41,13 +43,25 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editComplaint, setEditComplaint] = useState<ComplaintRequest | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     ...(typeFilter ? { type: typeFilter } : {}),
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(priorityFilter ? { priority: priorityFilter } : {}),
@@ -57,14 +71,22 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.frontOfficeComplaints(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (typeFilter) params.set('type', typeFilter);
       if (statusFilter) params.set('status', statusFilter);
       if (priorityFilter) params.set('priority', priorityFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: ComplaintRequest[] }>(`/complaints?${params.toString()}`, { token });
+      return apiClient<PaginatedResponse<ComplaintRequest>>(
+        `/complaints?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const remove = useMutation({
@@ -83,7 +105,7 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Complaints & requests (${rows.length})`}
+        title={`Complaints & requests (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.FRONT_OFFICE_MANAGE}>
             <button
@@ -109,7 +131,10 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
               aria-label="Type filter"
               placeholder="All types"
               value={typeFilter}
-              onValueChange={setTypeFilter}
+              onValueChange={(next) => {
+                setTypeFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All types' },
                 ...complaintTypes.map((t) => ({ value: t, label: formatLabel(t) })),
@@ -120,7 +145,10 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
               aria-label="Status filter"
               placeholder="All statuses"
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(next) => {
+                setStatusFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 ...complaintStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -131,7 +159,10 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
               aria-label="Priority filter"
               placeholder="All priorities"
               value={priorityFilter}
-              onValueChange={setPriorityFilter}
+              onValueChange={(next) => {
+                setPriorityFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All priorities' },
                 ...priorities.map((p) => ({ value: p, label: formatLabel(p) })),
@@ -148,6 +179,7 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
                   setTypeFilter('');
                   setStatusFilter('');
                   setPriorityFilter('');
+                  setPage(1);
                 }}
               >
                 Clear filters
@@ -159,23 +191,24 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load complaints.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[960px]')}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Type</th>
-                  <th className={dataTableThClass}>Subject</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>Priority</th>
-                  <th className={dataTableThClass}>Requester</th>
-                  <th className={dataTableThClass}>Created</th>
-                  <th className={dataTableThClass}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child>td]:border-b-0">
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={7} rows={5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[960px]')}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Type</th>
+                    <th className={dataTableThClass}>Subject</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>Priority</th>
+                    <th className={dataTableThClass}>Requester</th>
+                    <th className={dataTableThClass}>Created</th>
+                    <th className={dataTableThClass}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={7} rows={limit} />
+                  ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
                       No records found
@@ -227,6 +260,16 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
               </tbody>
             </table>
           </div>
+            {data && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={handleLimitChange}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

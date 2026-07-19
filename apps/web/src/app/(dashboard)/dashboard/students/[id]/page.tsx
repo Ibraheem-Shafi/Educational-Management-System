@@ -1,19 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, createDocumentSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { uploadStudentPhoto } from '@/lib/upload-photo';
 import { uploadStudentDocument } from '@/lib/upload-document';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { StudentDetailView } from '@/components/features/students/student-detail-view';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { IssueCertificateDialog } from '@/components/features/certificates/issue-certificate-dialog';
@@ -23,6 +27,7 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { cn } from '@/lib/utils';
 
 interface StudentDetail {
   id: string;
@@ -48,12 +53,16 @@ export default function StudentDetailPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const [editOpen, setEditOpen] = useState(false);
   const [issueCertOpen, setIssueCertOpen] = useState(false);
+  const [docsPage, setDocsPage] = useState(1);
+  const [docsLimit, setDocsLimit] = useState(8);
+  const [parentsPage, setParentsPage] = useState(1);
+  const [parentsLimit, setParentsLimit] = useState(8);
   const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
-  const canDelete = can(PERMISSIONS.STUDENTS_DELETE);
   const canIssueCert = can(PERMISSIONS.CERTIFICATES_ISSUE);
   const canReadCert = can(PERMISSIONS.CERTIFICATES_READ);
+  const { validate, applyApiErrors, setFieldError, errors, clearField } =
+    useFormErrors(createDocumentSchema);
 
   const { data: student, isLoading } = useQuery({
     queryKey: ['student', id],
@@ -61,13 +70,6 @@ export default function StudentDetailPage() {
     enabled: !!token && !!id,
   });
 
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
-  const [cnicOrBForm, setCnicOrBForm] = useState('');
-  const [gender, setGender] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [historyFrom, setHistoryFrom] = useState(() => {
     const d = new Date();
@@ -94,17 +96,6 @@ export default function StudentDetailPage() {
     setSelectedSubjectIds(studentSubjects.subjects.map((s) => s.id));
   }, [studentSubjects]);
 
-  useEffect(() => {
-    if (!student) return;
-    setFullName(student.fullName);
-    setPhone(student.phone ?? '');
-    setEmail(student.email ?? '');
-    setAddress(student.address ?? '');
-    setCnicOrBForm(student.cnicOrBForm ?? '');
-    setGender(student.gender ?? '');
-    setDateOfBirth(student.dateOfBirth ? student.dateOfBirth.slice(0, 10) : '');
-  }, [student]);
-
   const saveSubjectsMutation = useMutation({
     mutationFn: () =>
       apiClient(`/students/${id}/subjects`, {
@@ -113,27 +104,6 @@ export default function StudentDetailPage() {
         body: JSON.stringify({ subjectIds: selectedSubjectIds }),
       }),
     onSuccess: () => toast.success('Subjects updated'),
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiClient(`/students/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
-    onSuccess: () => {
-      toast.success('Student updated');
-      queryClient.invalidateQueries({ queryKey: ['student', id] });
-      queryClient.invalidateQueries({ queryKey: ['students'] });
-      setEditOpen(false);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: () => apiClient(`/students/${id}`, { method: 'DELETE', token }),
-    onSuccess: () => {
-      toast.success('Student removed');
-      router.push('/dashboard/students');
-    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -154,13 +124,42 @@ export default function StudentDetailPage() {
   });
 
   const { data: documents } = useQuery({
-    queryKey: ['documents', id],
+    queryKey: ['documents', id, docsPage, docsLimit],
     queryFn: () =>
-      apiClient<{
-        data: Array<{ id: string; title: string; category: string; createdAt: string }>;
-      }>(`/documents?studentId=${id}`, { token }),
+      apiClient<PaginatedResponse<{ id: string; title: string; category: string; createdAt: string }>>(
+        `/documents?studentId=${id}&page=${docsPage}&limit=${docsLimit}`,
+        { token },
+      ),
     enabled: !!token && !!id,
+    placeholderData: (previous) => previous,
   });
+
+  const { data: studentParents } = useQuery({
+    queryKey: ['student-parents', id, parentsPage, parentsLimit],
+    queryFn: () =>
+      apiClient<
+        PaginatedResponse<{
+          id: string;
+          fullName: string;
+          phone: string | null;
+          email: string | null;
+          relationshipCode: string;
+          linkId: string;
+        }>
+      >(`/students/${id}/parents?page=${parentsPage}&limit=${parentsLimit}`, { token }),
+    enabled: !!token && !!id,
+    placeholderData: (previous) => previous,
+  });
+
+  const handleDocsLimitChange = useCallback((next: number) => {
+    setDocsLimit(next);
+    setDocsPage(1);
+  }, []);
+
+  const handleParentsLimitChange = useCallback((next: number) => {
+    setParentsLimit(next);
+    setParentsPage(1);
+  }, []);
 
   const uploadDocMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -182,9 +181,29 @@ export default function StudentDetailPage() {
     onSuccess: () => {
       toast.success('Document uploaded');
       queryClient.invalidateQueries({ queryKey: ['documents', id] });
+      clearField('file');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleDocumentUpload = (file: File) => {
+    if (!student?.branchId) {
+      setFieldError('branchId', 'Branch is required');
+      return;
+    }
+    const payload = {
+      branchId: student.branchId,
+      studentId: id,
+      category: 'other' as const,
+      title: file.name,
+      storagePath: 'pending',
+    };
+    if (!validate(payload)) return;
+    uploadDocMutation.mutate(file);
+  };
 
   const openDocument = async (docId: string) => {
     try {
@@ -197,16 +216,6 @@ export default function StudentDetailPage() {
 
   const fieldLabelMap = new Map(formFields?.data.map((f) => [f.code, f.label]) ?? []);
 
-  const handlePhoto = async (file: File) => {
-    try {
-      const url = await uploadStudentPhoto(file, id);
-      await updateMutation.mutateAsync({ photographUrl: url });
-      toast.success('Photo uploaded');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed');
-    }
-  };
-
   if (isLoading) return <PageContentSkeleton />;
   if (!student) return <p className="text-red-600">Student not found</p>;
 
@@ -214,7 +223,7 @@ export default function StudentDetailPage() {
     <div className="space-y-6">
       <StudentDetailView
         student={student}
-        onEdit={canUpdate ? () => setEditOpen(true) : undefined}
+        onEdit={canUpdate ? () => router.push(`/dashboard/students/${id}/edit`) : undefined}
         subjectsSection={
           <div className="space-y-3">
             {allSubjects?.data.map((s) => (
@@ -256,15 +265,66 @@ export default function StudentDetailPage() {
             </div>
           ) : null
         }
+        parentsSection={
+          <div className="space-y-4">
+            <div className={dataTableWrapperClass}>
+              <table className={dataTableClass}>
+                <thead>
+                  <tr>
+                    <th className={dataTableThClass}>Name</th>
+                    <th className={dataTableThClass}>Relationship</th>
+                    <th className={dataTableThClass}>Phone</th>
+                    <th className={dataTableThClass}>Email</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(studentParents?.data.length ?? 0) === 0 && (
+                    <tr>
+                      <td colSpan={4} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
+                        No parents linked
+                      </td>
+                    </tr>
+                  )}
+                  {studentParents?.data.map((parent) => (
+                    <tr key={parent.linkId}>
+                      <td className={dataTableTdClass}>
+                        <Link
+                          href={`/dashboard/parents/${parent.id}`}
+                          className="font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
+                        >
+                          {parent.fullName}
+                        </Link>
+                      </td>
+                      <td className={cn(dataTableTdClass, 'capitalize')}>{parent.relationshipCode}</td>
+                      <td className={dataTableTdClass}>{parent.phone ?? '—'}</td>
+                      <td className={dataTableTdClass}>{parent.email ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {studentParents?.meta && studentParents.meta.totalPages > 0 && (
+              <PaginationBar
+                page={parentsPage}
+                totalPages={studentParents.meta.totalPages}
+                onPageChange={setParentsPage}
+                limit={parentsLimit}
+                onLimitChange={handleParentsLimitChange}
+              />
+            )}
+          </div>
+        }
         documentsSection={
           <div className="space-y-4">
             <Input
               type="file"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) uploadDocMutation.mutate(file);
+                if (file) handleDocumentUpload(file);
+                e.target.value = '';
               }}
             />
+            <FormFieldError message={errors.file ?? errors.title ?? errors.branchId} />
             <div className={dataTableWrapperClass}>
               <table className={dataTableClass}>
                 <thead>
@@ -275,6 +335,13 @@ export default function StudentDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {(documents?.data.length ?? 0) === 0 && (
+                    <tr>
+                      <td colSpan={3} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
+                        No documents uploaded
+                      </td>
+                    </tr>
+                  )}
                   {documents?.data.map((doc) => (
                     <tr key={doc.id}>
                       <td className={dataTableTdClass}>{doc.title}</td>
@@ -289,6 +356,15 @@ export default function StudentDetailPage() {
                 </tbody>
               </table>
             </div>
+            {documents?.meta && documents.meta.totalPages > 0 && (
+              <PaginationBar
+                page={docsPage}
+                totalPages={documents.meta.totalPages}
+                onPageChange={setDocsPage}
+                limit={docsLimit}
+                onLimitChange={handleDocsLimitChange}
+              />
+            )}
           </div>
         }
         certificatesSection={
@@ -350,55 +426,6 @@ export default function StudentDetailPage() {
           </div>
         }
       />
-
-      {editOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[20px] bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-medium">Edit student</h2>
-            <div className="space-y-3">
-              <Input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handlePhoto(e.target.files[0])} />
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" />
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" />
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-              <Input value={cnicOrBForm} onChange={(e) => setCnicOrBForm(e.target.value)} placeholder="CNIC / B-Form" />
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" />
-              <Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
-            </div>
-            <div className="mt-6 flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={() =>
-                  updateMutation.mutate({
-                    fullName,
-                    phone: phone || undefined,
-                    email: email || undefined,
-                    address: address || undefined,
-                    cnicOrBForm: cnicOrBForm || undefined,
-                    gender: gender || undefined,
-                    ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth).toISOString() } : {}),
-                  })
-                }
-                disabled={updateMutation.isPending}
-              >
-                Save
-              </Button>
-            </div>
-            {canDelete && (
-              <Button
-                variant="outline"
-                className="mt-3 w-full text-red-600"
-                onClick={() => deleteMutation.mutate()}
-                disabled={deleteMutation.isPending}
-              >
-                Remove student
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
 
       {canIssueCert && student.branchId && (
         <IssueCertificateDialog

@@ -7,7 +7,8 @@ Standing playbook for end-to-end manual testing of EIMS (Nexium Academy demo). U
 | File | Role |
 |------|------|
 | [e2e-test-cases.md](e2e-test-cases.md) | **Single** master catalog of all test cases. Append new cases here; never split by run. |
-| [e2e-bugs-NN.md](e2e-bugs-01.md) | Per-run findings. This run: `e2e-bugs-01.md`. Next: `02`, `03`, … |
+| [e2e-bugs-NN.md](e2e-bugs-01.md) | Per-run findings. Run 01: `e2e-bugs-01.md`. Run 02: [e2e-bugs-02.md](e2e-bugs-02.md). Next: `03`, … |
+| [e2e-run-02-plan.md](e2e-run-02-plan.md) | Run 02 multi-portal deep testing plan |
 | [demo-seed.md](demo-seed.md) | Demo credentials and seed expectations |
 | [ui-ux-page-inventory.md](ui-ux-page-inventory.md) | Page inventory and role matrix |
 
@@ -122,6 +123,27 @@ Password for all: see [demo-seed.md](demo-seed.md) (`Nexium@2026!`).
 
 ## Latest run summary
 
+### Run 02 (latest — completed 2026-07-19)
+
+| Field | Value |
+|-------|-------|
+| Run ID | 02 |
+| Date | 2026-07-18 / 2026-07-19 |
+| Plan | [e2e-run-02-plan.md](e2e-run-02-plan.md) |
+| Bug file | [e2e-bugs-02.md](e2e-bugs-02.md) |
+| Scope | All 8 roles; all staff + portal modules; deep pass matching Super Admin manual testing style |
+| Base URL | http://localhost:3000 |
+| Credentials | `Nexium@2026!` / `@nexium.edu.pk` demo accounts |
+| Seed verify | **PASS** — `nexium-v1.4` |
+| New cases | ~95 in [e2e-test-cases.md](e2e-test-cases.md) (Run 02 column updated) |
+| Bugs logged | 38 (`BUG-02-001` … `BUG-02-038`) — 2 Critical, 11 High, 22 Medium, 6 Low, 3 Limitation |
+| Top blockers | Communications crash; portal profiles unlinked; broken ID search; Leave requests access denied for SA |
+| Next bug file | `e2e-bugs-03.md` |
+
+**Run 02 highlights:** BA branch scoping PASS (36 MAIN / 13 LAHORE); Teacher DASH-007 PASS; smoke PASS on Front office, Library, Accounting, Certificates, Transport, Biometric, Payroll, Analytics, Reports; most pre-reported Super Admin UI issues confirmed; portal functional tests blocked by missing parent/student profile linkage despite green seed verify.
+
+### Run 01 (previous)
+
 | Field | Value |
 |-------|-------|
 | Run ID | 01 |
@@ -132,7 +154,6 @@ Password for all: see [demo-seed.md](demo-seed.md) (`Nexium@2026!`).
 | Cases marked | ~217 statuses updated in [e2e-test-cases.md](e2e-test-cases.md) |
 | Bugs logged | 21 (`BUG-01-001` … `BUG-01-021`) — 1 Critical, 6 High, 7 Medium, 4 Low, 3 Limitation |
 | Top blockers | Learning page crash; Learning permission not seeded; incomplete demo seed (0 fees/assessments/notices); Lahore admin dashboard wrong branch; parent leave submit stuck |
-| Next bug file | `e2e-bugs-02.md` |
 
 ### Run 01 highlights
 

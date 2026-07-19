@@ -4,6 +4,7 @@ import { useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 import {
+  DropdownMenuBackdrop,
   dropdownMenuStyle,
   getDropdownPortalRoot,
   handleDropdownOptionSelect,
@@ -115,6 +116,10 @@ export function SelectDropdown({
         <span className="truncate">{displayLabel}</span>
         <SelectChevron open={open} placement={position?.placement} />
       </button>
+
+      {open && position && typeof document !== 'undefined' && (
+        <DropdownMenuBackdrop onClose={() => setOpen(false)} />
+      )}
 
       {open &&
         position &&

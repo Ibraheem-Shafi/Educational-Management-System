@@ -1,20 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, createReviewSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -50,37 +55,49 @@ export function UserReviewsSection({
     score: '',
     summary: '',
   });
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createReviewSchema);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['hr-reviews', userId],
+    queryKey: ['hr-reviews', userId, page, limit],
     queryFn: () =>
-      apiClient<{ data: ReviewRow[] }>(`/hr/reviews?userId=${userId}`, { token }),
+      apiClient<PaginatedResponse<ReviewRow>>(
+        `/hr/reviews?userId=${userId}&page=${page}&limit=${limit}`,
+        { token },
+      ),
     enabled: !!token && !!userId,
+    placeholderData: (previous) => previous,
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
+  const resetForm = () => {
+    setForm({ periodLabel: '', reviewedAt: '', score: '', summary: '' });
+    clearAll();
+  };
+
   const createMutation = useMutation({
-    mutationFn: () => {
-      if (!branchId) throw new Error('Branch is required');
-      return apiClient('/hr/reviews', {
+    mutationFn: (body: Record<string, unknown>) =>
+      apiClient('/hr/reviews', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          userId,
-          branchId,
-          periodLabel: form.periodLabel.trim(),
-          reviewedAt: form.reviewedAt,
-          score: form.score ? Number(form.score) : null,
-          summary: form.summary.trim(),
-        }),
-      });
-    },
+        body: JSON.stringify(body),
+      }),
     onSuccess: () => {
       toast.success('Review added');
       queryClient.invalidateQueries({ queryKey: ['hr-reviews', userId] });
       setDialogOpen(false);
-      setForm({ periodLabel: '', reviewedAt: '', score: '', summary: '' });
+      resetForm();
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -91,6 +108,21 @@ export function UserReviewsSection({
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!branchId) return;
+    const payload = {
+      userId,
+      branchId,
+      periodLabel: form.periodLabel.trim(),
+      reviewedAt: form.reviewedAt,
+      score: form.score ? Number(form.score) : null,
+      summary: form.summary.trim(),
+    };
+    if (!validate(payload)) return;
+    createMutation.mutate(payload);
+  };
 
   const reviews = data?.data ?? [];
 
@@ -161,39 +193,83 @@ export function UserReviewsSection({
           </tbody>
         </table>
       </div>
+      {data?.meta && data.meta.totalPages > 0 && (
+        <PaginationBar
+          page={page}
+          totalPages={data.meta.totalPages}
+          onPageChange={setPage}
+          limit={limit}
+          onLimitChange={handleLimitChange}
+        />
+      )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}
+      >
         <DialogContent className="max-w-md gap-0 p-0" aria-describedby={undefined}>
           <div className="border-b border-[var(--stroke-soft-200,#E2E4E9)] px-5 py-4">
             <DialogTitle>Add performance review</DialogTitle>
             <DialogDescription className="mt-1">Record a review period for this staff member</DialogDescription>
           </div>
-          <form
-            className="space-y-4 px-5 py-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!form.periodLabel.trim() || !form.reviewedAt || !form.summary.trim()) {
-                toast.error('Period, review date, and summary are required');
-                return;
-              }
-              createMutation.mutate();
-            }}
-          >
+          <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
             <div>
               <FormFieldLabel required>Period label</FormFieldLabel>
-              <input type="text" value={form.periodLabel} onChange={(e) => setForm((f) => ({ ...f, periodLabel: e.target.value }))} placeholder="Q1 2026" className={modalFieldClassName} required />
+              <input
+                type="text"
+                value={form.periodLabel}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, periodLabel: e.target.value }));
+                  clearField('periodLabel');
+                }}
+                placeholder="Q1 2026"
+                className={fieldClassName('periodLabel', modalFieldClassName)}
+              />
+              <FormFieldError message={errors.periodLabel} />
             </div>
             <div>
               <FormFieldLabel required>Review date</FormFieldLabel>
-              <input type="date" value={form.reviewedAt} onChange={(e) => setForm((f) => ({ ...f, reviewedAt: e.target.value }))} className={modalFieldClassName} required />
+              <input
+                type="date"
+                value={form.reviewedAt}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, reviewedAt: e.target.value }));
+                  clearField('reviewedAt');
+                }}
+                className={fieldClassName('reviewedAt', modalFieldClassName)}
+              />
+              <FormFieldError message={errors.reviewedAt} />
             </div>
             <div>
               <FormFieldLabel>Score (0–100)</FormFieldLabel>
-              <input type="number" min={0} max={100} value={form.score} onChange={(e) => setForm((f) => ({ ...f, score: e.target.value }))} className={modalFieldClassName} />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.score}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, score: e.target.value }));
+                  clearField('score');
+                }}
+                className={fieldClassName('score', modalFieldClassName)}
+              />
+              <FormFieldError message={errors.score} />
             </div>
             <div>
               <FormFieldLabel required>Summary</FormFieldLabel>
-              <textarea value={form.summary} onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))} rows={4} className={cn(modalFieldClassName, 'min-h-[96px] resize-y')} required />
+              <textarea
+                value={form.summary}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, summary: e.target.value }));
+                  clearField('summary');
+                }}
+                rows={4}
+                className={cn(fieldClassName('summary', modalFieldClassName), 'min-h-[96px] resize-y')}
+              />
+              <FormFieldError message={errors.summary} />
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setDialogOpen(false)} className="flex-1 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] py-2 text-sm font-medium">Cancel</button>

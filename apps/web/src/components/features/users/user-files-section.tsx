@@ -1,14 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, createDocumentSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { uploadEmployeeDocument } from '@/lib/upload-employee-document';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -47,26 +52,39 @@ export function UserFilesSection({
   const queryClient = useQueryClient();
   const canUpload = can(PERMISSIONS.DOCUMENTS_UPLOAD);
   const [category, setCategory] = useState('employee_other');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const { errors, validate, clearField, applyApiErrors, setFieldError } =
+    useFormErrors(createDocumentSchema);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['user-documents', userId],
+    queryKey: ['user-documents', userId, page, limit],
     queryFn: () =>
-      apiClient<{ data: DocumentRow[] }>(`/documents?userId=${userId}`, { token }),
+      apiClient<PaginatedResponse<DocumentRow>>(
+        `/documents?userId=${userId}&page=${page}&limit=${limit}`,
+        { token },
+      ),
     enabled: !!token && !!userId,
+    placeholderData: (previous) => previous,
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, category }: { file: File; category: string }) => {
-      if (!branchId) throw new Error('Branch is required');
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const file = payload._file as File;
       const uploaded = await uploadEmployeeDocument(file, userId);
       return apiClient('/documents', {
         method: 'POST',
         token,
         body: JSON.stringify({
-          branchId,
-          userId,
-          category,
-          title: file.name,
+          branchId: payload.branchId,
+          userId: payload.userId,
+          category: payload.category,
+          title: payload.title,
           storagePath: uploaded.path,
           mimeType: uploaded.mimeType,
           sizeBytes: uploaded.sizeBytes,
@@ -77,8 +95,25 @@ export function UserFilesSection({
       toast.success('File uploaded');
       queryClient.invalidateQueries({ queryKey: ['user-documents', userId] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleFileChange = async (file: File) => {
+    if (!branchId) return;
+    const payload = {
+      branchId,
+      userId,
+      category,
+      title: file.name,
+      storagePath: 'pending',
+      _file: file,
+    };
+    if (!validate(payload)) return;
+    uploadMutation.mutate(payload);
+  };
 
   const openDocument = async (docId: string) => {
     try {
@@ -104,10 +139,14 @@ export function UserFilesSection({
             <SelectDropdown
               aria-label="Document category"
               value={category}
-              onValueChange={setCategory}
+              onValueChange={(value) => {
+                setCategory(value);
+                clearField('category');
+              }}
               options={[...EMPLOYEE_CATEGORIES]}
               fullWidth
             />
+            <FormFieldError message={errors.category} />
           </div>
           <label className="inline-flex cursor-pointer items-center rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm font-medium hover:bg-[var(--neutral-50)]">
             Upload file
@@ -117,7 +156,12 @@ export function UserFilesSection({
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                uploadMutation.mutate({ file, category });
+                if (!category) {
+                  setFieldError('category', 'Category is required');
+                  e.target.value = '';
+                  return;
+                }
+                void handleFileChange(file);
                 e.target.value = '';
               }}
             />
@@ -170,6 +214,15 @@ export function UserFilesSection({
           </tbody>
         </table>
       </div>
+      {data?.meta && data.meta.totalPages > 0 && (
+        <PaginationBar
+          page={page}
+          totalPages={data.meta.totalPages}
+          onPageChange={setPage}
+          limit={limit}
+          onLimitChange={handleLimitChange}
+        />
+      )}
     </div>
   );
 }

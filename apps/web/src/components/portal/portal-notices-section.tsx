@@ -49,13 +49,13 @@ export function PortalNoticesSection({
               </li>
             ))}
           </ul>
-          {page && totalPages && totalPages > 1 && onPageChange && (
+          {page && totalPages && onPageChange && (
             <div className="border-t border-stroke-soft-200 px-5 py-3">
               <PaginationBar
                 page={page}
                 totalPages={totalPages}
                 onPageChange={onPageChange}
-                limit={limit ?? 20}
+                limit={limit ?? 8}
                 onLimitChange={onLimitChange ?? (() => {})}
               />
             </div>

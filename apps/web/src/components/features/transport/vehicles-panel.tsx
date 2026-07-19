@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, transportVehicleStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { VehicleDialog } from './vehicle-dialog';
 import type { TransportVehicle } from './types';
@@ -42,13 +44,20 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editVehicle, setEditVehicle] = useState<TransportVehicle | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(search ? { search } : {}),
   };
@@ -56,12 +65,13 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.transportVehicles(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({ branchId, page: String(page), limit: String(limit) });
       if (statusFilter) params.set('status', statusFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: TransportVehicle[] }>(`/transport/vehicles?${params.toString()}`, {
-        token,
-      });
+      return apiClient<PaginatedResponse<TransportVehicle>>(
+        `/transport/vehicles?${params.toString()}`,
+        { token },
+      );
     },
     enabled: !!token && !!branchId,
   });
@@ -81,7 +91,7 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Vehicles (${rows.length})`}
+        title={`Vehicles (${data?.meta.total ?? rows.length})`}
         actions={
           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE}>
             <button
@@ -107,7 +117,10 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
               aria-label="Status filter"
               placeholder="All statuses"
               value={statusFilter}
-              onValueChange={setStatusFilter}
+              onValueChange={(next) => {
+                setStatusFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All statuses' },
                 ...transportVehicleStatuses.map((s) => ({ value: s, label: formatLabel(s) })),
@@ -120,80 +133,94 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load vehicles.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[960px]')}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Plate</th>
-                  <th className={dataTableThClass}>Make / model</th>
-                  <th className={dataTableThClass}>Capacity</th>
-                  <th className={dataTableThClass}>Status</th>
-                  <th className={dataTableThClass}>GPS device</th>
-                  <th className={dataTableThClass}>Last position</th>
-                  <th className={dataTableThClass}>Last ping</th>
-                  <th className={dataTableThClass}>Staff</th>
-                  <th className={dataTableThClass}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child>td]:border-b-0">
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={9} rows={5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[960px]')}>
+                <thead>
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
-                      No vehicles found
-                    </td>
+                    <th className={dataTableThClass}>Plate</th>
+                    <th className={dataTableThClass}>Make / model</th>
+                    <th className={dataTableThClass}>Capacity</th>
+                    <th className={dataTableThClass}>Status</th>
+                    <th className={dataTableThClass}>GPS device</th>
+                    <th className={dataTableThClass}>Last position</th>
+                    <th className={dataTableThClass}>Last ping</th>
+                    <th className={dataTableThClass}>Staff</th>
+                    <th className={dataTableThClass}>Actions</th>
                   </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
-                      <td className={dataTableTdClass}>{row.plateNumber}</td>
-                      <td className={dataTableTdClass}>{row.makeModel ?? '—'}</td>
-                      <td className={dataTableTdClass}>{row.capacity ?? '—'}</td>
-                      <td className={dataTableTdClass}>
-                        <StatusBadge label={formatLabel(row.status)} code={statusBadgeCode(row.status)} />
-                      </td>
-                      <td className={dataTableTdClass}>{row.gpsDeviceId ?? '—'}</td>
-                      <td className={dataTableTdClass}>{formatCoords(row.lastLat, row.lastLng)}</td>
-                      <td className={dataTableTdClass}>{formatDateTime(row.lastPingAt)}</td>
-                      <td className={dataTableTdClass}>
-                        {(row.staffAssignments ?? [])
-                          .map((a) => `${a.user?.fullName ?? 'User'} (${formatLabel(a.role)})`)
-                          .join(', ') || '—'}
-                      </td>
-                      <td className={dataTableTdClass}>
-                        <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditVehicle(row)}
-                              aria-label="Edit vehicle"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (window.confirm('Remove this vehicle?')) remove.mutate(row.id);
-                              }}
-                              aria-label="Remove vehicle"
-                              disabled={!canManage}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </PermissionGate>
+                </thead>
+                <tbody className="[&>tr:last-child>td]:border-b-0">
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={9} rows={limit} />
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
+                        No vehicles found
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    rows.map((row) => (
+                      <tr key={row.id} className={dataTableRowHoverClass}>
+                        <td className={dataTableTdClass}>{row.plateNumber}</td>
+                        <td className={dataTableTdClass}>{row.makeModel ?? '—'}</td>
+                        <td className={dataTableTdClass}>{row.capacity ?? '—'}</td>
+                        <td className={dataTableTdClass}>
+                          <StatusBadge label={formatLabel(row.status)} code={statusBadgeCode(row.status)} />
+                        </td>
+                        <td className={dataTableTdClass}>{row.gpsDeviceId ?? '—'}</td>
+                        <td className={dataTableTdClass}>{formatCoords(row.lastLat, row.lastLng)}</td>
+                        <td className={dataTableTdClass}>{formatDateTime(row.lastPingAt)}</td>
+                        <td className={dataTableTdClass}>
+                          {(row.staffAssignments ?? [])
+                            .map((a) => `${a.user?.fullName ?? 'User'} (${formatLabel(a.role)})`)
+                            .join(', ') || '—'}
+                        </td>
+                        <td className={dataTableTdClass}>
+                          <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditVehicle(row)}
+                                aria-label="Edit vehicle"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  if (window.confirm('Remove this vehicle?')) remove.mutate(row.id);
+                                }}
+                                aria-label="Remove vehicle"
+                                disabled={!canManage}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </PermissionGate>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

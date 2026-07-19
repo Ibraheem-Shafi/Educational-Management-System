@@ -1,42 +1,52 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalString,
+  requiredId,
+  requiredPositiveNumber,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const createFeeInvoiceSchema = z.object({
-  branchId: z.string().min(1),
-  studentId: z.string().min(1),
-  feeTypeId: z.string().min(1),
-  amount: z.coerce.number().positive(),
+  branchId: requiredId('Branch'),
+  studentId: requiredId('Student'),
+  feeTypeId: requiredId('Fee type'),
+  amount: requiredPositiveNumber('Amount'),
   discount: z.coerce.number().min(0).optional(),
   fine: z.coerce.number().min(0).optional(),
-  dueDate: z.string().datetime().optional(),
-  remarks: z.string().max(500).optional(),
+  dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+  remarks: optionalString(500),
 });
 
 export type CreateFeeInvoiceInput = z.infer<typeof createFeeInvoiceSchema>;
 
-export const listFeeInvoicesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  branchId: z.string().optional(),
-  studentId: z.string().optional(),
-  statusId: z.string().optional(),
-});
+export const listFeeInvoicesQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    studentId: z.string().optional(),
+    statusId: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListFeeInvoicesQuery = z.infer<typeof listFeeInvoicesQuerySchema>;
 
 export const recordPaymentSchema = z.object({
-  amount: z.coerce.number().positive().optional(),
-  method: z.enum(['cash', 'bank', 'online', 'other']).optional(),
-  paidAt: z.string().datetime().optional(),
+  amount: requiredPositiveNumber('Amount').optional(),
+  method: z.enum(['cash', 'bank', 'online', 'other'], {
+    errorMap: () => ({ message: MSG.select('payment method') }),
+  }).optional(),
+  paidAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
 export const createFeeStructureSchema = z.object({
-  branchId: z.string().min(1),
-  feeTypeId: z.string().min(1),
+  branchId: requiredId('Branch'),
+  feeTypeId: requiredId('Fee type'),
   programId: z.string().optional(),
   batchId: z.string().optional(),
-  amount: z.coerce.number().positive(),
+  amount: requiredPositiveNumber('Amount'),
   dueDayOfMonth: z.coerce.number().int().min(1).max(28).optional(),
 });
 
@@ -49,27 +59,29 @@ export const updateFeeStructureSchema = createFeeStructureSchema
 
 export type UpdateFeeStructureInput = z.infer<typeof updateFeeStructureSchema>;
 
-export const listFeeStructuresQuerySchema = z.object({
-  branchId: z.string().optional(),
-  batchId: z.string().optional(),
-  programId: z.string().optional(),
-});
+export const listFeeStructuresQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    batchId: z.string().optional(),
+    programId: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListFeeStructuresQuery = z.infer<typeof listFeeStructuresQuerySchema>;
 
 export const generateBulkInvoicesSchema = z.object({
-  branchId: z.string().min(1),
-  batchId: z.string().min(1),
-  feeStructureIds: z.array(z.string().min(1)).optional(),
-  dueDate: z.string().datetime().optional(),
+  branchId: requiredId('Branch'),
+  batchId: requiredId('Batch'),
+  feeStructureIds: z.array(requiredId('Fee structure')).optional(),
+  dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
 });
 
 export type GenerateBulkInvoicesInput = z.infer<typeof generateBulkInvoicesSchema>;
 
 export const createFeeTypeSchema = z.object({
-  name: z.string().min(2).max(100),
-  code: z.string().min(1).max(50),
-  description: z.string().max(500).optional(),
+  name: requiredString('Name', 2, 100),
+  code: requiredString('Code', 1, 50),
+  description: optionalString(500),
 });
 
 export type CreateFeeTypeInput = z.infer<typeof createFeeTypeSchema>;

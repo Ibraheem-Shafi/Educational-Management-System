@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { SettingsService } from '../settings/settings.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import type { AuthUser } from '@eims/types';
 import type { IssueCertificateInput, ListIssuesQuery, ListTemplatesQuery } from '@eims/shared';
 
@@ -58,35 +59,53 @@ export class CertificatesService {
     await this.ensureDefaultTemplates();
 
     const effectiveBranchId = branchId ?? query.branchId ?? null;
-    const templates = await this.prisma.certificateTemplate.findMany({
-      where: {
-        isActive: true,
-        ...(query.type ? { type: query.type } : {}),
-        OR: [{ branchId: null }, ...(effectiveBranchId ? [{ branchId: effectiveBranchId }] : [])],
-      },
-      orderBy: { name: 'asc' },
-    });
+    const where = {
+      isActive: true,
+      ...(query.type ? { type: query.type } : {}),
+      OR: [{ branchId: null }, ...(effectiveBranchId ? [{ branchId: effectiveBranchId }] : [])],
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return { data: templates.map(this.toTemplateResponse) };
+    const [templates, total] = await Promise.all([
+      this.prisma.certificateTemplate.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.certificateTemplate.count({ where }),
+    ]);
+
+    return paginatedResult(templates.map(this.toTemplateResponse), total, page, limit);
   }
 
   async findAllIssues(query: ListIssuesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const issues = await this.prisma.certificateIssue.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.studentId ? { studentId: query.studentId } : {}),
-        ...(query.templateId ? { templateId: query.templateId } : {}),
-      },
-      orderBy: { issuedAt: 'desc' },
-      include: {
-        template: { select: { id: true, type: true, name: true } },
-        student: { select: { id: true, fullName: true } },
-      },
-    });
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      ...(query.templateId ? { templateId: query.templateId } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
-    return { data: issues.map(this.toIssueResponse) };
+    const [issues, total] = await Promise.all([
+      this.prisma.certificateIssue.findMany({
+        where,
+        orderBy: { issuedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          template: { select: { id: true, type: true, name: true } },
+          student: { select: { id: true, fullName: true } },
+        },
+      }),
+      this.prisma.certificateIssue.count({ where }),
+    ]);
+
+    return paginatedResult(issues.map(this.toIssueResponse), total, page, limit);
   }
 
   async issue(input: IssueCertificateInput, user: AuthUser) {

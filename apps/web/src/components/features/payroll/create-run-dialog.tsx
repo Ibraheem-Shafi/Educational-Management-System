@@ -1,11 +1,15 @@
 'use client';
 
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createPayrollRunSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import {
   Dialog,
   DialogContent,
@@ -35,25 +39,36 @@ export function CreateRunDialog({
   const { session } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const now = new Date();
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createPayrollRunSchema);
 
-  const [form, setForm] = useState({
-    year: String(now.getFullYear()),
-    month: String(now.getMonth() + 1),
-    notes: '',
+  const [form, setForm] = useState(() => {
+    const now = new Date();
+    return {
+      year: String(now.getFullYear()),
+      month: String(now.getMonth() + 1),
+      notes: '',
+    };
   });
 
+  useEffect(() => {
+    if (!open) {
+      const now = new Date();
+      setForm({
+        year: String(now.getFullYear()),
+        month: String(now.getMonth() + 1),
+        notes: '',
+      });
+      clearAll();
+    }
+  }, [open, clearAll]);
+
   const createMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: ReturnType<typeof buildPayload>) =>
       apiClient<{ id: string }>('/payroll/runs', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          branchId,
-          year: Number(form.year),
-          month: Number(form.month),
-          notes: form.notes.trim() || null,
-        }),
+        body: JSON.stringify(payload),
       }),
     onSuccess: async (run) => {
       toast.success('Payroll run created');
@@ -61,8 +76,27 @@ export function CreateRunDialog({
       onOpenChange(false);
       onCreated?.(run.id);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  function buildPayload() {
+    return {
+      branchId,
+      year: Number(form.year),
+      month: Number(form.month),
+      notes: form.notes.trim() || null,
+    };
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    createMutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -84,7 +118,7 @@ export function CreateRunDialog({
           </button>
         </div>
 
-        <div className="mt-4 space-y-4">
+        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <FormFieldLabel label="Year" required />
@@ -93,16 +127,23 @@ export function CreateRunDialog({
                 min={2000}
                 max={2100}
                 value={form.year}
-                onChange={(e) => setForm((prev) => ({ ...prev, year: e.target.value }))}
-                className={modalFieldClassName}
+                onChange={(e) => {
+                  clearField('year');
+                  setForm((prev) => ({ ...prev, year: e.target.value }));
+                }}
+                className={fieldClassName('year', modalFieldClassName)}
               />
+              <FormFieldError message={errors.year} />
             </div>
             <div>
               <FormFieldLabel label="Month" required />
               <select
                 value={form.month}
-                onChange={(e) => setForm((prev) => ({ ...prev, month: e.target.value }))}
-                className={modalFieldClassName}
+                onChange={(e) => {
+                  clearField('month');
+                  setForm((prev) => ({ ...prev, month: e.target.value }));
+                }}
+                className={fieldClassName('month', modalFieldClassName)}
               >
                 {MONTHS.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -110,21 +151,25 @@ export function CreateRunDialog({
                   </option>
                 ))}
               </select>
+              <FormFieldError message={errors.month} />
             </div>
           </div>
           <div>
             <FormFieldLabel label="Notes" />
             <textarea
               value={form.notes}
-              onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+              onChange={(e) => {
+                clearField('notes');
+                setForm((prev) => ({ ...prev, notes: e.target.value }));
+              }}
               rows={3}
-              className={cn(modalFieldClassName, 'resize-none')}
+              className={fieldClassName('notes', cn(modalFieldClassName, 'resize-none'))}
             />
+            <FormFieldError message={errors.notes} />
           </div>
           <button
-            type="button"
+            type="submit"
             disabled={createMutation.isPending}
-            onClick={() => createMutation.mutate()}
             className={cn(
               'w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
               createMutation.isPending && 'opacity-50',
@@ -132,7 +177,7 @@ export function CreateRunDialog({
           >
             {createMutation.isPending ? 'Creating…' : 'Create run'}
           </button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

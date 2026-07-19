@@ -1,13 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FormInput, X } from 'lucide-react';
+import { FormInput, Pencil, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, createFormFieldSchema, updateFormFieldSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,24 +20,30 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   PageHeader,
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
-import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import {
+  dataTableClass,
+  dataTableRowHoverClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { cn } from '@/lib/utils';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 
 const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'checkbox', 'file'] as const;
-
-const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
-const tdClass =
-  'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
 interface FormField {
   id: string;
@@ -50,6 +58,24 @@ interface FormField {
 
 const fieldTypeOptions = FIELD_TYPES.map((t) => ({ value: t, label: t }));
 
+interface FieldFormState {
+  code: string;
+  label: string;
+  fieldType: string;
+  options: string;
+  isRequired: boolean;
+  sortOrder: string;
+}
+
+const emptyForm: FieldFormState = {
+  code: '',
+  label: '',
+  fieldType: 'text',
+  options: '',
+  isRequired: false,
+  sortOrder: '0',
+};
+
 export default function FormFieldsPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
@@ -57,53 +83,66 @@ export default function FormFieldsPage() {
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.FORM_FIELDS_MANAGE);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [code, setCode] = useState('');
-  const [label, setLabel] = useState('');
-  const [fieldType, setFieldType] = useState<string>('text');
-  const [options, setOptions] = useState('');
-  const [isRequired, setIsRequired] = useState(false);
-
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState('');
-  const [editFieldType, setEditFieldType] = useState<string>('text');
-  const [editOptions, setEditOptions] = useState('');
-  const [editIsRequired, setEditIsRequired] = useState(false);
-  const [editSortOrder, setEditSortOrder] = useState('0');
+  const [form, setForm] = useState<FieldFormState>(emptyForm);
+  const [removeTarget, setRemoveTarget] = useState<FormField | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const createFormErrors = useFormErrors(createFormFieldSchema);
+  const updateFormErrors = useFormErrors(updateFormFieldSchema);
+  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } = editId
+    ? updateFormErrors
+    : createFormErrors;
 
-  const { data: fields, isLoading } = useQuery({
-    queryKey: queryKeys.formFields,
-    queryFn: () => apiClient<{ data: FormField[] }>('/form-fields?all=true', { token }),
-    enabled: !!token,
+  const queryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
   });
 
-  const activeFields = useMemo(
-    () => (fields?.data ?? []).filter((f) => f.isActive),
-    [fields?.data],
-  );
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.formFields({ page, limit }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<FormField>>(`/form-fields?${queryParams.toString()}`, { token }),
+    enabled: !!token,
+    placeholderData: (previous) => previous,
+  });
 
-  const stats = useMemo(
-    () => ({
-      total: fields?.data.length ?? 0,
-      active: activeFields.length,
-      required: activeFields.filter((f) => f.isRequired).length,
-      dropdown: activeFields.filter((f) => f.fieldType === 'dropdown').length,
-    }),
-    [fields?.data, activeFields],
-  );
+  const pageFields = data?.data ?? [];
+
+  const openCreate = () => {
+    setEditId(null);
+    setForm(emptyForm);
+    createFormErrors.clearAll();
+    setDialogOpen(true);
+  };
+
+  const openEdit = (f: FormField) => {
+    setEditId(f.id);
+    setForm({
+      code: f.code,
+      label: f.label,
+      fieldType: f.fieldType,
+      options: f.options?.join(', ') ?? '',
+      isRequired: f.isRequired,
+      sortOrder: String(f.sortOrder),
+    });
+    updateFormErrors.clearAll();
+    setDialogOpen(true);
+  };
 
   const createMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiClient('/form-fields', { method: 'POST', token, body: JSON.stringify(body) }),
     onSuccess: () => {
       toast.success('Field created');
-      queryClient.invalidateQueries({ queryKey: queryKeys.formFields });
-      setCode('');
-      setLabel('');
-      setOptions('');
-      setCreateOpen(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.formFields() });
+      setDialogOpen(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, createFormErrors.applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const updateMutation = useMutation({
@@ -111,30 +150,67 @@ export default function FormFieldsPage() {
       apiClient(`/form-fields/${id}`, { method: 'PATCH', token, body: JSON.stringify(body) }),
     onSuccess: () => {
       toast.success('Field updated');
-      queryClient.invalidateQueries({ queryKey: queryKeys.formFields });
-      setEditId(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.formFields() });
+      setDialogOpen(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, updateFormErrors.applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => apiClient(`/form-fields/${id}`, { method: 'DELETE', token }),
     onSuccess: () => {
       toast.success('Field removed');
-      queryClient.invalidateQueries({ queryKey: queryKeys.formFields });
+      queryClient.invalidateQueries({ queryKey: queryKeys.formFields() });
+      setRemoveTarget(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const optionsArray = form.options
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editId) {
+      const body = {
+        label: form.label.trim(),
+        fieldType: form.fieldType,
+        isRequired: form.isRequired,
+        sortOrder: Number(form.sortOrder) || 0,
+        ...(form.fieldType === 'dropdown' ? { options: optionsArray } : {}),
+      };
+      if (!validate(body)) return;
+      updateMutation.mutate({ id: editId, body });
+      return;
+    }
+
+    const body = {
+      code: form.code.trim().toLowerCase().replace(/\s+/g, '_'),
+      label: form.label.trim(),
+      fieldType: form.fieldType,
+      isRequired: form.isRequired,
+      ...(form.fieldType === 'dropdown' && optionsArray.length ? { options: optionsArray } : {}),
+    };
+    if (!validate(body)) return;
+    createMutation.mutate(body);
+  };
+
+  const saving = createMutation.isPending || updateMutation.isPending;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6 font-[family-name:var(--font-inter)]">
+    <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
         icon={FormInput}
         title="Admission form fields"
         description="Custom fields shown on student admission"
         actions={
           canManage ? (
-            <button type="button" onClick={() => setCreateOpen(true)} className={pageHeaderActionClassName}>
+            <button type="button" onClick={openCreate} className={pageHeaderActionClassName}>
               <PageHeaderActionIcon />
               Add field
             </button>
@@ -145,217 +221,202 @@ export default function FormFieldsPage() {
       <MainStatsSection
         isLoading={isLoading}
         stats={[
-          { label: 'Total fields', value: stats.total },
-          { label: 'Active fields', value: stats.active },
-          { label: 'Required fields', value: stats.required },
-          { label: 'Dropdown fields', value: stats.dropdown },
+          { label: 'Total fields', value: data?.meta.total ?? 0 },
+          { label: 'Active fields', value: data?.meta.total ?? 0 },
+          {
+            label: 'Required fields',
+            value: pageFields.filter((f) => f.isRequired).length,
+          },
+          {
+            label: 'Dropdown fields',
+            value: pageFields.filter((f) => f.fieldType === 'dropdown').length,
+          },
         ]}
       />
 
-      <ContentPanel title={`Active fields (${stats.active})`}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-separate border-spacing-0">
+      <div className="bg-white">
+        <div className={dataTableWrapperClass}>
+          <table className={dataTableClass}>
             <thead>
               <tr>
-                <th className={thClass}>Label</th>
-                <th className={thClass}>Code</th>
-                <th className={thClass}>Type</th>
-                <th className={thClass}>Required</th>
-                <th className={thClass}>Order</th>
-                <th className={cn(thClass, 'w-12')} />
+                <th className={dataTableThClass}>Label</th>
+                <th className={dataTableThClass}>Code</th>
+                <th className={dataTableThClass}>Type</th>
+                <th className={dataTableThClass}>Required</th>
+                <th className={dataTableThClass}>Order</th>
+                <th className={cn(dataTableThClass, 'w-12')} />
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 6 }).map((__, j) => (
-                      <td key={j} className={tdClass}>
-                        <div className="h-4 w-16 animate-pulse rounded bg-[var(--neutral-50)]" />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-
-              {!isLoading && activeFields.length === 0 && (
+              {isLoading ? (
+                <DataTableSkeletonRows columns={6} rows={limit} />
+              ) : pageFields.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
                     No active fields
                   </td>
                 </tr>
-              )}
-
-              {!isLoading &&
-                activeFields.map((f) => (
-                  <tr key={f.id} className="hover:bg-[var(--neutral-50)]/50">
-                    {editId === f.id ? (
-                      <>
-                        <td className={tdClass}>
-                          <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} />
-                        </td>
-                        <td className={tdClass}>{f.code}</td>
-                        <td className={tdClass}>
-                          <SelectDropdown
-                            aria-label="Field type"
-                            value={editFieldType}
-                            onValueChange={setEditFieldType}
-                            options={fieldTypeOptions}
-                          />
-                        </td>
-                        <td className={tdClass}>
-                          <input
-                            type="checkbox"
-                            checked={editIsRequired}
-                            onChange={(e) => setEditIsRequired(e.target.checked)}
-                          />
-                        </td>
-                        <td className={tdClass}>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={editSortOrder}
-                            onChange={(e) => setEditSortOrder(e.target.value)}
-                            className="w-20"
-                          />
-                        </td>
-                        <td className={cn(tdClass, 'text-right')}>
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              disabled={updateMutation.isPending}
-                              onClick={() =>
-                                updateMutation.mutate({
-                                  id: f.id,
-                                  body: {
-                                    label: editLabel.trim(),
-                                    fieldType: editFieldType,
-                                    isRequired: editIsRequired,
-                                    sortOrder: Number(editSortOrder) || 0,
-                                    ...(editFieldType === 'dropdown'
-                                      ? {
-                                          options: editOptions
-                                            .split(',')
-                                            .map((o) => o.trim())
-                                            .filter(Boolean),
-                                        }
-                                      : {}),
-                                  },
-                                })
-                              }
-                            >
-                              Save
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditId(null)}>
-                              Cancel
-                            </Button>
-                          </div>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className={tdClass}>{f.label}</td>
-                        <td className={tdClass}>{f.code}</td>
-                        <td className={tdClass}>{f.fieldType}</td>
-                        <td className={tdClass}>
-                          {f.isRequired ? (
-                            <StatusBadge label="Required" code="active" />
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className={tdClass}>{f.sortOrder > 0 ? f.sortOrder : '—'}</td>
-                        <td className={cn(tdClass, 'text-right')}>
-                          {canManage ? (
-                            <RowActionsMenu
-                              items={[
-                                {
-                                  label: 'Edit',
-                                  onClick: () => {
-                                    setEditId(f.id);
-                                    setEditLabel(f.label);
-                                    setEditFieldType(f.fieldType);
-                                    setEditOptions(f.options?.join(', ') ?? '');
-                                    setEditIsRequired(f.isRequired);
-                                    setEditSortOrder(String(f.sortOrder));
-                                  },
-                                },
-                                {
-                                  label: 'Remove',
-                                  onClick: () => {
-                                    if (confirm(`Remove field "${f.label}"?`)) deactivateMutation.mutate(f.id);
-                                  },
-                                },
-                              ]}
-                            />
-                          ) : null}
-                        </td>
-                      </>
-                    )}
+              ) : (
+                pageFields.map((f) => (
+                  <tr key={f.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <td className={dataTableTdClass}>{f.label}</td>
+                    <td className={dataTableTdClass}>{f.code}</td>
+                    <td className={dataTableTdClass}>{f.fieldType}</td>
+                    <td className={dataTableTdClass}>
+                      {f.isRequired ? <StatusBadge label="Required" code="active" /> : '—'}
+                    </td>
+                    <td className={dataTableTdClass}>{f.sortOrder > 0 ? f.sortOrder : '—'}</td>
+                    <td className={cn(dataTableTdClass, 'text-right')}>
+                      {canManage ? (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Edit',
+                              onClick: () => openEdit(f),
+                              icon: <Pencil className="h-4 w-4 shrink-0 text-[var(--text-soft-400,#868C98)]" strokeWidth={1.5} />,
+                            },
+                            {
+                              label: 'Remove',
+                              onClick: () => setRemoveTarget(f),
+                              icon: <Trash2 className="h-4 w-4 shrink-0 text-red-500" strokeWidth={1.5} />,
+                            },
+                          ]}
+                        />
+                      ) : null}
+                    </td>
                   </tr>
-                ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      </ContentPanel>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        {data?.meta && (
+          <PaginationBar
+            page={page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
+        )}
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <div className="flex items-start justify-between gap-3 px-5 pt-5">
             <div>
-              <DialogTitle>Add field</DialogTitle>
-              <DialogDescription>Create a custom admission form field.</DialogDescription>
+              <DialogTitle>{editId ? 'Edit field' : 'Add field'}</DialogTitle>
+              <DialogDescription>
+                {editId ? 'Update this admission form field.' : 'Create a custom admission form field.'}
+              </DialogDescription>
             </div>
-            <button type="button" onClick={() => setCreateOpen(false)} className="text-[var(--text-sub-500)]">
+            <button type="button" onClick={() => setDialogOpen(false)} className="text-[var(--text-sub-500)]">
               <X className="h-4 w-4" />
             </button>
           </div>
-          <form
-            className="grid gap-4 px-5 sm:grid-cols-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              createMutation.mutate({
-                code: code.trim().toLowerCase().replace(/\s+/g, '_'),
-                label: label.trim(),
-                fieldType,
-                isRequired,
-                ...(fieldType === 'dropdown' && options
-                  ? { options: options.split(',').map((o) => o.trim()).filter(Boolean) }
-                  : {}),
-              });
-            }}
-          >
-            <Input placeholder="Code (e.g. previous_school)" value={code} onChange={(e) => setCode(e.target.value)} required />
-            <Input placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} required />
-            <SelectDropdown
-              aria-label="Field type"
-              value={fieldType}
-              onValueChange={setFieldType}
-              options={fieldTypeOptions}
-              fullWidth
-            />
-            {fieldType === 'dropdown' && (
+          <form className="grid gap-4 px-5 sm:grid-cols-2" onSubmit={handleSubmit}>
+            <div>
               <Input
-                placeholder="Options (comma-separated)"
-                value={options}
-                onChange={(e) => setOptions(e.target.value)}
-                className="sm:col-span-2"
+                placeholder="Code (e.g. previous_school)"
+                value={form.code}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, code: e.target.value }));
+                  clearField('code');
+                }}
+                disabled={!!editId}
+                className={fieldClassName('code', '')}
               />
+              <FormFieldError message={errors.code} />
+            </div>
+            <div>
+              <Input
+                placeholder="Label"
+                value={form.label}
+                onChange={(e) => {
+                  setForm((s) => ({ ...s, label: e.target.value }));
+                  clearField('label');
+                }}
+                className={fieldClassName('label', '')}
+              />
+              <FormFieldError message={errors.label} />
+            </div>
+            <div>
+              <SelectDropdown
+                aria-label="Field type"
+                value={form.fieldType}
+                onValueChange={(v) => {
+                  setForm((s) => ({ ...s, fieldType: v }));
+                  clearField('fieldType');
+                }}
+                options={fieldTypeOptions}
+                fullWidth
+              />
+              <FormFieldError message={errors.fieldType} />
+            </div>
+            {editId && (
+              <div>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Sort order"
+                  value={form.sortOrder}
+                  onChange={(e) => {
+                    setForm((s) => ({ ...s, sortOrder: e.target.value }));
+                    clearField('sortOrder');
+                  }}
+                  className={fieldClassName('sortOrder', '')}
+                />
+                <FormFieldError message={errors.sortOrder} />
+              </div>
+            )}
+            {form.fieldType === 'dropdown' && (
+              <div className="sm:col-span-2">
+                <Input
+                  placeholder="Options (comma-separated)"
+                  value={form.options}
+                  onChange={(e) => {
+                    setForm((s) => ({ ...s, options: e.target.value }));
+                    clearField('options');
+                  }}
+                  className={fieldClassName('options', '')}
+                />
+                <FormFieldError message={errors.options} />
+              </div>
             )}
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={form.isRequired}
+                onChange={(e) => setForm((s) => ({ ...s, isRequired: e.target.checked }))}
+              />
               Required field
             </label>
             <DialogFooter className="sm:col-span-2">
-              <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                Add field
+              <Button type="submit" disabled={saving}>
+                {editId ? 'Save changes' : 'Add field'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => !open && setRemoveTarget(null)}
+        title="Remove field"
+        description={removeTarget ? `Remove field "${removeTarget.label}"? This hides it from the admission form.` : undefined}
+        confirmLabel="Remove"
+        destructive
+        loading={deactivateMutation.isPending}
+        onConfirm={() => removeTarget && deactivateMutation.mutate(removeTarget.id)}
+      />
     </div>
   );
 }

@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalString,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const LIBRARY_FINE_PER_DAY_PKR = 50;
 export const LIBRARY_MAX_RENEWALS = 2;
@@ -12,7 +19,9 @@ export const libraryFineStatuses = ['unpaid', 'paid', 'waived'] as const;
 
 const borrowerRefSchema = z
   .object({
-    borrowerType: z.enum(libraryBorrowerTypes),
+    borrowerType: z.enum(libraryBorrowerTypes, {
+      errorMap: () => ({ message: MSG.select('borrower type') }),
+    }),
     studentId: z.string().optional(),
     userId: z.string().optional(),
   })
@@ -26,8 +35,8 @@ const borrowerRefSchema = z
   });
 
 export const createLibraryCategorySchema = z.object({
-  branchId: z.string().min(1),
-  name: z.string().min(1).max(200),
+  branchId: requiredId('Branch'),
+  name: requiredString('Name', 1, 200),
 });
 
 export type CreateLibraryCategoryInput = z.infer<typeof createLibraryCategorySchema>;
@@ -36,18 +45,20 @@ export const updateLibraryCategorySchema = createLibraryCategorySchema.omit({ br
 
 export type UpdateLibraryCategoryInput = z.infer<typeof updateLibraryCategorySchema>;
 
-export const listLibraryCategoriesQuerySchema = z.object({
-  branchId: z.string().optional(),
-  search: z.string().optional(),
-});
+export const listLibraryCategoriesQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLibraryCategoriesQuery = z.infer<typeof listLibraryCategoriesQuerySchema>;
 
 export const createLibraryBookSchema = z.object({
-  branchId: z.string().min(1),
+  branchId: requiredId('Branch'),
   categoryId: z.string().optional().nullable(),
-  title: z.string().min(1).max(300),
-  author: z.string().min(1).max(200),
+  title: requiredString('Title', 1, 300),
+  author: requiredString('Author', 1, 200),
   publisher: z.string().optional(),
   edition: z.string().optional(),
   isbn: z.string().optional(),
@@ -60,85 +71,95 @@ export const updateLibraryBookSchema = createLibraryBookSchema.omit({ branchId: 
 
 export type UpdateLibraryBookInput = z.infer<typeof updateLibraryBookSchema>;
 
-export const listLibraryBooksQuerySchema = z.object({
-  branchId: z.string().optional(),
-  categoryId: z.string().optional(),
-  search: z.string().optional(),
-});
+export const listLibraryBooksQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    categoryId: z.string().optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLibraryBooksQuery = z.infer<typeof listLibraryBooksQuerySchema>;
 
 export const createLibraryCopySchema = z.object({
-  bookId: z.string().min(1),
-  copyCode: z.string().min(1).max(50),
-  status: z.enum(libraryCopyStatuses).optional(),
+  bookId: requiredId('Book'),
+  copyCode: requiredString('Copy code', 1, 50),
+  status: z.enum(libraryCopyStatuses, { errorMap: () => ({ message: MSG.select('status') }) }).optional(),
 });
 
 export type CreateLibraryCopyInput = z.infer<typeof createLibraryCopySchema>;
 
 export const updateLibraryCopySchema = z.object({
-  copyCode: z.string().min(1).max(50).optional(),
-  status: z.enum(libraryCopyStatuses).optional(),
+  copyCode: requiredString('Copy code', 1, 50).optional(),
+  status: z.enum(libraryCopyStatuses, { errorMap: () => ({ message: MSG.select('status') }) }).optional(),
 });
 
 export type UpdateLibraryCopyInput = z.infer<typeof updateLibraryCopySchema>;
 
 export const issueLibraryLoanSchema = borrowerRefSchema.and(
   z.object({
-    branchId: z.string().min(1),
-    copyId: z.string().min(1),
-    dueAt: z.string().datetime().optional(),
+    branchId: requiredId('Branch'),
+    copyId: requiredId('Copy'),
+    dueAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
   }),
 );
 
 export type IssueLibraryLoanInput = z.infer<typeof issueLibraryLoanSchema>;
 
-export const listLibraryLoansQuerySchema = z.object({
-  branchId: z.string().optional(),
-  activeOnly: z.coerce.boolean().optional(),
-  borrowerType: z.enum(libraryBorrowerTypes).optional(),
-  studentId: z.string().optional(),
-  userId: z.string().optional(),
-  overdueOnly: z.coerce.boolean().optional(),
-});
+export const listLibraryLoansQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    activeOnly: z.coerce.boolean().optional(),
+    borrowerType: z.enum(libraryBorrowerTypes).optional(),
+    studentId: z.string().optional(),
+    userId: z.string().optional(),
+    overdueOnly: z.coerce.boolean().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLibraryLoansQuery = z.infer<typeof listLibraryLoansQuerySchema>;
 
 export const createLibraryReservationSchema = borrowerRefSchema.and(
   z.object({
-    branchId: z.string().min(1),
-    bookId: z.string().min(1),
+    branchId: requiredId('Branch'),
+    bookId: requiredId('Book'),
   }),
 );
 
 export type CreateLibraryReservationInput = z.infer<typeof createLibraryReservationSchema>;
 
 export const updateLibraryReservationSchema = z.object({
-  status: z.enum(libraryReservationStatuses).optional(),
+  status: z.enum(libraryReservationStatuses, {
+    errorMap: () => ({ message: MSG.select('status') }),
+  }).optional(),
 });
 
 export type UpdateLibraryReservationInput = z.infer<typeof updateLibraryReservationSchema>;
 
-export const listLibraryReservationsQuerySchema = z.object({
-  branchId: z.string().optional(),
-  status: z.enum(libraryReservationStatuses).optional(),
-  bookId: z.string().optional(),
-  studentId: z.string().optional(),
-  userId: z.string().optional(),
-});
+export const listLibraryReservationsQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    status: z.enum(libraryReservationStatuses).optional(),
+    bookId: z.string().optional(),
+    studentId: z.string().optional(),
+    userId: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLibraryReservationsQuery = z.infer<typeof listLibraryReservationsQuerySchema>;
 
-export const listLibraryFinesQuerySchema = z.object({
-  branchId: z.string().optional(),
-  status: z.enum(libraryFineStatuses).optional(),
-  loanId: z.string().optional(),
-});
+export const listLibraryFinesQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    status: z.enum(libraryFineStatuses).optional(),
+    loanId: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListLibraryFinesQuery = z.infer<typeof listLibraryFinesQuerySchema>;
 
 export const updateLibraryFineSchema = z.object({
-  status: z.enum(libraryFineStatuses),
+  status: z.enum(libraryFineStatuses, { errorMap: () => ({ message: MSG.select('status') }) }),
   reason: z.string().optional(),
 });
 

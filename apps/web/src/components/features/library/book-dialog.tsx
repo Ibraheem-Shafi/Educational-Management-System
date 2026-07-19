@@ -4,17 +4,25 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  createLibraryBookSchema,
+  createLibraryCopySchema,
+  updateLibraryBookSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 import type { LibraryBook, LibraryCategory } from './types';
 
@@ -50,9 +58,14 @@ export function BookDialog({
   const [form, setForm] = useState(emptyForm);
   const isEdit = !!book;
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateLibraryBookSchema : createLibraryBookSchema,
+  );
+
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (book) {
@@ -68,24 +81,39 @@ export function BookDialog({
         copyCode2: '',
       });
     }
-  }, [open, book]);
+  }, [open, book, clearAll]);
+
+  const buildPayload = () => {
+    const payload = {
+      title: form.title.trim(),
+      author: form.author.trim(),
+      publisher: form.publisher.trim() || undefined,
+      edition: form.edition.trim() || undefined,
+      isbn: form.isbn.trim() || undefined,
+      accessionNo: form.accessionNo.trim() || undefined,
+      categoryId: form.categoryId || null,
+    };
+    if (isEdit && book) return payload;
+    return { branchId, ...payload };
+  };
+
+  const validateCopyCodes = (): boolean => {
+    const copies = [form.copyCode1.trim(), form.copyCode2.trim()].filter(Boolean);
+    for (let i = 0; i < copies.length; i++) {
+      const result = createLibraryCopySchema.safeParse({ bookId: 'placeholder', copyCode: copies[i] });
+      if (!result.success) {
+        const copyError = result.error.issues.find((issue) => issue.path[0] === 'copyCode');
+        if (copyError) {
+          applyApiErrors({ [`copyCode${i + 1}`]: [copyError.message] });
+          return false;
+        }
+      }
+    }
+    return true;
+  };
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      if (!form.title.trim() || !form.author.trim()) {
-        throw new Error('Title and author are required');
-      }
-      const payload = {
-        branchId,
-        title: form.title.trim(),
-        author: form.author.trim(),
-        ...(form.publisher.trim() ? { publisher: form.publisher.trim() } : {}),
-        ...(form.edition.trim() ? { edition: form.edition.trim() } : {}),
-        ...(form.isbn.trim() ? { isbn: form.isbn.trim() } : {}),
-        ...(form.accessionNo.trim() ? { accessionNo: form.accessionNo.trim() } : {}),
-        ...(form.categoryId ? { categoryId: form.categoryId } : {}),
-      };
-
+    mutationFn: async (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && book) {
         return apiClient(`/library/books/${book.id}`, {
           method: 'PATCH',
@@ -116,10 +144,23 @@ export function BookDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Unable to save book'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Unable to save book');
+    },
   });
 
-  const canSubmit = form.title.trim().length >= 1 && form.author.trim().length >= 1 && branchId;
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSave = () => {
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    if (!isEdit && !validateCopyCodes()) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -150,38 +191,42 @@ export function BookDialog({
               <FormFieldLabel htmlFor="book-title">Title</FormFieldLabel>
               <input
                 id="book-title"
-                className={modalFieldClassName}
+                className={fieldClassName('title', modalFieldClassName)}
                 value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) => updateForm('title', e.target.value)}
               />
+              <FormFieldError message={errors.title} />
             </div>
             <div>
               <FormFieldLabel htmlFor="book-author">Author</FormFieldLabel>
               <input
                 id="book-author"
-                className={modalFieldClassName}
+                className={fieldClassName('author', modalFieldClassName)}
                 value={form.author}
-                onChange={(e) => setForm((f) => ({ ...f, author: e.target.value }))}
+                onChange={(e) => updateForm('author', e.target.value)}
               />
+              <FormFieldError message={errors.author} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel htmlFor="book-publisher">Publisher</FormFieldLabel>
                 <input
                   id="book-publisher"
-                  className={modalFieldClassName}
+                  className={fieldClassName('publisher', modalFieldClassName)}
                   value={form.publisher}
-                  onChange={(e) => setForm((f) => ({ ...f, publisher: e.target.value }))}
+                  onChange={(e) => updateForm('publisher', e.target.value)}
                 />
+                <FormFieldError message={errors.publisher} />
               </div>
               <div>
                 <FormFieldLabel htmlFor="book-edition">Edition</FormFieldLabel>
                 <input
                   id="book-edition"
-                  className={modalFieldClassName}
+                  className={fieldClassName('edition', modalFieldClassName)}
                   value={form.edition}
-                  onChange={(e) => setForm((f) => ({ ...f, edition: e.target.value }))}
+                  onChange={(e) => updateForm('edition', e.target.value)}
                 />
+                <FormFieldError message={errors.edition} />
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -189,19 +234,21 @@ export function BookDialog({
                 <FormFieldLabel htmlFor="book-isbn">ISBN</FormFieldLabel>
                 <input
                   id="book-isbn"
-                  className={modalFieldClassName}
+                  className={fieldClassName('isbn', modalFieldClassName)}
                   value={form.isbn}
-                  onChange={(e) => setForm((f) => ({ ...f, isbn: e.target.value }))}
+                  onChange={(e) => updateForm('isbn', e.target.value)}
                 />
+                <FormFieldError message={errors.isbn} />
               </div>
               <div>
                 <FormFieldLabel htmlFor="book-accession">Accession no.</FormFieldLabel>
                 <input
                   id="book-accession"
-                  className={modalFieldClassName}
+                  className={fieldClassName('accessionNo', modalFieldClassName)}
                   value={form.accessionNo}
-                  onChange={(e) => setForm((f) => ({ ...f, accessionNo: e.target.value }))}
+                  onChange={(e) => updateForm('accessionNo', e.target.value)}
                 />
+                <FormFieldError message={errors.accessionNo} />
               </div>
             </div>
             <div>
@@ -210,13 +257,14 @@ export function BookDialog({
                 aria-label="Category"
                 placeholder="No category"
                 value={form.categoryId}
-                onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}
+                onValueChange={(v) => updateForm('categoryId', v)}
                 options={[
                   { value: '', label: 'No category' },
                   ...categories.map((c) => ({ value: c.id, label: c.name })),
                 ]}
-                className="w-full"
+                className={fieldClassName('categoryId', 'w-full')}
               />
+              <FormFieldError message={errors.categoryId} />
             </div>
             {!isEdit && (
               <div className="grid gap-4 sm:grid-cols-2">
@@ -224,21 +272,23 @@ export function BookDialog({
                   <FormFieldLabel htmlFor="copy-1">Copy code 1</FormFieldLabel>
                   <input
                     id="copy-1"
-                    className={modalFieldClassName}
+                    className={fieldClassName('copyCode1', modalFieldClassName)}
                     placeholder="e.g. C-001"
                     value={form.copyCode1}
-                    onChange={(e) => setForm((f) => ({ ...f, copyCode1: e.target.value }))}
+                    onChange={(e) => updateForm('copyCode1', e.target.value)}
                   />
+                  <FormFieldError message={errors.copyCode1} />
                 </div>
                 <div>
                   <FormFieldLabel htmlFor="copy-2">Copy code 2</FormFieldLabel>
                   <input
                     id="copy-2"
-                    className={modalFieldClassName}
+                    className={fieldClassName('copyCode2', modalFieldClassName)}
                     placeholder="e.g. C-002"
                     value={form.copyCode2}
-                    onChange={(e) => setForm((f) => ({ ...f, copyCode2: e.target.value }))}
+                    onChange={(e) => updateForm('copyCode2', e.target.value)}
                   />
+                  <FormFieldError message={errors.copyCode2} />
                 </div>
               </div>
             )}
@@ -255,11 +305,11 @@ export function BookDialog({
           </button>
           <button
             type="button"
-            disabled={!canSubmit || mutation.isPending}
-            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            onClick={handleSave}
             className={cn(
               'rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white',
-              (!canSubmit || mutation.isPending) && 'opacity-50',
+              mutation.isPending && 'opacity-50',
             )}
           >
             {mutation.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Add book'}

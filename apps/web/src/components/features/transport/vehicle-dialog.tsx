@@ -4,16 +4,24 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bus, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { transportStaffRoles, transportVehicleStatuses } from '@eims/shared';
+import {
+  createTransportVehicleSchema,
+  transportStaffRoles,
+  transportVehicleStatuses,
+  updateTransportVehicleSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -47,6 +55,10 @@ export function VehicleDialog({
   const isEdit = Boolean(vehicle);
   const [form, setForm] = useState(emptyForm);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateTransportVehicleSchema : createTransportVehicleSchema,
+  );
+
   const { data: usersData } = useQuery({
     queryKey: ['users', branchId],
     queryFn: () =>
@@ -59,6 +71,7 @@ export function VehicleDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (vehicle) {
@@ -76,29 +89,34 @@ export function VehicleDialog({
     } else {
       setForm(emptyForm);
     }
-  }, [open, vehicle]);
+  }, [open, vehicle, clearAll]);
 
   const userOptions = (usersData?.data ?? []).map((u) => ({
     value: u.id,
     label: u.fullName,
   }));
 
+  const buildPayload = () => {
+    const staff = [
+      ...(form.driverUserId ? [{ userId: form.driverUserId, role: 'driver' as const }] : []),
+      ...(form.conductorUserId ? [{ userId: form.conductorUserId, role: 'conductor' as const }] : []),
+    ];
+
+    const payload = {
+      plateNumber: form.plateNumber.trim(),
+      makeModel: form.makeModel.trim() || null,
+      capacity: form.capacity.trim() ? Number(form.capacity) : null,
+      status: form.status,
+      gpsDeviceId: form.gpsDeviceId.trim() || null,
+      staff,
+    };
+
+    if (isEdit && vehicle) return payload;
+    return { branchId, ...payload };
+  };
+
   const mutation = useMutation({
-    mutationFn: () => {
-      const staff = [
-        ...(form.driverUserId ? [{ userId: form.driverUserId, role: 'driver' as const }] : []),
-        ...(form.conductorUserId ? [{ userId: form.conductorUserId, role: 'conductor' as const }] : []),
-      ];
-
-      const payload = {
-        plateNumber: form.plateNumber.trim(),
-        makeModel: form.makeModel.trim() || null,
-        capacity: form.capacity.trim() ? Number(form.capacity) : null,
-        status: form.status,
-        gpsDeviceId: form.gpsDeviceId.trim() || null,
-        staff,
-      };
-
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && vehicle) {
         return apiClient(`/transport/vehicles/${vehicle.id}`, {
           method: 'PATCH',
@@ -110,7 +128,7 @@ export function VehicleDialog({
       return apiClient('/transport/vehicles', {
         method: 'POST',
         token,
-        body: { branchId, ...payload },
+        body: payload,
       });
     },
     onSuccess: () => {
@@ -118,10 +136,23 @@ export function VehicleDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.transportVehicles(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update vehicle' : 'Unable to create vehicle'));
+    },
   });
 
-  const canSubmit = form.plateNumber.trim().length >= 1 && branchId;
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -146,31 +177,26 @@ export function VehicleDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel required>Plate number</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('plateNumber', modalFieldClassName)}
                   value={form.plateNumber}
-                  onChange={(e) => setForm((prev) => ({ ...prev, plateNumber: e.target.value }))}
-                  required
+                  onChange={(e) => updateForm('plateNumber', e.target.value)}
                 />
+                <FormFieldError message={errors.plateNumber} />
               </div>
               <div>
                 <FormFieldLabel>Make / model</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('makeModel', modalFieldClassName)}
                   value={form.makeModel}
-                  onChange={(e) => setForm((prev) => ({ ...prev, makeModel: e.target.value }))}
+                  onChange={(e) => updateForm('makeModel', e.target.value)}
                 />
+                <FormFieldError message={errors.makeModel} />
               </div>
             </div>
 
@@ -180,31 +206,34 @@ export function VehicleDialog({
                 <input
                   type="number"
                   min={1}
-                  className={modalFieldClassName}
+                  className={fieldClassName('capacity', modalFieldClassName)}
                   value={form.capacity}
-                  onChange={(e) => setForm((prev) => ({ ...prev, capacity: e.target.value }))}
+                  onChange={(e) => updateForm('capacity', e.target.value)}
                 />
+                <FormFieldError message={errors.capacity} />
               </div>
               <div>
                 <FormFieldLabel>Status</FormFieldLabel>
                 <SelectDropdown
                   aria-label="Status"
                   value={form.status}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}
+                  onValueChange={(value) => updateForm('status', value)}
                   options={transportVehicleStatuses.map((s) => ({
                     value: s,
                     label: formatLabel(s),
                   }))}
-                  className="w-full"
+                  className={fieldClassName('status', 'w-full')}
                 />
+                <FormFieldError message={errors.status} />
               </div>
               <div>
                 <FormFieldLabel>GPS device ID</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('gpsDeviceId', modalFieldClassName)}
                   value={form.gpsDeviceId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, gpsDeviceId: e.target.value }))}
+                  onChange={(e) => updateForm('gpsDeviceId', e.target.value)}
                 />
+                <FormFieldError message={errors.gpsDeviceId} />
               </div>
             </div>
 
@@ -215,7 +244,7 @@ export function VehicleDialog({
                   aria-label="Driver"
                   placeholder="Select driver"
                   value={form.driverUserId}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, driverUserId: value }))}
+                  onValueChange={(value) => updateForm('driverUserId', value)}
                   options={[{ value: '', label: 'None' }, ...userOptions]}
                   className="w-full"
                 />
@@ -226,7 +255,7 @@ export function VehicleDialog({
                   aria-label="Conductor"
                   placeholder="Select conductor"
                   value={form.conductorUserId}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, conductorUserId: value }))}
+                  onValueChange={(value) => updateForm('conductorUserId', value)}
                   options={[{ value: '', label: 'None' }, ...userOptions]}
                   className="w-full"
                 />
@@ -251,7 +280,7 @@ export function VehicleDialog({
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || !canSubmit}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -33,24 +34,34 @@ export class FrontOfficeService {
 
   async findAllInquiries(query: ListInquiriesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const inquiries = await this.prisma.admissionInquiry.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { fullName: { contains: query.search, mode: 'insensitive' } },
-                { phone: { contains: query.search, mode: 'insensitive' } },
-                { email: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { data: inquiries };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { fullName: { contains: query.search, mode: 'insensitive' as const } },
+              { phone: { contains: query.search, mode: 'insensitive' as const } },
+              { email: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [inquiries, total] = await Promise.all([
+      this.prisma.admissionInquiry.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.admissionInquiry.count({ where }),
+    ]);
+
+    return paginatedResult(inquiries, total, page, limit);
   }
 
   async findOneInquiry(id: string, branchId: string | null) {
@@ -284,24 +295,34 @@ export class FrontOfficeService {
 
   async findAllVisitors(query: ListVisitorsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const visitors = await this.prisma.visitor.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.checkedInOnly ? { checkedOutAt: null } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { fullName: { contains: query.search, mode: 'insensitive' } },
-                { phone: { contains: query.search, mode: 'insensitive' } },
-                { hostName: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { data: visitors };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.checkedInOnly ? { checkedOutAt: null } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { fullName: { contains: query.search, mode: 'insensitive' as const } },
+              { phone: { contains: query.search, mode: 'insensitive' as const } },
+              { hostName: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [visitors, total] = await Promise.all([
+      this.prisma.visitor.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.visitor.count({ where }),
+    ]);
+
+    return paginatedResult(visitors, total, page, limit);
   }
 
   async findOneVisitor(id: string, branchId: string | null) {
@@ -428,26 +449,36 @@ export class FrontOfficeService {
 
   async findAllComplaints(query: ListComplaintsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const complaints = await this.prisma.complaintRequest.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.type ? { type: query.type } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.priority ? { priority: query.priority } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { subject: { contains: query.search, mode: 'insensitive' } },
-                { body: { contains: query.search, mode: 'insensitive' } },
-                { requesterName: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { data: complaints };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.type ? { type: query.type } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.priority ? { priority: query.priority } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { subject: { contains: query.search, mode: 'insensitive' as const } },
+              { body: { contains: query.search, mode: 'insensitive' as const } },
+              { requesterName: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [complaints, total] = await Promise.all([
+      this.prisma.complaintRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.complaintRequest.count({ where }),
+    ]);
+
+    return paginatedResult(complaints, total, page, limit);
   }
 
   async findOneComplaint(id: string, branchId: string | null) {

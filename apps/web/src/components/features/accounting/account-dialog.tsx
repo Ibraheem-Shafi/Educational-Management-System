@@ -4,9 +4,16 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calculator, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { accountTypes } from '@eims/shared';
+import {
+  accountTypes,
+  createAccountSchema,
+  updateAccountSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -42,33 +49,31 @@ export function AccountDialog({
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
   const isEdit = !!account;
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } = useFormErrors(
+    isEdit ? updateAccountSchema : createAccountSchema,
+  );
 
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (account) {
       setForm({ code: account.code, name: account.name, type: account.type });
+    } else {
+      setForm(emptyForm);
+      clearAll();
     }
-  }, [open, account]);
+  }, [open, account, clearAll]);
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      if (!form.code.trim() || !form.name.trim()) {
-        throw new Error('Code and name are required');
-      }
-      const payload = {
-        branchId,
-        code: form.code.trim(),
-        name: form.name.trim(),
-        type: form.type,
-      };
+    mutationFn: async (payload: Record<string, unknown>) => {
       if (isEdit) {
         return apiClient(`/accounting/accounts/${account!.id}`, {
           method: 'PATCH',
           token,
-          body: { name: payload.name, type: payload.type },
+          body: payload,
         });
       }
       return apiClient('/accounting/accounts', { method: 'POST', token, body: payload });
@@ -78,8 +83,32 @@ export function AccountDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.accountingAccounts(branchId) });
       onOpenChange(false);
     },
-    onError: () => toast.error(isEdit ? 'Unable to update account' : 'Unable to create account'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (isEdit) {
+      const payload = {
+        name: form.name.trim(),
+        type: form.type,
+      };
+      if (!validate(payload)) return;
+      mutation.mutate(payload);
+      return;
+    }
+    const payload = {
+      branchId,
+      code: form.code.trim(),
+      name: form.name.trim(),
+      type: form.type,
+    };
+    if (!validate(payload)) return;
+    mutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,43 +128,49 @@ export function AccountDialog({
           {isEdit ? 'Update chart of accounts entry' : 'Create a new chart of accounts entry'}
         </DialogDescription>
 
-        <form
-          className="space-y-4 px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate();
-          }}
-        >
+        <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel htmlFor="account-code">Code</FormFieldLabel>
             <input
               id="account-code"
-              className={modalFieldClassName}
+              className={fieldClassName('code', modalFieldClassName)}
               value={form.code}
               disabled={isEdit}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              onChange={(e) => {
+                clearField('code');
+                setForm((f) => ({ ...f, code: e.target.value }));
+              }}
               placeholder="e.g. 1100"
             />
+            <FormFieldError message={errors.code} />
           </div>
           <div>
             <FormFieldLabel htmlFor="account-name">Name</FormFieldLabel>
             <input
               id="account-name"
-              className={modalFieldClassName}
+              className={fieldClassName('name', modalFieldClassName)}
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              onChange={(e) => {
+                clearField('name');
+                setForm((f) => ({ ...f, name: e.target.value }));
+              }}
               placeholder="Account name"
             />
+            <FormFieldError message={errors.name} />
           </div>
           <div>
             <FormFieldLabel htmlFor="account-type">Type</FormFieldLabel>
             <SelectDropdown
               aria-label="Account type"
               value={form.type}
-              onValueChange={(value) => setForm((f) => ({ ...f, type: value }))}
+              onValueChange={(value) => {
+                clearField('type');
+                setForm((f) => ({ ...f, type: value }));
+              }}
               options={accountTypes.map((t) => ({ value: t, label: formatLabel(t) }))}
-              className="w-full"
+              className={fieldClassName('type', 'w-full')}
             />
+            <FormFieldError message={errors.type} />
           </div>
 
           <button

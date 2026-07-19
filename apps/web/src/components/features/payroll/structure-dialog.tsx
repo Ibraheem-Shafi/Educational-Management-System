@@ -4,8 +4,15 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  createSalaryStructureSchema,
+  updateSalaryStructureSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import type { PaginatedResponse } from '@eims/types';
 import {
   Dialog,
@@ -49,6 +56,9 @@ export function StructureDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const isEdit = !!structure;
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } = useFormErrors(
+    isEdit ? updateSalaryStructureSchema : createSalaryStructureSchema,
+  );
 
   const [form, setForm] = useState({
     userId: userId ?? '',
@@ -78,17 +88,18 @@ export function StructureDialog({
               }))
             : [emptyComponent()],
       });
-    } else {
-      setForm({
-        userId: userId ?? '',
-        basicSalary: '',
-        effectiveFrom: new Date().toISOString().slice(0, 10),
-        effectiveTo: '',
-        isActive: true,
-        components: [emptyComponent()],
-      });
+      return;
     }
-  }, [open, structure, userId]);
+    setForm({
+      userId: userId ?? '',
+      basicSalary: '',
+      effectiveFrom: new Date().toISOString().slice(0, 10),
+      effectiveTo: '',
+      isActive: true,
+      components: [emptyComponent()],
+    });
+    clearAll();
+  }, [open, structure, userId, clearAll]);
 
   const { data: users } = useQuery({
     queryKey: ['users-payroll', branchId],
@@ -100,26 +111,7 @@ export function StructureDialog({
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const payload = {
-        ...(isEdit ? {} : { userId: form.userId, branchId }),
-        basicSalary: Number(form.basicSalary),
-        effectiveFrom: form.effectiveFrom,
-        effectiveTo: form.effectiveTo || null,
-        isActive: form.isActive,
-        components: form.components
-          .filter((c) => c.name.trim())
-          .map((c) => ({
-            kind: c.kind,
-            name: c.name.trim(),
-            amount: Number(c.amount) || 0,
-            percentOfBasic:
-              c.percentOfBasic != null && c.percentOfBasic !== ('' as unknown as number)
-                ? Number(c.percentOfBasic)
-                : null,
-          })),
-      };
-
+    mutationFn: (payload: Record<string, unknown>) => {
       if (isEdit && structure) {
         return apiClient(`/payroll/structures/${structure.id}`, {
           method: 'PATCH',
@@ -127,7 +119,6 @@ export function StructureDialog({
           body: JSON.stringify(payload),
         });
       }
-
       return apiClient('/payroll/structures', {
         method: 'POST',
         token,
@@ -139,7 +130,10 @@ export function StructureDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.payrollStructures(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const staffOptions = (users?.data ?? []).map((u) => ({
@@ -147,7 +141,46 @@ export function StructureDialog({
     label: `${u.fullName} (${u.staffCode})`,
   }));
 
-  const canSubmit = form.basicSalary && form.effectiveFrom && (isEdit || form.userId);
+  function buildPayload() {
+    const components = form.components
+      .filter((c) => c.name.trim())
+      .map((c) => ({
+        kind: c.kind,
+        name: c.name.trim(),
+        amount: Number(c.amount) || 0,
+        percentOfBasic:
+          c.percentOfBasic != null && c.percentOfBasic !== ('' as unknown as number)
+            ? Number(c.percentOfBasic)
+            : null,
+      }));
+
+    if (isEdit) {
+      return {
+        basicSalary: Number(form.basicSalary),
+        effectiveFrom: form.effectiveFrom,
+        effectiveTo: form.effectiveTo || null,
+        isActive: form.isActive,
+        components,
+      };
+    }
+
+    return {
+      userId: form.userId,
+      branchId,
+      basicSalary: Number(form.basicSalary),
+      effectiveFrom: form.effectiveFrom,
+      effectiveTo: form.effectiveTo || null,
+      isActive: form.isActive,
+      components,
+    };
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    saveMutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -169,7 +202,7 @@ export function StructureDialog({
           </button>
         </div>
 
-        <div className="mt-4 space-y-4">
+        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
           {!isEdit && !userId && (
             <div>
               <FormFieldLabel label="Staff member" required />
@@ -177,10 +210,14 @@ export function StructureDialog({
                 aria-label="Staff member"
                 placeholder="Select staff"
                 value={form.userId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, userId: value }))}
+                onValueChange={(value) => {
+                  clearField('userId');
+                  setForm((prev) => ({ ...prev, userId: value }));
+                }}
                 options={staffOptions}
-                className={modalFieldClassName}
+                className={fieldClassName('userId', modalFieldClassName)}
               />
+              <FormFieldError message={errors.userId} />
             </div>
           )}
 
@@ -191,9 +228,13 @@ export function StructureDialog({
                 type="number"
                 min={0}
                 value={form.basicSalary}
-                onChange={(e) => setForm((prev) => ({ ...prev, basicSalary: e.target.value }))}
-                className={modalFieldClassName}
+                onChange={(e) => {
+                  clearField('basicSalary');
+                  setForm((prev) => ({ ...prev, basicSalary: e.target.value }));
+                }}
+                className={fieldClassName('basicSalary', modalFieldClassName)}
               />
+              <FormFieldError message={errors.basicSalary} />
             </div>
             <div>
               <FormFieldLabel label="Status" />
@@ -218,18 +259,26 @@ export function StructureDialog({
               <input
                 type="date"
                 value={form.effectiveFrom}
-                onChange={(e) => setForm((prev) => ({ ...prev, effectiveFrom: e.target.value }))}
-                className={modalFieldClassName}
+                onChange={(e) => {
+                  clearField('effectiveFrom');
+                  setForm((prev) => ({ ...prev, effectiveFrom: e.target.value }));
+                }}
+                className={fieldClassName('effectiveFrom', modalFieldClassName)}
               />
+              <FormFieldError message={errors.effectiveFrom} />
             </div>
             <div>
               <FormFieldLabel label="Effective to" />
               <input
                 type="date"
                 value={form.effectiveTo}
-                onChange={(e) => setForm((prev) => ({ ...prev, effectiveTo: e.target.value }))}
-                className={modalFieldClassName}
+                onChange={(e) => {
+                  clearField('effectiveTo');
+                  setForm((prev) => ({ ...prev, effectiveTo: e.target.value }));
+                }}
+                className={fieldClassName('effectiveTo', modalFieldClassName)}
               />
+              <FormFieldError message={errors.effectiveTo} />
             </div>
           </div>
 
@@ -250,6 +299,7 @@ export function StructureDialog({
                 Add
               </button>
             </div>
+            <FormFieldError message={errors.components} />
             <div className="space-y-3">
               {form.components.map((component, index) => (
                 <div
@@ -260,49 +310,54 @@ export function StructureDialog({
                     <SelectDropdown
                       aria-label="Component kind"
                       value={component.kind}
-                      onValueChange={(value) =>
+                      onValueChange={(value) => {
+                        clearField(`components.${index}.kind`);
                         setForm((prev) => ({
                           ...prev,
                           components: prev.components.map((c, i) =>
                             i === index ? { ...c, kind: value as 'allowance' | 'deduction' } : c,
                           ),
-                        }))
-                      }
+                        }));
+                      }}
                       options={[
                         { value: 'allowance', label: 'Allowance' },
                         { value: 'deduction', label: 'Deduction' },
                       ]}
-                      className={modalFieldClassName}
+                      className={fieldClassName(`components.${index}.kind`, modalFieldClassName)}
                     />
                     <input
                       placeholder="Name"
                       value={component.name}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        clearField(`components.${index}.name`);
                         setForm((prev) => ({
                           ...prev,
                           components: prev.components.map((c, i) =>
                             i === index ? { ...c, name: e.target.value } : c,
                           ),
-                        }))
-                      }
-                      className={modalFieldClassName}
+                        }));
+                      }}
+                      className={fieldClassName(`components.${index}.name`, modalFieldClassName)}
                     />
                   </div>
+                  <FormFieldError message={errors[`components.${index}.kind`]} />
+                  <FormFieldError message={errors[`components.${index}.name`]} />
                   <div className="grid gap-2 sm:grid-cols-2">
                     <input
                       type="number"
                       min={0}
                       placeholder="Fixed amount"
                       value={component.amount || ''}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        clearField(`components.${index}.amount`);
                         setForm((prev) => ({
                           ...prev,
                           components: prev.components.map((c, i) =>
                             i === index ? { ...c, amount: Number(e.target.value) || 0 } : c,
                           ),
-                        }))
-                      }
-                      className={modalFieldClassName}
+                        }));
+                      }}
+                      className={fieldClassName(`components.${index}.amount`, modalFieldClassName)}
                     />
                     <input
                       type="number"
@@ -310,7 +365,8 @@ export function StructureDialog({
                       max={100}
                       placeholder="% of basic (optional)"
                       value={component.percentOfBasic ?? ''}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        clearField(`components.${index}.percentOfBasic`);
                         setForm((prev) => ({
                           ...prev,
                           components: prev.components.map((c, i) =>
@@ -321,11 +377,16 @@ export function StructureDialog({
                                 }
                               : c,
                           ),
-                        }))
-                      }
-                      className={modalFieldClassName}
+                        }));
+                      }}
+                      className={fieldClassName(
+                        `components.${index}.percentOfBasic`,
+                        modalFieldClassName,
+                      )}
                     />
                   </div>
+                  <FormFieldError message={errors[`components.${index}.amount`]} />
+                  <FormFieldError message={errors[`components.${index}.percentOfBasic`]} />
                   {form.components.length > 1 && (
                     <button
                       type="button"
@@ -347,17 +408,16 @@ export function StructureDialog({
           </div>
 
           <button
-            type="button"
-            disabled={!canSubmit || saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
+            type="submit"
+            disabled={saveMutation.isPending}
             className={cn(
               'w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
-              (!canSubmit || saveMutation.isPending) && 'opacity-50',
+              saveMutation.isPending && 'opacity-50',
             )}
           >
             {saveMutation.isPending ? 'Saving…' : isEdit ? 'Update structure' : 'Create structure'}
           </button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

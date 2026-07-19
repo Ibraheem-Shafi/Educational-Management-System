@@ -5,8 +5,14 @@ export const queryKeys = {
   branches: ['branches'] as const,
   branchesStats: ['branches-stats'] as const,
   branchDetail: (id: string) => ['branch', id] as const,
-  batches: (branchId: string, programId?: string) =>
-    programId ? (['batches', branchId, programId] as const) : (['batches', branchId] as const),
+  batches: (branchId: string, programId?: string, params?: Record<string, unknown>) =>
+    params
+      ? programId
+        ? (['batches', branchId, programId, params] as const)
+        : (['batches', branchId, params] as const)
+      : programId
+        ? (['batches', branchId, programId] as const)
+        : (['batches', branchId] as const),
   lookups: (type: string) => ['lookups', type] as const,
   students: (params?: Record<string, unknown>) =>
     params ? (['students', params] as const) : (['students'] as const),
@@ -33,17 +39,36 @@ export const queryKeys = {
   documentsStats: ['documents-stats'] as const,
   communicationsStats: ['communications-stats'] as const,
   assessmentsStats: ['assessments-stats'] as const,
+  assessments: (params?: Record<string, unknown>) =>
+    params ? (['assessments', params] as const) : (['assessments'] as const),
+  assessmentTypes: (params?: Record<string, unknown>) =>
+    params ? (['assessment-types', params] as const) : (['assessment-types'] as const),
+  assessmentSeries: (params?: Record<string, unknown>) =>
+    params ? (['assessment-series', params] as const) : (['assessment-series'] as const),
   academicStats: (tab?: string) => (tab ? (['academic-stats', tab] as const) : (['academic-stats'] as const)),
-  programs: (branchId?: string) =>
-    branchId ? (['programs', branchId] as const) : (['programs'] as const),
+  academicSessions: (params?: Record<string, unknown>) =>
+    params ? (['academic-sessions', params] as const) : (['academic-sessions'] as const),
+  programs: (branchId?: string, params?: Record<string, unknown>) =>
+    params
+      ? branchId
+        ? (['programs', branchId, params] as const)
+        : (['programs', params] as const)
+      : branchId
+        ? (['programs', branchId] as const)
+        : (['programs'] as const),
   programDetail: (id: string) => ['program', id] as const,
   subjects: ['subjects'] as const,
   batchSubjects: (batchId: string) => ['batch-subjects', batchId] as const,
   timetableStats: ['timetable-stats'] as const,
   auditStats: ['audit-stats'] as const,
-  formFields: ['form-fields'] as const,
-  aiInsightsAtRisk: ['ai-insights-at-risk'] as const,
-  aiAttendanceSessions: ['ai-attendance-sessions'] as const,
+  formFields: (params?: Record<string, unknown>) =>
+    params ? (['form-fields', params] as const) : (['form-fields'] as const),
+  aiInsightsAtRisk: (params?: Record<string, unknown>) =>
+    params ? (['ai-insights-at-risk', params] as const) : (['ai-insights-at-risk'] as const),
+  aiAttendanceSessions: (params?: Record<string, unknown>) =>
+    params ? (['ai-attendance-sessions', params] as const) : (['ai-attendance-sessions'] as const),
+  reportsFeeDefaulters: (params?: Record<string, unknown>) =>
+    params ? (['reports-fee-defaulters', params] as const) : (['reports-fee-defaulters'] as const),
   portalStudentStats: ['portal-student-stats'] as const,
   portalParentStats: ['portal-parent-stats'] as const,
   portalStudentLearning: (params?: Record<string, unknown>) =>
@@ -84,7 +109,8 @@ export const queryKeys = {
   portalParentCalendar: (studentId: string, month: string) =>
     ['portal-parent-calendar', studentId, month] as const,
   portalParentProfile: ['portal-parent-profile'] as const,
-  portalParentLeave: (studentId?: string) => ['portal-parent-leave', studentId ?? 'all'] as const,
+  portalParentLeave: (studentId?: string, page?: number, limit?: number) =>
+    ['portal-parent-leave', studentId ?? 'all', page ?? 1, limit ?? 8] as const,
   leaveRequests: ['leave-requests'] as const,
   frontOfficeInquiries: (branchId?: string, params?: Record<string, unknown>) =>
     ['front-office-inquiries', branchId, params] as const,
@@ -93,8 +119,8 @@ export const queryKeys = {
   frontOfficeComplaints: (branchId?: string, params?: Record<string, unknown>) =>
     ['front-office-complaints', branchId, params] as const,
   frontOfficeActivities: (branchId?: string) => ['front-office-activities', branchId] as const,
-  certificateIssues: (branchId?: string) =>
-    branchId ? (['certificate-issues', branchId] as const) : (['certificate-issues'] as const),
+  certificateIssues: (branchId?: string, params?: Record<string, unknown>) =>
+    ['certificate-issues', branchId, params] as const,
   certificateTemplates: (branchId?: string) =>
     branchId ? (['certificate-templates', branchId] as const) : (['certificate-templates'] as const),
   libraryStats: (branchId?: string) => ['library-stats', branchId] as const,
@@ -128,7 +154,8 @@ export const queryKeys = {
   payrollRuns: (branchId?: string, params?: Record<string, unknown>) =>
     ['payroll-runs', branchId, params] as const,
   payrollRun: (runId: string) => ['payroll-run', runId] as const,
-  payrollHistory: (branchId?: string) => ['payroll-history', branchId] as const,
+  payrollHistory: (branchId?: string, params?: Record<string, unknown>) =>
+    ['payroll-history', branchId, params] as const,
   payrollLinePrint: (lineId: string) => ['payroll-line-print', lineId] as const,
   accountingAccounts: (branchId?: string, params?: Record<string, unknown>) =>
     ['accounting-accounts', branchId, params] as const,

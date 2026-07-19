@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createSubjectSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -38,13 +42,16 @@ export function CreateSubjectDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createSubjectSchema);
 
   useEffect(() => {
     if (!open) {
       setName('');
       setCode('');
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const createSubject = useMutation({
     mutationFn: (body: { name: string; code?: string }) =>
@@ -54,10 +61,11 @@ export function CreateSubjectDialog({
       invalidateAcademic(queryClient);
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
-
-  const canSubmit = name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,32 +94,40 @@ export function CreateSubjectDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            createSubject.mutate({
+            const payload = {
               name: name.trim(),
               ...(code.trim() ? { code: code.trim() } : {}),
-            });
+            };
+            if (!validate(payload)) return;
+            createSubject.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Subject name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('name', modalFieldClassName)}
                 placeholder="Subject name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                minLength={2}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearField('name');
+                }}
               />
+              <FormFieldError message={errors.name} />
             </div>
             <div>
               <FormFieldLabel>Code</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('code', modalFieldClassName)}
                 placeholder="Code (optional)"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  clearField('code');
+                }}
               />
+              <FormFieldError message={errors.code} />
             </div>
           </div>
 
@@ -129,7 +145,7 @@ export function CreateSubjectDialog({
             </button>
             <button
               type="submit"
-              disabled={createSubject.isPending || !canSubmit}
+              disabled={createSubject.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

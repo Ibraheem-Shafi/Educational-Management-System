@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -18,6 +19,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import type { BiometricPunchLog } from './types';
 import { formatDateTime, matchedBadgeCode } from './types';
@@ -28,12 +30,18 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [matchedFilter, setMatchedFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
-    limit: 100,
+    page,
+    limit,
     ...(search ? { externalPersonId: search } : {}),
     ...(matchedFilter ? { matched: matchedFilter === 'true' } : {}),
   };
@@ -41,10 +49,10 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.biometricPunchLogs(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId, limit: '100' });
+      const params = new URLSearchParams({ branchId, page: String(page), limit: String(limit) });
       if (search) params.set('externalPersonId', search);
       if (matchedFilter) params.set('matched', matchedFilter);
-      return apiClient<{ data: BiometricPunchLog[] }>(
+      return apiClient<PaginatedResponse<BiometricPunchLog>>(
         `/biometric/punch-logs?${params.toString()}`,
         { token },
       );
@@ -56,7 +64,7 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
   const rows = data?.data ?? [];
 
   return (
-    <ContentPanel title={`Punch log (${rows.length})`}>
+    <ContentPanel title={`Punch log (${data?.meta.total ?? rows.length})`}>
       <div className="border-b border-stroke-soft-200 px-5 py-4">
         <FilterBar>
           <SearchInput
@@ -69,7 +77,10 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
             aria-label="Matched filter"
             placeholder="All punches"
             value={matchedFilter}
-            onValueChange={setMatchedFilter}
+            onValueChange={(next) => {
+              setMatchedFilter(next);
+              setPage(1);
+            }}
             options={[
               { value: '', label: 'All punches' },
               { value: 'true', label: 'Matched only' },
@@ -83,8 +94,9 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
       {error ? (
         <p className="px-5 py-8 text-sm text-red-600">Unable to load punch logs.</p>
       ) : (
-        <div className={dataTableWrapperClass}>
-          <table className={cn(dataTableClass, 'min-w-[960px]')}>
+        <>
+          <div className={dataTableWrapperClass}>
+            <table className={cn(dataTableClass, 'min-w-[960px]')}>
             <thead>
               <tr>
                 <th className={dataTableThClass}>Punched at</th>
@@ -96,7 +108,7 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
               {isLoading ? (
-                <DataTableSkeletonRows columns={5} rows={8} />
+                <DataTableSkeletonRows columns={5} rows={limit} />
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
@@ -132,8 +144,21 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+          {data?.meta && (
+            <PaginationBar
+              page={page}
+              totalPages={data.meta.totalPages}
+              limit={limit}
+              onPageChange={setPage}
+              onLimitChange={(next) => {
+                setLimit(next);
+                setPage(1);
+              }}
+            />
+          )}
+        </>
       )}
     </ContentPanel>
   );

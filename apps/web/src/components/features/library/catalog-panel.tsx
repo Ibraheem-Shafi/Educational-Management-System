@@ -8,6 +8,7 @@ import { PERMISSIONS, libraryCopyStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
@@ -28,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { BookDialog } from './book-dialog';
 import type { LibraryBook, LibraryCategory } from './types';
@@ -42,33 +44,55 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editBook, setEditBook] = useState<LibraryBook | null>(null);
 
-  const handleSearchChange = useCallback((value: string) => setSearch(value), []);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
+
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
 
   const queryParams = {
     branchId,
+    page,
+    limit,
     ...(categoryFilter ? { categoryId: categoryFilter } : {}),
     ...(search ? { search } : {}),
   };
 
   const { data: categoriesData } = useQuery({
-    queryKey: queryKeys.libraryCategories(branchId),
+    queryKey: queryKeys.libraryCategories(branchId, { limit: 100 }),
     queryFn: () =>
-      apiClient<{ data: LibraryCategory[] }>(`/library/categories?branchId=${branchId}`, { token }),
+      apiClient<PaginatedResponse<LibraryCategory>>(
+        `/library/categories?branchId=${branchId}&limit=100`,
+        { token },
+      ),
     enabled: !!token && !!branchId,
   });
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.libraryBooks(branchId, queryParams),
     queryFn: () => {
-      const params = new URLSearchParams({ branchId });
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+      });
       if (categoryFilter) params.set('categoryId', categoryFilter);
       if (search) params.set('search', search);
-      return apiClient<{ data: LibraryBook[] }>(`/library/books?${params.toString()}`, { token });
+      return apiClient<PaginatedResponse<LibraryBook>>(`/library/books?${params.toString()}`, {
+        token,
+      });
     },
     enabled: !!token && !!branchId,
+    placeholderData: (previous) => previous,
   });
 
   const remove = useMutation({
@@ -87,7 +111,7 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
   return (
     <>
       <ContentPanel
-        title={`Catalog (${rows.length})`}
+        title={`Catalog (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.LIBRARY_MANAGE}>
             <button type="button" className={pageHeaderActionClassName} onClick={() => setCreateOpen(true)}>
@@ -109,7 +133,10 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
               aria-label="Category filter"
               placeholder="All categories"
               value={categoryFilter}
-              onValueChange={setCategoryFilter}
+              onValueChange={(next) => {
+                setCategoryFilter(next);
+                setPage(1);
+              }}
               options={[
                 { value: '', label: 'All categories' },
                 ...categories.map((c) => ({ value: c.id, label: c.name })),
@@ -124,6 +151,7 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
                 onClick={() => {
                   setSearch('');
                   setCategoryFilter('');
+                  setPage(1);
                 }}
               >
                 Clear
@@ -135,89 +163,100 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
         {error ? (
           <p className="px-5 py-8 text-center text-sm text-red-600">Failed to load catalog</p>
         ) : (
-          <div className={cn(dataTableWrapperClass, 'border-0')}>
-            <table className={dataTableClass}>
-              <thead>
-                <tr>
-                  <th className={dataTableThClass}>Title</th>
-                  <th className={dataTableThClass}>Author</th>
-                  <th className={dataTableThClass}>Category</th>
-                  <th className={dataTableThClass}>Accession</th>
-                  <th className={dataTableThClass}>Copies</th>
-                  {canManage && <th className={dataTableThClass}>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 6 : 5} />
-                ) : rows.length === 0 ? (
+          <>
+            <div className={cn(dataTableWrapperClass, 'border-0')}>
+              <table className={dataTableClass}>
+                <thead>
                   <tr>
-                    <td
-                      colSpan={canManage ? 6 : 5}
-                      className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}
-                    >
-                      No books in catalog
-                    </td>
+                    <th className={dataTableThClass}>Title</th>
+                    <th className={dataTableThClass}>Author</th>
+                    <th className={dataTableThClass}>Category</th>
+                    <th className={dataTableThClass}>Accession</th>
+                    <th className={dataTableThClass}>Copies</th>
+                    {canManage && <th className={dataTableThClass}>Actions</th>}
                   </tr>
-                ) : (
-                  rows.map((book) => {
-                    const copies = book.copies ?? [];
-                    const available = copies.filter((c) => c.status === 'available').length;
-                    return (
-                      <tr key={book.id} className={dataTableRowHoverClass}>
-                        <td className={dataTableTdClass}>{book.title}</td>
-                        <td className={dataTableTdClass}>{book.author}</td>
-                        <td className={dataTableTdClass}>{book.category?.name ?? '—'}</td>
-                        <td className={dataTableTdClass}>{book.accessionNo ?? '—'}</td>
-                        <td className={dataTableTdClass}>
-                          <span className="text-sm">
-                            {available}/{copies.length} available
-                          </span>
-                          {copies.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {copies.map((c) => (
-                                <StatusBadge
-                                  key={c.id}
-                                  code={statusBadgeCode(c.status)}
-                                  label={`${c.copyCode}: ${formatLabel(c.status)}`}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        {canManage && (
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <DataTableSkeletonRows columns={canManage ? 6 : 5} rows={limit} />
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={canManage ? 6 : 5}
+                        className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}
+                      >
+                        No books in catalog
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((book) => {
+                      const copies = book.copies ?? [];
+                      const available = copies.filter((c) => c.status === 'available').length;
+                      return (
+                        <tr key={book.id} className={dataTableRowHoverClass}>
+                          <td className={dataTableTdClass}>{book.title}</td>
+                          <td className={dataTableTdClass}>{book.author}</td>
+                          <td className={dataTableTdClass}>{book.category?.name ?? '—'}</td>
+                          <td className={dataTableTdClass}>{book.accessionNo ?? '—'}</td>
                           <td className={dataTableTdClass}>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                className="rounded p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
-                                aria-label="Edit book"
-                                onClick={() => setEditBook(book)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded p-1.5 text-red-600 hover:bg-red-50"
-                                aria-label="Delete book"
-                                onClick={() => {
-                                  if (window.confirm('Remove this book from catalog?')) {
-                                    remove.mutate(book.id);
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <span className="text-sm">
+                              {available}/{copies.length} available
+                            </span>
+                            {copies.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {copies.map((c) => (
+                                  <StatusBadge
+                                    key={c.id}
+                                    code={statusBadgeCode(c.status)}
+                                    label={`${c.copyCode}: ${formatLabel(c.status)}`}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                          {canManage && (
+                            <td className={dataTableTdClass}>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  className="rounded p-1.5 text-[var(--text-sub-500)] hover:bg-neutral-50"
+                                  aria-label="Edit book"
+                                  onClick={() => setEditBook(book)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded p-1.5 text-red-600 hover:bg-red-50"
+                                  aria-label="Delete book"
+                                  onClick={() => {
+                                    if (window.confirm('Remove this book from catalog?')) {
+                                      remove.mutate(book.id);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {data && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={handleLimitChange}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
 

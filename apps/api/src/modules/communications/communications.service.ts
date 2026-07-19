@@ -10,6 +10,7 @@ import type { AuthUser, CommunicationsStatsResponse } from '@eims/types';
 import type {
   AbsenceAlertInput,
   FeeReminderInput,
+  ListCommunicationLogsQuery,
   NoticeBroadcastInput,
   SendMessageInput,
 } from '@eims/shared';
@@ -256,11 +257,33 @@ export class CommunicationsService {
     };
   }
 
-  async listLogs() {
-    const logs = await this.prisma.communicationLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return { data: logs };
+  async listLogs(query: ListCommunicationLogsQuery) {
+    const where = {
+      ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? { recipient: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+
+    const [logs, total] = await Promise.all([
+      this.prisma.communicationLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.communicationLog.count({ where }),
+    ]);
+
+    return {
+      data: logs,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      },
+    };
   }
 }

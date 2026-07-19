@@ -4,15 +4,19 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { linkParentStudentSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
@@ -39,6 +43,8 @@ export function LinkStudentDialog({
   const queryClient = useQueryClient();
   const [studentId, setStudentId] = useState('');
   const [relationship, setRelationship] = useState('guardian');
+  const { errors, validate, clearField, clearAll, applyApiErrors } =
+    useFormErrors(linkParentStudentSchema);
 
   const { data: students } = useQuery({
     queryKey: ['students-parents', parentId],
@@ -50,15 +56,16 @@ export function LinkStudentDialog({
     if (!open) {
       setStudentId('');
       setRelationship('guardian');
+      clearAll();
     }
-  }, [open]);
+  }, [open, clearAll]);
 
   const linkMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: { studentId: string; relationshipCode: string }) =>
       apiClient(`/parents/${parentId}/link-student`, {
         method: 'POST',
         token,
-        body: JSON.stringify({ studentId, relationshipCode: relationship }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Student linked');
@@ -66,8 +73,18 @@ export function LinkStudentDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { studentId, relationshipCode: relationship };
+    if (!validate(payload)) return;
+    linkMutation.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -92,13 +109,7 @@ export function LinkStudentDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            linkMutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Student</FormFieldLabel>
@@ -106,13 +117,17 @@ export function LinkStudentDialog({
                 aria-label="Select student"
                 placeholder="Select student"
                 value={studentId}
-                onValueChange={setStudentId}
+                onValueChange={(value) => {
+                  setStudentId(value);
+                  clearField('studentId');
+                }}
                 options={[
                   { value: '', label: 'Select student' },
                   ...(students?.data.map((s) => ({ value: s.id, label: s.fullName })) ?? []),
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.studentId} />
             </div>
 
             <div>
@@ -121,7 +136,10 @@ export function LinkStudentDialog({
                 aria-label="Relationship"
                 placeholder="Select relationship"
                 value={relationship}
-                onValueChange={setRelationship}
+                onValueChange={(value) => {
+                  setRelationship(value);
+                  clearField('relationshipCode');
+                }}
                 options={[
                   { value: 'father', label: 'Father' },
                   { value: 'mother', label: 'Mother' },
@@ -129,6 +147,7 @@ export function LinkStudentDialog({
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.relationshipCode} />
             </div>
           </div>
 

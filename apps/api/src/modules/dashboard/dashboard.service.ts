@@ -7,6 +7,8 @@ import { StudentsService } from '../students/students.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { computeChangePercent } from '../../common/utils/metrics.util';
+import { paginatedResult } from '../../common/utils/pagination.util';
+import type { PaginationQuery } from '@eims/shared';
 import type {
   AuthUser,
   DashboardAttendanceRing,
@@ -61,14 +63,19 @@ export class DashboardService {
     return result;
   }
 
-  async getBranchPerformance(branchId: string | null): Promise<DashboardBranchPerformanceResponse> {
+  async getBranchPerformance(
+    branchId: string | null,
+    query: PaginationQuery = { page: 1, limit: 8 },
+  ): Promise<DashboardBranchPerformanceResponse> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const cacheKey = `dashboard:branch-performance:${branchId ?? 'all'}:${today.toISOString().slice(0, 10)}`;
+    const cacheKey = `dashboard:branch-performance:${branchId ?? 'all'}:${today.toISOString().slice(0, 10)}:${page}:${limit}`;
     const cached = this.ttlCache.get<DashboardBranchPerformanceResponse>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.buildBranchPerformance(branchId, today);
+    const result = await this.buildBranchPerformance(branchId, today, page, limit);
     this.ttlCache.set(cacheKey, result, CHARTS_CACHE_TTL_MS);
     return result;
   }
@@ -360,27 +367,36 @@ export class DashboardService {
   private async buildBranchPerformance(
     branchId: string | null,
     today: Date,
+    page: number,
+    limit: number,
   ): Promise<DashboardBranchPerformanceResponse> {
-    const branches = await this.prisma.branch.findMany({
-      where: {
-        deletedAt: null,
-        isActive: true,
-        ...(branchId ? { id: branchId } : {}),
-      },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        city: true,
-        phone: true,
-        email: true,
-        isActive: true,
-      },
-    });
+    const where = {
+      deletedAt: null,
+      isActive: true,
+      ...(branchId ? { id: branchId } : {}),
+    };
+
+    const [total, branches] = await Promise.all([
+      this.prisma.branch.count({ where }),
+      this.prisma.branch.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          city: true,
+          phone: true,
+          email: true,
+          isActive: true,
+        },
+      }),
+    ]);
 
     if (branches.length === 0) {
-      return { branches: [] };
+      return paginatedResult([], total, page, limit);
     }
 
     const branchIds = branches.map((branch) => branch.id);
@@ -436,8 +452,8 @@ export class DashboardService {
       }
     }
 
-    return {
-      branches: branches.map((branch) => ({
+    return paginatedResult(
+      branches.map((branch) => ({
         id: branch.id,
         name: branch.name,
         addressLabel: this.formatBranchAddress(branch.city, branch.address),
@@ -448,7 +464,10 @@ export class DashboardService {
         attendanceRate: attendanceByBranch.get(branch.id) ?? 0,
         isActive: branch.isActive,
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   private async buildMonthlyRevenue(

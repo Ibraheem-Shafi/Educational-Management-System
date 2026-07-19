@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
+import { adjustPayrollLineSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import {
   Dialog,
   DialogContent,
@@ -33,24 +37,29 @@ export function AdjustLineDialog({
   const queryClient = useQueryClient();
   const [adjustmentsTotal, setAdjustmentsTotal] = useState('');
   const [reason, setReason] = useState('');
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(adjustPayrollLineSchema);
 
   useEffect(() => {
     if (line && open) {
       setAdjustmentsTotal(String(line.adjustmentsTotal ?? 0));
       setReason('');
+      clearAll();
     }
-  }, [line, open]);
+    if (!open) {
+      setAdjustmentsTotal('');
+      setReason('');
+      clearAll();
+    }
+  }, [line, open, clearAll]);
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (payload: { adjustmentsTotal: number; reason: string | null }) => {
       if (!line) throw new Error('No line selected');
       return apiClient(`/payroll/lines/${line.id}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({
-          adjustmentsTotal: Number(adjustmentsTotal) || 0,
-          reason: reason.trim() || null,
-        }),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: async () => {
@@ -61,8 +70,22 @@ export function AdjustLineDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.payrollRuns(branchId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!line) return;
+    const payload = {
+      adjustmentsTotal: Number(adjustmentsTotal) || 0,
+      reason: reason.trim() || null,
+    };
+    if (!validate(payload)) return;
+    saveMutation.mutate(payload);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -84,30 +107,37 @@ export function AdjustLineDialog({
           </button>
         </div>
 
-        <div className="mt-4 space-y-4">
+        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel label="Adjustment amount (PKR)" required />
             <input
               type="number"
               value={adjustmentsTotal}
-              onChange={(e) => setAdjustmentsTotal(e.target.value)}
-              className={modalFieldClassName}
+              onChange={(e) => {
+                clearField('adjustmentsTotal');
+                setAdjustmentsTotal(e.target.value);
+              }}
+              className={fieldClassName('adjustmentsTotal', modalFieldClassName)}
               placeholder="Positive for bonus, negative for deduction"
             />
+            <FormFieldError message={errors.adjustmentsTotal} />
           </div>
           <div>
             <FormFieldLabel label="Reason" />
             <textarea
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => {
+                clearField('reason');
+                setReason(e.target.value);
+              }}
               rows={2}
-              className={cn(modalFieldClassName, 'resize-none')}
+              className={fieldClassName('reason', cn(modalFieldClassName, 'resize-none'))}
             />
+            <FormFieldError message={errors.reason} />
           </div>
           <button
-            type="button"
+            type="submit"
             disabled={saveMutation.isPending || !line}
-            onClick={() => saveMutation.mutate()}
             className={cn(
               'w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
               saveMutation.isPending && 'opacity-50',
@@ -115,7 +145,7 @@ export function AdjustLineDialog({
           >
             {saveMutation.isPending ? 'Saving…' : 'Save adjustment'}
           </button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

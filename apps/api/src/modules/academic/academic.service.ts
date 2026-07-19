@@ -7,6 +7,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import type { AuthUser } from '@eims/types';
 import type {
   CreateProgramInput,
@@ -17,8 +18,10 @@ import type {
   ListBatchesQuery,
   CreateSubjectInput,
   UpdateSubjectInput,
+  ListSubjectsQuery,
   CreateAcademicSessionInput,
   UpdateAcademicSessionInput,
+  ListAcademicSessionsQuery,
   ProgramBatchInput,
 } from '@eims/shared';
 
@@ -45,22 +48,31 @@ export class ProgramsService {
 
   async findAll(query: ListProgramsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const programs = await this.prisma.program.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-      },
-      include: {
-        batches: {
-          where: { deletedAt: null },
-          select: { id: true, name: true },
-          orderBy: { name: 'asc' },
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [programs, total] = await Promise.all([
+      this.prisma.program.findMany({
+        where,
+        include: {
+          batches: {
+            where: { deletedAt: null },
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' },
+          },
         },
-      },
-      orderBy: { name: 'asc' },
-    });
-    return { data: programs.map((p) => this.toListResponse(p)) };
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.program.count({ where }),
+    ]);
+    return paginatedResult(programs.map((p) => this.toListResponse(p)), total, page, limit);
   }
 
   async findOne(id: string, branchId: string | null) {
@@ -295,18 +307,27 @@ export class BatchesService {
 
   async findAll(query: ListBatchesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const batches = await this.prisma.batch.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.programId ? { programId: query.programId } : {}),
-        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-      },
-      include: { program: { select: { id: true, name: true } } },
-      orderBy: { name: 'asc' },
-    });
-    return {
-      data: batches.map((b) => ({
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.programId ? { programId: query.programId } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [batches, total] = await Promise.all([
+      this.prisma.batch.findMany({
+        where,
+        include: { program: { select: { id: true, name: true } } },
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.batch.count({ where }),
+    ]);
+    return paginatedResult(
+      batches.map((b) => ({
         id: b.id,
         branchId: b.branchId,
         programId: b.programId,
@@ -319,7 +340,10 @@ export class BatchesService {
         createdAt: b.createdAt.toISOString(),
         updatedAt: b.updatedAt.toISOString(),
       })),
-    };
+      total,
+      page,
+      limit,
+    );
   }
 
   async findOne(id: string, branchId: string | null) {
@@ -437,12 +461,32 @@ export class SubjectsService {
     private readonly audit: AuditService,
   ) {}
 
-  async findAll() {
-    const subjects = await this.prisma.subject.findMany({
-      where: { deletedAt: null },
-      orderBy: { name: 'asc' },
-    });
-    return { data: subjects.map(this.toResponse) };
+  async findAll(query: ListSubjectsQuery) {
+    const where = {
+      deletedAt: null,
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [subjects, total] = await Promise.all([
+      this.prisma.subject.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.subject.count({ where }),
+    ]);
+    return paginatedResult(subjects.map(this.toResponse), total, page, limit);
   }
 
   async findOne(id: string) {
@@ -529,11 +573,26 @@ export class AcademicSessionsService {
     private readonly audit: AuditService,
   ) {}
 
-  async findAll() {
-    const sessions = await this.prisma.academicSession.findMany({
-      orderBy: { startDate: 'desc' },
-    });
-    return { data: sessions.map(this.toResponse) };
+  async findAll(query: ListAcademicSessionsQuery) {
+    const where = {
+      ...(query.isCurrent !== undefined ? { isCurrent: query.isCurrent } : {}),
+      ...(query.search
+        ? { name: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.academicSession.findMany({
+        where,
+        orderBy: { startDate: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.academicSession.count({ where }),
+    ]);
+    return paginatedResult(sessions.map(this.toResponse), total, page, limit);
   }
 
   async findOne(id: string) {

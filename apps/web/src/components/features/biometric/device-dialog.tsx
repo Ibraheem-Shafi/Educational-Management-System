@@ -4,16 +4,23 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fingerprint, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { biometricVendors } from '@eims/shared';
+import {
+  biometricVendors,
+  createBiometricDeviceSchema,
+  updateBiometricDeviceSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -45,9 +52,14 @@ export function DeviceDialog({
   const isEdit = Boolean(device);
   const [form, setForm] = useState(emptyForm);
 
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateBiometricDeviceSchema : createBiometricDeviceSchema,
+  );
+
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (device) {
@@ -61,42 +73,53 @@ export function DeviceDialog({
     } else {
       setForm(emptyForm);
     }
-  }, [open, device]);
+  }, [open, device, clearAll]);
+
+  const buildPayload = () => {
+    const payload = {
+      name: form.name.trim(),
+      vendor: form.vendor,
+      deviceCode: form.deviceCode.trim(),
+      location: form.location.trim() || null,
+      isActive: form.isActive === 'true',
+    };
+    if (isEdit && device) return payload;
+    return { branchId, ...payload };
+  };
 
   const save = useMutation({
-    mutationFn: async () => {
-      const body = {
-        branchId,
-        name: form.name.trim(),
-        vendor: form.vendor,
-        deviceCode: form.deviceCode.trim(),
-        location: form.location.trim() || null,
-        isActive: form.isActive === 'true',
-      };
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && device) {
         return apiClient(`/biometric/devices/${device.id}`, {
           method: 'PATCH',
           token,
-          body: {
-            name: body.name,
-            vendor: body.vendor,
-            deviceCode: body.deviceCode,
-            location: body.location,
-            isActive: body.isActive,
-          },
+          body: payload,
         });
       }
-      return apiClient('/biometric/devices', { method: 'POST', token, body });
+      return apiClient('/biometric/devices', { method: 'POST', token, body: payload });
     },
     onSuccess: async () => {
       toast.success(isEdit ? 'Device updated' : 'Device created');
       await queryClient.invalidateQueries({ queryKey: queryKeys.biometricDevices(branchId) });
       onOpenChange(false);
     },
-    onError: () => toast.error(isEdit ? 'Unable to update device' : 'Unable to create device'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update device' : 'Unable to create device'));
+    },
   });
 
-  const canSubmit = form.name.trim() && form.deviceCode.trim();
+  const updateForm = (key: keyof typeof emptyForm, value: string) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    clearField(key);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    save.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -114,65 +137,62 @@ export function DeviceDialog({
           {isEdit ? 'Update biometric device details' : 'Register a new biometric device'}
         </DialogDescription>
 
-        <form
-          className="space-y-4 px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit) save.mutate();
-          }}
-        >
+        <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel htmlFor="device-name">Name</FormFieldLabel>
             <input
               id="device-name"
-              className={modalFieldClassName}
+              className={fieldClassName('name', modalFieldClassName)}
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              required
+              onChange={(e) => updateForm('name', e.target.value)}
             />
+            <FormFieldError message={errors.name} />
           </div>
           <div>
             <FormFieldLabel htmlFor="device-code">Device code</FormFieldLabel>
             <input
               id="device-code"
-              className={modalFieldClassName}
+              className={fieldClassName('deviceCode', modalFieldClassName)}
               value={form.deviceCode}
-              onChange={(e) => setForm((f) => ({ ...f, deviceCode: e.target.value }))}
-              required
+              onChange={(e) => updateForm('deviceCode', e.target.value)}
               disabled={isEdit}
             />
+            <FormFieldError message={errors.deviceCode} />
           </div>
           <div>
             <FormFieldLabel htmlFor="device-vendor">Vendor</FormFieldLabel>
             <SelectDropdown
               aria-label="Vendor"
               value={form.vendor}
-              onValueChange={(value) => setForm((f) => ({ ...f, vendor: value }))}
+              onValueChange={(value) => updateForm('vendor', value)}
               options={biometricVendors.map((v) => ({ value: v, label: formatLabel(v) }))}
-              className="w-full"
+              className={fieldClassName('vendor', 'w-full')}
             />
+            <FormFieldError message={errors.vendor} />
           </div>
           <div>
             <FormFieldLabel htmlFor="device-location">Location</FormFieldLabel>
             <input
               id="device-location"
-              className={modalFieldClassName}
+              className={fieldClassName('location', modalFieldClassName)}
               value={form.location}
-              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+              onChange={(e) => updateForm('location', e.target.value)}
             />
+            <FormFieldError message={errors.location} />
           </div>
           <div>
             <FormFieldLabel htmlFor="device-active">Status</FormFieldLabel>
             <SelectDropdown
               aria-label="Status"
               value={form.isActive}
-              onValueChange={(value) => setForm((f) => ({ ...f, isActive: value }))}
+              onValueChange={(value) => updateForm('isActive', value)}
               options={[
                 { value: 'true', label: 'Active' },
                 { value: 'false', label: 'Inactive' },
               ]}
-              className="w-full"
+              className={fieldClassName('isActive', 'w-full')}
             />
+            <FormFieldError message={errors.isActive} />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -187,7 +207,7 @@ export function DeviceDialog({
             </button>
             <button
               type="submit"
-              disabled={!canSubmit || save.isPending}
+              disabled={save.isPending}
               className="rounded-lg bg-[var(--primary-base)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {save.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create device'}

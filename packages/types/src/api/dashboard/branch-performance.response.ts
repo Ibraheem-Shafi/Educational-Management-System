@@ -1,3 +1,5 @@
+import type { PaginatedResponse } from '../common/pagination';
+
 export interface DashboardBranchPerformanceRow {
   id: string;
   name: string;
@@ -10,6 +12,4 @@ export interface DashboardBranchPerformanceRow {
   isActive: boolean;
 }
 
-export interface DashboardBranchPerformanceResponse {
-  branches: DashboardBranchPerformanceRow[];
-}
+export type DashboardBranchPerformanceResponse = PaginatedResponse<DashboardBranchPerformanceRow>;

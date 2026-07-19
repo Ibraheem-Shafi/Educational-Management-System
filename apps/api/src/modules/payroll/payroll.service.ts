@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { AccountingPostingService } from '../accounting/accounting-posting.service';
@@ -74,30 +75,40 @@ export class PayrollService {
 
   async findStructures(query: ListSalaryStructuresQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const structures = await this.prisma.salaryStructure.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.userId ? { userId: query.userId } : {}),
-        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-        ...(query.search
-          ? {
-              user: {
-                OR: [
-                  { fullName: { contains: query.search, mode: 'insensitive' } },
-                  { email: { contains: query.search, mode: 'insensitive' } },
-                ],
-              },
-            }
-          : {}),
-      },
-      include: {
-        user: { select: { id: true, fullName: true } },
-        components: { orderBy: { kind: 'asc' } },
-      },
-      orderBy: [{ isActive: 'desc' }, { effectiveFrom: 'desc' }],
-    });
-    return { data: structures.map(this.toStructureResponse) };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            user: {
+              OR: [
+                { fullName: { contains: query.search, mode: 'insensitive' as const } },
+                { email: { contains: query.search, mode: 'insensitive' as const } },
+              ],
+            },
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [structures, total] = await Promise.all([
+      this.prisma.salaryStructure.findMany({
+        where,
+        include: {
+          user: { select: { id: true, fullName: true } },
+          components: { orderBy: { kind: 'asc' } },
+        },
+        orderBy: [{ isActive: 'desc' }, { effectiveFrom: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.salaryStructure.count({ where }),
+    ]);
+
+    return paginatedResult(structures.map(this.toStructureResponse), total, page, limit);
   }
 
   async findStructure(id: string, branchId: string | null) {
@@ -242,19 +253,29 @@ export class PayrollService {
 
   async findRuns(query: ListPayrollRunsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const runs = await this.prisma.payrollRun.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.year !== undefined ? { year: query.year } : {}),
-        ...(query.month !== undefined ? { month: query.month } : {}),
-        ...(query.status ? { status: query.status } : {}),
-      },
-      include: {
-        _count: { select: { lines: true } },
-      },
-      orderBy: [{ year: 'desc' }, { month: 'desc' }],
-    });
-    return { data: runs.map(this.toRunSummary) };
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.year !== undefined ? { year: query.year } : {}),
+      ...(query.month !== undefined ? { month: query.month } : {}),
+      ...(query.status ? { status: query.status } : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [runs, total] = await Promise.all([
+      this.prisma.payrollRun.findMany({
+        where,
+        include: {
+          _count: { select: { lines: true } },
+        },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.payrollRun.count({ where }),
+    ]);
+
+    return paginatedResult(runs.map(this.toRunSummary), total, page, limit);
   }
 
   async findRun(id: string, branchId: string | null) {

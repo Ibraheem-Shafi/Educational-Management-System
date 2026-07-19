@@ -1,22 +1,31 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalString,
+  requiredId,
+  requiredString,
+} from '../validation/messages';
+import { paginationQuerySchema } from './common.schema';
 
 export const biometricEntityTypes = ['student', 'user'] as const;
 export const biometricVendors = ['generic', 'zkteco', 'hikvision', 'suprema'] as const;
 
-export const listBiometricDevicesQuerySchema = z.object({
-  branchId: z.string().optional(),
-  isActive: z.coerce.boolean().optional(),
-  search: z.string().optional(),
-});
+export const listBiometricDevicesQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    isActive: z.coerce.boolean().optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListBiometricDevicesQuery = z.infer<typeof listBiometricDevicesQuerySchema>;
 
 export const createBiometricDeviceSchema = z.object({
-  branchId: z.string().min(1),
-  name: z.string().min(1).max(200),
-  vendor: z.enum(biometricVendors).optional(),
-  deviceCode: z.string().min(1).max(100),
-  location: z.string().max(200).optional().nullable(),
+  branchId: requiredId('Branch'),
+  name: requiredString('Name', 1, 200),
+  vendor: z.enum(biometricVendors, { errorMap: () => ({ message: MSG.select('vendor') }) }).optional(),
+  deviceCode: requiredString('Device code', 1, 100),
+  location: optionalString(200).nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -28,20 +37,22 @@ export const updateBiometricDeviceSchema = createBiometricDeviceSchema
 
 export type UpdateBiometricDeviceInput = z.infer<typeof updateBiometricDeviceSchema>;
 
-export const listBiometricMappingsQuerySchema = z.object({
-  branchId: z.string().optional(),
-  deviceId: z.string().optional(),
-  entityType: z.enum(biometricEntityTypes).optional(),
-  search: z.string().optional(),
-});
+export const listBiometricMappingsQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    deviceId: z.string().optional(),
+    entityType: z.enum(biometricEntityTypes).optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListBiometricMappingsQuery = z.infer<typeof listBiometricMappingsQuerySchema>;
 
 export const createBiometricMappingSchema = z.object({
-  branchId: z.string().min(1),
-  externalPersonId: z.string().min(1).max(100),
-  entityType: z.enum(biometricEntityTypes),
-  entityId: z.string().min(1),
+  branchId: requiredId('Branch'),
+  externalPersonId: requiredString('External person ID', 1, 100),
+  entityType: z.enum(biometricEntityTypes, { errorMap: () => ({ message: MSG.select('entity type') }) }),
+  entityId: requiredId('Entity'),
   deviceId: z.string().optional().nullable(),
 });
 
@@ -53,23 +64,24 @@ export const updateBiometricMappingSchema = createBiometricMappingSchema
 
 export type UpdateBiometricMappingInput = z.infer<typeof updateBiometricMappingSchema>;
 
-export const listBiometricPunchLogsQuerySchema = z.object({
-  branchId: z.string().optional(),
-  deviceId: z.string().optional(),
-  externalPersonId: z.string().optional(),
-  matched: z.coerce.boolean().optional(),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-});
+export const listBiometricPunchLogsQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    deviceId: z.string().optional(),
+    externalPersonId: z.string().optional(),
+    matched: z.coerce.boolean().optional(),
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListBiometricPunchLogsQuery = z.infer<typeof listBiometricPunchLogsQuerySchema>;
 
 export const biometricPunchWebhookSchema = z.object({
-  deviceCode: z.string().min(1).max(100),
-  externalPersonId: z.string().min(1).max(100),
-  punchedAt: z.string().datetime().optional(),
-  statusCode: z.string().max(50).optional(),
+  deviceCode: requiredString('Device code', 1, 100),
+  externalPersonId: requiredString('External person ID', 1, 100),
+  punchedAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
+  statusCode: optionalString(50),
 });
 
 export type BiometricPunchWebhookInput = z.infer<typeof biometricPunchWebhookSchema>;

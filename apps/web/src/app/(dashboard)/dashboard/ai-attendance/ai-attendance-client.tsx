@@ -4,10 +4,14 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, analyzeOcrSessionSchema, confirmOcrSessionSchema, createOcrSessionSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadAttendanceRegister } from '@/lib/upload-attendance-register';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -18,6 +22,8 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +66,31 @@ export default function AiAttendancePage() {
   const [rawText, setRawText] = useState('');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [statusByStudent, setStatusByStudent] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+  const {
+    errors: uploadErrors,
+    validate: validateUpload,
+    clearField: clearUploadField,
+    fieldClassName: uploadFieldClassName,
+    applyApiErrors: applyUploadApiErrors,
+  } = useFormErrors(createOcrSessionSchema);
+  const {
+    errors: analyzeErrors,
+    validate: validateAnalyze,
+    clearField: clearAnalyzeField,
+    applyApiErrors: applyAnalyzeApiErrors,
+  } = useFormErrors(analyzeOcrSessionSchema);
+  const {
+    errors: confirmErrors,
+    validate: validateConfirm,
+    applyApiErrors: applyConfirmApiErrors,
+  } = useFormErrors(confirmOcrSessionSchema);
+
+  const sessionsQueryParams = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  }).toString();
 
   const { data: branches } = useQuery({
     queryKey: queryKeys.branches,
@@ -86,9 +117,13 @@ export default function AiAttendancePage() {
   });
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery({
-    queryKey: queryKeys.aiAttendanceSessions,
-    queryFn: () => apiClient<{ data: OcrSession[] }>('/ai-attendance/sessions', { token }),
+    queryKey: queryKeys.aiAttendanceSessions({ page, limit }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<OcrSession>>(`/ai-attendance/sessions?${sessionsQueryParams}`, {
+        token,
+      }),
     enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
   const { data: activeSession } = useQuery({
@@ -100,12 +135,12 @@ export default function AiAttendancePage() {
   const stats = useMemo(() => {
     const list = sessions?.data ?? [];
     return {
-      total: list.length,
+      total: sessions?.meta.total ?? list.length,
       pending: list.filter((s) => s.status !== 'confirmed').length,
       confirmed: list.filter((s) => s.status === 'confirmed').length,
       analyzed: list.filter((s) => s.suggestions.length > 0).length,
     };
-  }, [sessions?.data]);
+  }, [sessions?.data, sessions?.meta.total]);
 
   const batchOptions = [
     { value: '', label: 'Select batch' },
@@ -118,34 +153,38 @@ export default function AiAttendancePage() {
   }));
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({
+      file,
+      payload,
+    }: {
+      file: File;
+      payload: { branchId: string; batchId: string; date: string; imagePath: string };
+    }) => {
       const path = await uploadAttendanceRegister(file, `${effectiveBranchId}-${Date.now()}`);
       const created = await apiClient<OcrSession>('/ai-attendance/sessions', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          branchId: effectiveBranchId,
-          batchId,
-          date,
-          imagePath: path,
-        }),
+        body: JSON.stringify({ ...payload, imagePath: path }),
       });
       return created;
     },
     onSuccess: (created) => {
       toast.success('Register uploaded');
       setActiveSessionId(created.id);
-      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions() });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyUploadApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const analyzeMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: { rawText?: string }) =>
       apiClient<OcrSession>(`/ai-attendance/sessions/${activeSessionId}/analyze`, {
         method: 'POST',
         token,
-        body: JSON.stringify(rawText ? { rawText } : {}),
+        body: JSON.stringify(body),
       }),
     onSuccess: (data) => {
       toast.success('Analysis complete — review suggestions');
@@ -156,29 +195,59 @@ export default function AiAttendancePage() {
       setStatusByStudent(map);
       queryClient.invalidateQueries({ queryKey: ['ai-attendance-session', activeSessionId] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyAnalyzeApiErrors)) return;
+      toast.error(err.message);
+    },
   });
 
   const confirmMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: {
+      records: Array<{ studentId: string; statusId: string; remarks?: string }>;
+    }) =>
       apiClient(`/ai-attendance/sessions/${activeSessionId}/confirm`, {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          records: (activeSession?.suggestions ?? []).map((s) => ({
-            studentId: s.studentId,
-            statusId: statusByStudent[s.studentId] ?? s.statusId,
-            remarks: s.sourceLine ? `OCR: ${s.sourceLine}` : 'AI attendance OCR',
-          })),
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Attendance confirmed');
-      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions() });
       setActiveSessionId(null);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyConfirmApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleUpload = (file: File) => {
+    const payload = {
+      branchId: effectiveBranchId,
+      batchId,
+      date,
+      imagePath: 'pending',
+    };
+    if (!validateUpload(payload)) return;
+    uploadMutation.mutate({ file, payload });
+  };
+
+  const handleAnalyze = () => {
+    const payload = rawText.trim() ? { rawText: rawText.trim() } : {};
+    if (!validateAnalyze(payload)) return;
+    analyzeMutation.mutate(payload);
+  };
+
+  const handleConfirm = () => {
+    const records = (activeSession?.suggestions ?? []).map((s) => ({
+      studentId: s.studentId,
+      statusId: statusByStudent[s.studentId] ?? s.statusId ?? '',
+      remarks: s.sourceLine ? `OCR: ${s.sourceLine}` : 'AI attendance OCR',
+    }));
+    const payload = { records };
+    if (!validateConfirm(payload)) return;
+    confirmMutation.mutate(payload);
+  };
 
   const suggestions = activeSession?.suggestions ?? [];
 
@@ -203,25 +272,43 @@ export default function AiAttendancePage() {
       <PermissionGate permission={PERMISSIONS.AI_ATTENDANCE_USE}>
         <ContentPanel title="1. Upload register">
           <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-            <SelectDropdown
-              aria-label="Batch"
-              placeholder="Select batch"
-              value={batchId}
-              onValueChange={setBatchId}
-              options={batchOptions}
-              fullWidth
-            />
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <div>
+              <SelectDropdown
+                aria-label="Batch"
+                placeholder="Select batch"
+                value={batchId}
+                onValueChange={(value) => {
+                  setBatchId(value);
+                  clearUploadField('batchId');
+                }}
+                options={batchOptions}
+                fullWidth
+                className={uploadFieldClassName('batchId', 'w-full')}
+              />
+              <FormFieldError message={uploadErrors.batchId} />
+            </div>
+            <div>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  clearUploadField('date');
+                }}
+                className={uploadFieldClassName('date', '')}
+              />
+              <FormFieldError message={uploadErrors.date} />
+            </div>
             <Input
               type="file"
               accept="image/*"
               className="sm:col-span-2"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file && batchId) uploadMutation.mutate(file);
-                else if (!batchId) toast.error('Select a batch first');
+                if (file) handleUpload(file);
               }}
             />
+            <FormFieldError message={uploadErrors.branchId ?? uploadErrors.imagePath} />
           </div>
         </ContentPanel>
       </PermissionGate>
@@ -230,13 +317,20 @@ export default function AiAttendancePage() {
         <ContentPanel title="2. Analyze & review">
           <div className="space-y-4 px-5 py-5">
             <textarea
-              className="min-h-24 w-full rounded-md border border-[var(--stroke-soft-200,#E2E4E9)] bg-white p-3 text-sm"
+              className={cn(
+                'min-h-24 w-full rounded-md border border-[var(--stroke-soft-200,#E2E4E9)] bg-white p-3 text-sm',
+                analyzeErrors.rawText && 'border-red-500',
+              )}
               placeholder="Paste OCR text from register (optional if OPENAI_API_KEY is set)"
               value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
+              onChange={(e) => {
+                setRawText(e.target.value);
+                clearAnalyzeField('rawText');
+              }}
             />
+            <FormFieldError message={analyzeErrors.rawText} />
             <Button
-              onClick={() => analyzeMutation.mutate()}
+              onClick={handleAnalyze}
               disabled={analyzeMutation.isPending || activeSession?.status === 'confirmed'}
             >
               Analyze register
@@ -280,9 +374,12 @@ export default function AiAttendancePage() {
             )}
 
             {suggestions.length > 0 && activeSession?.status !== 'confirmed' && (
-              <Button onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
-                Confirm attendance
-              </Button>
+              <div>
+                <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                  Confirm attendance
+                </Button>
+                <FormFieldError message={confirmErrors.records} />
+              </div>
             )}
           </div>
         </ContentPanel>
@@ -299,22 +396,16 @@ export default function AiAttendancePage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {sessionsLoading &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>
-                    <td colSpan={3} className={tdClass}>
-                      <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
-                    </td>
-                  </tr>
-                ))}
-              {!sessionsLoading && stats.total === 0 && (
+              {sessionsLoading ? (
+                <DataTableSkeletonRows columns={3} rows={limit} />
+              ) : stats.total === 0 ? (
                 <tr>
                   <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
                     No sessions yet
                   </td>
                 </tr>
-              )}
-              {sessions?.data.map((s) => (
+              ) : (
+                sessions?.data.map((s) => (
                 <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
                   <td className={tdClass}>{s.date}</td>
                   <td className={tdClass}>
@@ -329,10 +420,24 @@ export default function AiAttendancePage() {
                     />
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
+
+        {sessions?.meta && (
+          <PaginationBar
+            page={page}
+            totalPages={sessions.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
+        )}
       </ContentPanel>
     </div>
   );

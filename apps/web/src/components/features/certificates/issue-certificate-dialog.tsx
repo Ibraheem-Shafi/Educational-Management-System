@@ -4,15 +4,19 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Award, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { issueCertificateSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -50,6 +54,8 @@ export function IssueCertificateDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ ...emptyForm, studentId: defaultStudentId ?? '' });
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(issueCertificateSchema);
 
   const { data: students } = useQuery({
     queryKey: ['students-certificates'],
@@ -67,25 +73,20 @@ export function IssueCertificateDialog({
   useEffect(() => {
     if (!open) {
       setForm({ ...emptyForm, studentId: defaultStudentId ?? '' });
+      clearAll();
       return;
     }
     if (defaultStudentId) {
       setForm((prev) => ({ ...prev, studentId: defaultStudentId }));
     }
-  }, [open, defaultStudentId]);
+  }, [open, defaultStudentId, clearAll]);
 
   const issueMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Record<string, unknown>) =>
       apiClient('/certificates/issue', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          branchId,
-          studentId: form.studentId,
-          templateId: form.templateId,
-          title: form.title.trim() || undefined,
-          serialNo: form.serialNo.trim() || null,
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: (result) => {
       toast.success('Certificate issued');
@@ -94,8 +95,24 @@ export function IssueCertificateDialog({
       const issueId = (result as { id: string }).id;
       window.open(`/print/certificates/${issueId}`, '_blank');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      branchId,
+      studentId: form.studentId,
+      templateId: form.templateId,
+      ...(form.title.trim() ? { title: form.title.trim() } : {}),
+      serialNo: form.serialNo.trim() || null,
+    };
+    if (!validate(payload)) return;
+    issueMutation.mutate(payload);
+  };
 
   const studentOptions =
     students?.data.map((s) => ({ value: s.id, label: s.fullName })) ?? [];
@@ -125,27 +142,21 @@ export function IssueCertificateDialog({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <form
-          className="space-y-4 px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!canSubmit) {
-              toast.error('Select a student and template');
-              return;
-            }
-            issueMutation.mutate();
-          }}
-        >
+        <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel required>Student</FormFieldLabel>
             <SelectDropdown
               aria-label="Student"
               placeholder="Select student"
               value={form.studentId}
-              onValueChange={(value) => setForm((f) => ({ ...f, studentId: value }))}
+              onValueChange={(value) => {
+                setForm((f) => ({ ...f, studentId: value }));
+                clearField('studentId');
+              }}
               options={studentOptions}
               fullWidth
             />
+            <FormFieldError message={errors.studentId} />
           </div>
           <div>
             <FormFieldLabel required>Template</FormFieldLabel>
@@ -153,18 +164,41 @@ export function IssueCertificateDialog({
               aria-label="Template"
               placeholder="Select template"
               value={form.templateId}
-              onValueChange={(value) => setForm((f) => ({ ...f, templateId: value }))}
+              onValueChange={(value) => {
+                setForm((f) => ({ ...f, templateId: value }));
+                clearField('templateId');
+              }}
               options={templateOptions}
               fullWidth
             />
+            <FormFieldError message={errors.templateId} />
           </div>
           <div>
             <FormFieldLabel>Title</FormFieldLabel>
-            <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Optional custom title" className={modalFieldClassName} />
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, title: e.target.value }));
+                clearField('title');
+              }}
+              placeholder="Optional custom title"
+              className={fieldClassName('title', modalFieldClassName)}
+            />
+            <FormFieldError message={errors.title} />
           </div>
           <div>
             <FormFieldLabel>Serial number</FormFieldLabel>
-            <input type="text" value={form.serialNo} onChange={(e) => setForm((f) => ({ ...f, serialNo: e.target.value }))} className={modalFieldClassName} />
+            <input
+              type="text"
+              value={form.serialNo}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, serialNo: e.target.value }));
+                clearField('serialNo');
+              }}
+              className={fieldClassName('serialNo', modalFieldClassName)}
+            />
+            <FormFieldError message={errors.serialNo} />
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={() => onOpenChange(false)} className="flex-1 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] py-2 text-sm font-medium">Cancel</button>

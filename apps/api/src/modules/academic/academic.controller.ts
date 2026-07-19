@@ -33,8 +33,10 @@ import {
   listBatchesQuerySchema,
   createSubjectSchema,
   updateSubjectSchema,
+  listSubjectsQuerySchema,
   createAcademicSessionSchema,
   updateAcademicSessionSchema,
+  listAcademicSessionsQuerySchema,
   setBatchSubjectsSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -47,8 +49,10 @@ import type {
   ListBatchesQuery,
   CreateSubjectInput,
   UpdateSubjectInput,
+  ListSubjectsQuery,
   CreateAcademicSessionInput,
   UpdateAcademicSessionInput,
+  ListAcademicSessionsQuery,
   SetBatchSubjectsInput,
 } from '@eims/shared';
 
@@ -169,8 +173,8 @@ export class SubjectsController {
 
   @Get()
   @Permissions('academic.read')
-  findAll() {
-    return this.subjectsService.findAll();
+  findAll(@Query(createZodPipe(listSubjectsQuerySchema)) query: ListSubjectsQuery) {
+    return this.subjectsService.findAll(query);
   }
 
   @Get(':id')
@@ -209,8 +213,8 @@ export class AcademicSessionsController {
 
   @Get()
   @Permissions('academic.read')
-  findAll() {
-    return this.sessionsService.findAll();
+  findAll(@Query(createZodPipe(listAcademicSessionsQuerySchema)) query: ListAcademicSessionsQuery) {
+    return this.sessionsService.findAll(query);
   }
 
   @Get(':id')

@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  MSG,
+  optionalEmail,
+  optionalPhone,
+  optionalString,
+  requiredString,
+} from '../validation/messages';
 
 export const terminologySchema = z.object({
   batch: z.string(),
@@ -18,18 +25,18 @@ export const featureFlagsSchema = z.object({
 });
 
 export const updateInstitutionSettingsSchema = z.object({
-  name: z.string().min(2).max(200).optional(),
-  logoUrl: z.string().url().nullable().optional(),
-  faviconUrl: z.string().url().nullable().optional(),
-  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  address: z.string().max(500).nullable().optional(),
-  city: z.string().max(100).nullable().optional(),
-  province: z.string().max(100).nullable().optional(),
-  phone: z.string().nullable().optional(),
-  email: z.string().email().nullable().optional(),
-  website: z.string().url().nullable().optional(),
-  timezone: z.string().min(1).max(64).optional(),
-  currency: z.string().min(3).max(3).optional(),
+  name: requiredString('Institution name').optional(),
+  logoUrl: z.string().url(MSG.invalidUrl).nullable().optional(),
+  faviconUrl: z.string().url(MSG.invalidUrl).nullable().optional(),
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Enter a valid hex color (e.g. #1a2b3c)').optional(),
+  address: optionalString(500).nullable(),
+  city: optionalString(100).nullable(),
+  province: optionalString(100).nullable(),
+  phone: optionalPhone().nullable(),
+  email: optionalEmail().nullable(),
+  website: z.string().url(MSG.invalidUrl).nullable().optional(),
+  timezone: requiredString('Timezone', 1, 64).optional(),
+  currency: requiredString('Currency', 3, 3).optional(),
   terminology: terminologySchema.partial().optional(),
   featureFlags: featureFlagsSchema.partial().optional(),
 });

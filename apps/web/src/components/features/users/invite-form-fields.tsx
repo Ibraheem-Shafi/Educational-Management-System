@@ -3,19 +3,28 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
-import { dropdownMenuStyle, getDropdownPortalRoot, handleDropdownOptionSelect, useDropdownMenu } from '@/hooks/use-dropdown-menu';
+import { DropdownMenuBackdrop, dropdownMenuStyle, getDropdownPortalRoot, handleDropdownOptionSelect, useDropdownMenu } from '@/hooks/use-dropdown-menu';
 import { cn } from '@/lib/utils';
 
 export function FormFieldLabel({
   children,
+  label,
   required,
+  htmlFor,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
+  /** Shorthand when the label is plain text (e.g. payroll dialogs). */
+  label?: string;
   required?: boolean;
+  htmlFor?: string;
 }) {
+  const content = children ?? label;
   return (
-    <label className="mb-1 flex items-center gap-px text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--text-main-900)]">
-      {children}
+    <label
+      htmlFor={htmlFor}
+      className="mb-1 flex items-center gap-px text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--text-main-900)]"
+    >
+      {content}
       {required && <span className="text-[#FF3B30]">*</span>}
     </label>
   );
@@ -107,6 +116,10 @@ export function InvitePhoneField({
             strokeWidth={2}
           />
         </button>
+
+        {open && position && typeof document !== 'undefined' && (
+          <DropdownMenuBackdrop onClose={() => setOpen(false)} />
+        )}
 
         {open &&
           position &&

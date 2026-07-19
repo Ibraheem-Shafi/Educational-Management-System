@@ -103,6 +103,9 @@ export default function StudentsPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const canCreate = can(PERMISSIONS.STUDENTS_CREATE);
+  // Batch filter requires reading academic data; teachers lack it, so hide the
+  // filter (and skip the request) rather than surfacing a 403.
+  const canReadBatches = can(PERMISSIONS.ACADEMIC_READ);
   const [search, setSearch] = useState('');
   const [batchId, setBatchId] = useState('');
   const [statusId, setStatusId] = useState('');
@@ -126,7 +129,7 @@ export default function StudentsPage() {
         `/batches${user?.branchId ? `?branchId=${user.branchId}` : ''}`,
         { token },
       ),
-    enabled: !!token,
+    enabled: !!token && canReadBatches,
   });
 
   const { data: statuses } = useQuery({
@@ -143,6 +146,8 @@ export default function StudentsPage() {
         token,
       }),
     enabled: !!token,
+    retry: 2,
+    placeholderData: (previous) => previous,
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -195,19 +200,21 @@ export default function StudentsPage() {
 
       <FilterBar className="items-center">
         <SearchInput value={search} onValueChange={handleSearchChange} />
-        <SelectDropdown
-          aria-label="Filter by batch"
-          placeholder="All batches"
-          value={batchId}
-          onValueChange={(next) => {
-            setBatchId(next);
-            setPage(1);
-          }}
-          options={[
-            { value: '', label: 'All batches' },
-            ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
-          ]}
-        />
+        {canReadBatches && (
+          <SelectDropdown
+            aria-label="Filter by batch"
+            placeholder="All batches"
+            value={batchId}
+            onValueChange={(next) => {
+              setBatchId(next);
+              setPage(1);
+            }}
+            options={[
+              { value: '', label: 'All batches' },
+              ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+            ]}
+          />
+        )}
         <SelectDropdown
           aria-label="Filter by status"
           placeholder="All statuses"

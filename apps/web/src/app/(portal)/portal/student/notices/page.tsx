@@ -19,7 +19,7 @@ export default function StudentNoticesPage() {
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(8);
   const [search, setSearch] = useState('');
 
   useNoticesRealtime(['portal-student-notices']);

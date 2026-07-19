@@ -3,8 +3,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { publicInquirySchema } from '@eims/shared';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { FormFieldError } from '@/components/forms/form-field-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { cn } from '@/lib/utils';
 
 interface PublicBranch {
   id: string;
@@ -12,6 +17,9 @@ interface PublicBranch {
   code: string;
   city: string | null;
 }
+
+const fieldClass =
+  'w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm';
 
 export default function PublicApplyPage() {
   const [form, setForm] = useState({
@@ -23,6 +31,8 @@ export default function PublicApplyPage() {
     notes: '',
   });
   const [submitted, setSubmitted] = useState(false);
+  const { errors, clearField, validate, applyApiErrors, fieldClassName } =
+    useFormErrors(publicInquirySchema);
 
   const { data: institution } = useQuery({
     queryKey: ['public-institution'],
@@ -36,24 +46,32 @@ export default function PublicApplyPage() {
   });
 
   const submit = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: {
+      branchId: string;
+      fullName: string;
+      phone: string;
+      email?: string;
+      programInterest?: string;
+      notes?: string;
+    }) =>
       apiClient<{ message: string }>('/public/inquiries', {
         method: 'POST',
-        body: {
-          branchId: form.branchId,
-          fullName: form.fullName.trim(),
-          phone: form.phone.trim(),
-          email: form.email.trim() || undefined,
-          programInterest: form.programInterest.trim() || undefined,
-          notes: form.notes.trim() || undefined,
-        },
+        body: payload,
       }),
     onSuccess: (res) => {
       toast.success(res.message);
       setSubmitted(true);
     },
-    onError: (err: Error) => toast.error(err.message || 'Unable to submit inquiry'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Unable to submit inquiry');
+    },
   });
+
+  const updateField = (key: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    clearField(key);
+  };
 
   return (
     <div className="min-h-screen bg-[linear-gradient(160deg,#f8fafc_0%,#e8eef5_45%,#f1f5f9_100%)] px-4 py-10 font-[family-name:var(--font-inter)]">
@@ -94,20 +112,27 @@ export default function PublicApplyPage() {
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!form.branchId || !form.fullName.trim() || !form.phone.trim()) {
-                  toast.error('Branch, name, and phone are required');
-                  return;
-                }
-                submit.mutate();
+                const payload = {
+                  branchId: form.branchId,
+                  fullName: form.fullName.trim(),
+                  phone: form.phone.trim(),
+                  email: form.email.trim(),
+                  programInterest: form.programInterest.trim() || undefined,
+                  notes: form.notes.trim() || undefined,
+                };
+                if (!validate(payload)) return;
+                submit.mutate({
+                  ...payload,
+                  email: payload.email || undefined,
+                });
               }}
             >
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Branch</label>
                 <select
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={fieldClassName('branchId', fieldClass)}
                   value={form.branchId}
-                  onChange={(e) => setForm((p) => ({ ...p, branchId: e.target.value }))}
-                  required
+                  onChange={(e) => updateField('branchId', e.target.value)}
                 >
                   <option value="">Select branch</option>
                   {(branches?.data ?? []).map((b) => (
@@ -117,51 +142,55 @@ export default function PublicApplyPage() {
                     </option>
                   ))}
                 </select>
+                <FormFieldError message={errors.branchId} />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Full name</label>
                 <input
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={fieldClassName('fullName', fieldClass)}
                   value={form.fullName}
-                  onChange={(e) => setForm((p) => ({ ...p, fullName: e.target.value }))}
-                  required
+                  onChange={(e) => updateField('fullName', e.target.value)}
                 />
+                <FormFieldError message={errors.fullName} />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Phone</label>
                 <input
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={fieldClassName('phone', fieldClass)}
                   value={form.phone}
-                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  required
+                  onChange={(e) => updateField('phone', e.target.value)}
                 />
+                <FormFieldError message={errors.phone} />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Email (optional)</label>
                 <input
                   type="email"
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={fieldClassName('email', fieldClass)}
                   value={form.email}
-                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                  onChange={(e) => updateField('email', e.target.value)}
                 />
+                <FormFieldError message={errors.email} />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Program interest</label>
                 <input
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={fieldClassName('programInterest', fieldClass)}
                   value={form.programInterest}
-                  onChange={(e) => setForm((p) => ({ ...p, programInterest: e.target.value }))}
+                  onChange={(e) => updateField('programInterest', e.target.value)}
                   placeholder="e.g. Matric, Intermediate, Coaching"
                 />
+                <FormFieldError message={errors.programInterest} />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Notes</label>
                 <textarea
-                  className="w-full rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                  className={cn(fieldClassName('notes', fieldClass), 'resize-y')}
                   rows={3}
                   value={form.notes}
-                  onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+                  onChange={(e) => updateField('notes', e.target.value)}
                 />
+                <FormFieldError message={errors.notes} />
               </div>
               <button
                 type="submit"

@@ -4,16 +4,23 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { biometricEntityTypes } from '@eims/shared';
+import {
+  biometricEntityTypes,
+  createBiometricMappingSchema,
+  updateBiometricMappingSchema,
+} from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
@@ -43,6 +50,10 @@ export function MappingDialog({
   const queryClient = useQueryClient();
   const isEdit = Boolean(mapping);
   const [form, setForm] = useState(emptyForm);
+
+  const { errors, validate, clearField, clearAll, applyApiErrors, fieldClassName } = useFormErrors(
+    isEdit ? updateBiometricMappingSchema : createBiometricMappingSchema,
+  );
 
   const { data: devicesData } = useQuery({
     queryKey: queryKeys.biometricDevices(branchId),
@@ -74,6 +85,7 @@ export function MappingDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      clearAll();
       return;
     }
     if (mapping) {
@@ -86,37 +98,39 @@ export function MappingDialog({
     } else {
       setForm(emptyForm);
     }
-  }, [open, mapping]);
+  }, [open, mapping, clearAll]);
+
+  const buildPayload = () => {
+    const payload = {
+      externalPersonId: form.externalPersonId.trim(),
+      entityType: form.entityType as 'student' | 'user',
+      entityId: form.entityId,
+      deviceId: form.deviceId || null,
+    };
+    if (isEdit && mapping) return payload;
+    return { branchId, ...payload };
+  };
 
   const save = useMutation({
-    mutationFn: async () => {
-      const body = {
-        branchId,
-        externalPersonId: form.externalPersonId.trim(),
-        entityType: form.entityType as 'student' | 'user',
-        entityId: form.entityId,
-        deviceId: form.deviceId || null,
-      };
+    mutationFn: (payload: ReturnType<typeof buildPayload>) => {
       if (isEdit && mapping) {
         return apiClient(`/biometric/mappings/${mapping.id}`, {
           method: 'PATCH',
           token,
-          body: {
-            externalPersonId: body.externalPersonId,
-            entityType: body.entityType,
-            entityId: body.entityId,
-            deviceId: body.deviceId,
-          },
+          body: payload,
         });
       }
-      return apiClient('/biometric/mappings', { method: 'POST', token, body });
+      return apiClient('/biometric/mappings', { method: 'POST', token, body: payload });
     },
     onSuccess: async () => {
       toast.success(isEdit ? 'Mapping updated' : 'Mapping created');
       await queryClient.invalidateQueries({ queryKey: queryKeys.biometricMappings(branchId) });
       onOpenChange(false);
     },
-    onError: () => toast.error(isEdit ? 'Unable to update mapping' : 'Unable to create mapping'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || (isEdit ? 'Unable to update mapping' : 'Unable to create mapping'));
+    },
   });
 
   const entityOptions =
@@ -132,7 +146,12 @@ export function MappingDialog({
     })),
   ];
 
-  const canSubmit = form.externalPersonId.trim() && form.entityId;
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    save.mutate(payload);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -150,34 +169,34 @@ export function MappingDialog({
           Map a biometric external person ID to a student or staff user
         </DialogDescription>
 
-        <form
-          className="space-y-4 px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit) save.mutate();
-          }}
-        >
+        <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div>
             <FormFieldLabel htmlFor="mapping-external-id">External person ID</FormFieldLabel>
             <input
               id="mapping-external-id"
-              className={modalFieldClassName}
+              className={fieldClassName('externalPersonId', modalFieldClassName)}
               value={form.externalPersonId}
-              onChange={(e) => setForm((f) => ({ ...f, externalPersonId: e.target.value }))}
-              required
+              onChange={(e) => {
+                setForm((f) => ({ ...f, externalPersonId: e.target.value }));
+                clearField('externalPersonId');
+              }}
             />
+            <FormFieldError message={errors.externalPersonId} />
           </div>
           <div>
             <FormFieldLabel htmlFor="mapping-entity-type">Entity type</FormFieldLabel>
             <SelectDropdown
               aria-label="Entity type"
               value={form.entityType}
-              onValueChange={(value) =>
-                setForm((f) => ({ ...f, entityType: value, entityId: '' }))
-              }
+              onValueChange={(value) => {
+                setForm((f) => ({ ...f, entityType: value, entityId: '' }));
+                clearField('entityType');
+                clearField('entityId');
+              }}
               options={biometricEntityTypes.map((t) => ({ value: t, label: formatLabel(t) }))}
-              className="w-full"
+              className={fieldClassName('entityType', 'w-full')}
             />
+            <FormFieldError message={errors.entityType} />
           </div>
           <div>
             <FormFieldLabel htmlFor="mapping-entity-id">
@@ -187,20 +206,28 @@ export function MappingDialog({
               aria-label="Entity"
               placeholder={`Select ${form.entityType}`}
               value={form.entityId}
-              onValueChange={(value) => setForm((f) => ({ ...f, entityId: value }))}
+              onValueChange={(value) => {
+                setForm((f) => ({ ...f, entityId: value }));
+                clearField('entityId');
+              }}
               options={entityOptions}
-              className="w-full"
+              className={fieldClassName('entityId', 'w-full')}
             />
+            <FormFieldError message={errors.entityId} />
           </div>
           <div>
             <FormFieldLabel htmlFor="mapping-device">Device (optional)</FormFieldLabel>
             <SelectDropdown
               aria-label="Device"
               value={form.deviceId}
-              onValueChange={(value) => setForm((f) => ({ ...f, deviceId: value }))}
+              onValueChange={(value) => {
+                setForm((f) => ({ ...f, deviceId: value }));
+                clearField('deviceId');
+              }}
               options={deviceOptions}
-              className="w-full"
+              className={fieldClassName('deviceId', 'w-full')}
             />
+            <FormFieldError message={errors.deviceId} />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -215,7 +242,7 @@ export function MappingDialog({
             </button>
             <button
               type="submit"
-              disabled={!canSubmit || save.isPending}
+              disabled={save.isPending}
               className="rounded-lg bg-[var(--primary-base)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {save.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create mapping'}

@@ -18,8 +18,15 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import type { PaginatedResponse } from '@eims/types';
 import type { AccountingAccount, Budget } from './types';
 import { formatMoney } from './types';
+
+function csvRow(values: unknown[]): (string | number | null | undefined)[] {
+  return values.map((value) =>
+    value == null || typeof value === 'string' || typeof value === 'number' ? value : String(value),
+  );
+}
 
 const REPORTS = [
   { id: 'trial-balance', label: 'Trial balance' },
@@ -53,8 +60,8 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
   const { data: accountsData } = useQuery({
     queryKey: queryKeys.accountingAccounts(branchId),
     queryFn: () =>
-      apiClient<{ data: AccountingAccount[] }>(
-        `/accounting/accounts?branchId=${branchId}&activeOnly=true`,
+      apiClient<PaginatedResponse<AccountingAccount>>(
+        `/accounting/accounts?branchId=${branchId}&activeOnly=true&limit=100`,
         { token },
       ),
     enabled: !!token && !!branchId,
@@ -63,7 +70,10 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
   const { data: budgetsData } = useQuery({
     queryKey: queryKeys.accountingBudgets(branchId),
     queryFn: () =>
-      apiClient<{ data: Budget[] }>(`/accounting/budgets?branchId=${branchId}`, { token }),
+      apiClient<PaginatedResponse<Budget>>(
+        `/accounting/budgets?branchId=${branchId}&limit=100`,
+        { token },
+      ),
     enabled: !!token && !!branchId,
   });
 
@@ -113,14 +123,9 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
       downloadCsv(
         'trial-balance.csv',
         ['Code', 'Name', 'Type', 'Debit', 'Credit', 'Balance'],
-        rows.map((row) => [
-          row.code,
-          row.name,
-          row.type,
-          row.debit,
-          row.credit,
-          row.balance,
-        ]),
+        rows.map((row) =>
+          csvRow([row.code, row.name, row.type, row.debit, row.credit, row.balance]),
+        ),
       );
       return;
     }
@@ -132,8 +137,8 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
         'income-expense.csv',
         ['Section', 'Code', 'Name', 'Amount'],
         [
-          ...income.map((row) => ['Income', row.code, row.name, row.amount]),
-          ...expense.map((row) => ['Expense', row.code, row.name, row.amount]),
+          ...income.map((row) => csvRow(['Income', row.code, row.name, row.amount])),
+          ...expense.map((row) => csvRow(['Expense', row.code, row.name, row.amount])),
         ],
       );
       return;
@@ -144,14 +149,16 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
       downloadCsv(
         'account-statement.csv',
         ['Date', 'Voucher', 'Narration', 'Debit', 'Credit', 'Balance'],
-        entries.map((row) => [
-          row.voucherDate,
-          row.voucherNo,
-          row.narration,
-          row.debit,
-          row.credit,
-          row.balance,
-        ]),
+        entries.map((row) =>
+          csvRow([
+            row.voucherDate,
+            row.voucherNo,
+            row.narration,
+            row.debit,
+            row.credit,
+            row.balance,
+          ]),
+        ),
       );
       return;
     }
@@ -160,7 +167,7 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
     downloadCsv(
       'budget-vs-actual.csv',
       ['Code', 'Name', 'Type', 'Budget', 'Actual', 'Variance'],
-      rows.map((row) => [row.code, row.name, row.type, row.budget, row.actual, row.variance]),
+      rows.map((row) => csvRow([row.code, row.name, row.type, row.budget, row.actual, row.variance])),
     );
   };
 
@@ -218,34 +225,32 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
       ) : report === 'trial-balance' ? (
         <ReportTable
           headers={['Code', 'Name', 'Type', 'Debit', 'Credit', 'Balance']}
-          rows={((data?.rows as Array<Record<string, unknown>>) ?? []).map((row) => [
-            row.code,
-            row.name,
-            row.type,
-            `PKR ${formatMoney(Number(row.debit))}`,
-            `PKR ${formatMoney(Number(row.credit))}`,
-            `PKR ${formatMoney(Number(row.balance))}`,
-          ])}
+          rows={((data?.rows as Array<Record<string, unknown>>) ?? []).map((row) =>
+            csvRow([
+              row.code,
+              row.name,
+              row.type,
+              `PKR ${formatMoney(Number(row.debit))}`,
+              `PKR ${formatMoney(Number(row.credit))}`,
+              `PKR ${formatMoney(Number(row.balance))}`,
+            ]),
+          )}
         />
       ) : report === 'income-expense' ? (
         <div className="space-y-6 px-5 py-4">
           <ReportTable
             title="Income"
             headers={['Code', 'Name', 'Amount']}
-            rows={((data?.income as Array<Record<string, unknown>>) ?? []).map((row) => [
-              row.code,
-              row.name,
-              `PKR ${formatMoney(Number(row.amount))}`,
-            ])}
+            rows={((data?.income as Array<Record<string, unknown>>) ?? []).map((row) =>
+              csvRow([row.code, row.name, `PKR ${formatMoney(Number(row.amount))}`]),
+            )}
           />
           <ReportTable
             title="Expense"
             headers={['Code', 'Name', 'Amount']}
-            rows={((data?.expense as Array<Record<string, unknown>>) ?? []).map((row) => [
-              row.code,
-              row.name,
-              `PKR ${formatMoney(Number(row.amount))}`,
-            ])}
+            rows={((data?.expense as Array<Record<string, unknown>>) ?? []).map((row) =>
+              csvRow([row.code, row.name, `PKR ${formatMoney(Number(row.amount))}`]),
+            )}
           />
           <p className="text-sm font-medium">
             Net: PKR {formatMoney(Number((data?.totals as { net?: number })?.net ?? 0))}
@@ -254,26 +259,30 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
       ) : report === 'account-statement' ? (
         <ReportTable
           headers={['Date', 'Voucher', 'Narration', 'Debit', 'Credit', 'Balance']}
-          rows={((data?.entries as Array<Record<string, unknown>>) ?? []).map((row) => [
-            row.voucherDate,
-            row.voucherNo,
-            row.narration ?? '—',
-            row.debit ? `PKR ${formatMoney(Number(row.debit))}` : '—',
-            row.credit ? `PKR ${formatMoney(Number(row.credit))}` : '—',
-            `PKR ${formatMoney(Number(row.balance))}`,
-          ])}
+          rows={((data?.entries as Array<Record<string, unknown>>) ?? []).map((row) =>
+            csvRow([
+              row.voucherDate,
+              row.voucherNo,
+              row.narration ?? '—',
+              row.debit ? `PKR ${formatMoney(Number(row.debit))}` : '—',
+              row.credit ? `PKR ${formatMoney(Number(row.credit))}` : '—',
+              `PKR ${formatMoney(Number(row.balance))}`,
+            ]),
+          )}
         />
       ) : (
         <ReportTable
           headers={['Code', 'Name', 'Type', 'Budget', 'Actual', 'Variance']}
-          rows={((data?.rows as Array<Record<string, unknown>>) ?? []).map((row) => [
-            row.code,
-            row.name,
-            row.type,
-            `PKR ${formatMoney(Number(row.budget))}`,
-            `PKR ${formatMoney(Number(row.actual))}`,
-            `PKR ${formatMoney(Number(row.variance))}`,
-          ])}
+          rows={((data?.rows as Array<Record<string, unknown>>) ?? []).map((row) =>
+            csvRow([
+              row.code,
+              row.name,
+              row.type,
+              `PKR ${formatMoney(Number(row.budget))}`,
+              `PKR ${formatMoney(Number(row.actual))}`,
+              `PKR ${formatMoney(Number(row.variance))}`,
+            ]),
+          )}
         />
       )}
     </ContentPanel>

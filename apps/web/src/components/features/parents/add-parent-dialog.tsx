@@ -4,15 +4,20 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { createParentSchema } from '@eims/shared';
+import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
-import type { PaginatedResponse } from '@eims/types';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { normalizePakistanPhone } from '@/lib/form-validation';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
@@ -42,6 +47,8 @@ export function AddParentDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(createParentSchema);
 
   const { data: students } = useQuery({
     queryKey: ['students-parents'],
@@ -50,20 +57,18 @@ export function AddParentDialog({
   });
 
   useEffect(() => {
-    if (!open) setForm(emptyForm);
-  }, [open]);
+    if (!open) {
+      setForm(emptyForm);
+      clearAll();
+    }
+  }, [open, clearAll]);
 
   const createMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Record<string, unknown>) =>
       apiClient('/parents', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          fullName: form.fullName,
-          ...(form.email ? { email: form.email } : {}),
-          ...(form.phone ? { phone: form.phone } : {}),
-          ...(form.studentId ? { studentId: form.studentId, relationshipCode: form.relationship } : {}),
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Parent created');
@@ -71,8 +76,23 @@ export function AddParentDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      fullName: form.fullName.trim(),
+      ...(form.email.trim() ? { email: form.email.trim() } : {}),
+      ...(form.phone.trim() ? { phone: normalizePakistanPhone(form.phone.trim()) } : {}),
+      ...(form.studentId ? { studentId: form.studentId, relationshipCode: form.relationship } : {}),
+    };
+    if (!validate(payload)) return;
+    createMutation.mutate(payload);
+  };
 
   const canSubmit = form.fullName.trim().length > 0;
 
@@ -97,23 +117,20 @@ export function AddParentDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            createMutation.mutate();
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Full name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('fullName', modalFieldClassName)}
                 placeholder="Full name"
                 value={form.fullName}
-                onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                required
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, fullName: e.target.value }));
+                  clearField('fullName');
+                }}
               />
+              <FormFieldError message={errors.fullName} />
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -121,20 +138,28 @@ export function AddParentDialog({
                 <FormFieldLabel>Email</FormFieldLabel>
                 <input
                   type="email"
-                  className={modalFieldClassName}
+                  className={fieldClassName('email', modalFieldClassName)}
                   placeholder="Email"
                   value={form.email}
-                  onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, email: e.target.value }));
+                    clearField('email');
+                  }}
                 />
+                <FormFieldError message={errors.email} />
               </div>
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
                 <input
-                  className={modalFieldClassName}
+                  className={fieldClassName('phone', modalFieldClassName)}
                   placeholder="Phone"
                   value={form.phone}
-                  onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, phone: e.target.value }));
+                    clearField('phone');
+                  }}
                 />
+                <FormFieldError message={errors.phone} />
               </div>
             </div>
 
@@ -144,13 +169,17 @@ export function AddParentDialog({
                 aria-label="Link to student"
                 placeholder="No student"
                 value={form.studentId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, studentId: value }))}
+                onValueChange={(value) => {
+                  setForm((prev) => ({ ...prev, studentId: value }));
+                  clearField('studentId');
+                }}
                 options={[
                   { value: '', label: 'No student' },
                   ...(students?.data.map((s) => ({ value: s.id, label: s.fullName })) ?? []),
                 ]}
                 className="w-full"
               />
+              <FormFieldError message={errors.studentId} />
             </div>
 
             {form.studentId && (
@@ -160,7 +189,10 @@ export function AddParentDialog({
                   aria-label="Relationship"
                   placeholder="Select relationship"
                   value={form.relationship}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, relationship: value }))}
+                  onValueChange={(value) => {
+                    setForm((prev) => ({ ...prev, relationship: value }));
+                    clearField('relationshipCode');
+                  }}
                   options={[
                     { value: 'father', label: 'Father' },
                     { value: 'mother', label: 'Mother' },
@@ -168,6 +200,7 @@ export function AddParentDialog({
                   ]}
                   className="w-full"
                 />
+                <FormFieldError message={errors.relationshipCode} />
               </div>
             )}
           </div>

@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { updateBatchSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { useFormErrors } from '@/hooks/use-form-errors';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import {
   Dialog,
@@ -48,6 +52,8 @@ export function EditBatchDialog({
   const [name, setName] = useState('');
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
   const [subjectsHydrated, setSubjectsHydrated] = useState(false);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(updateBatchSchema);
 
   const batchId = batch?.id ?? '';
 
@@ -69,10 +75,11 @@ export function EditBatchDialog({
       setName('');
       setSubjectIds([]);
       setSubjectsHydrated(false);
+      clearAll();
       return;
     }
     setName(batch.name);
-  }, [open, batch]);
+  }, [open, batch, clearAll]);
 
   useEffect(() => {
     if (!batchSubjects || subjectsHydrated) return;
@@ -81,21 +88,22 @@ export function EditBatchDialog({
   }, [batchSubjects, subjectsHydrated]);
 
   const updateBatch = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: { name: string; subjectIds: string[] }) =>
       apiClient(`/batches/${batchId}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({ name: name.trim(), subjectIds }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Batch updated');
       invalidateAcademic(queryClient, batchId);
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message);
+    },
   });
-
-  const canSubmit = !!batchId && name.trim().length >= 2;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,20 +132,24 @@ export function EditBatchDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={(e) => {
             e.preventDefault();
-            updateBatch.mutate();
+            const payload = { name: name.trim(), subjectIds };
+            if (!validate(payload)) return;
+            updateBatch.mutate(payload);
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             <div>
               <FormFieldLabel required>Batch name</FormFieldLabel>
               <input
-                className={modalFieldClassName}
+                className={fieldClassName('name', modalFieldClassName)}
                 placeholder="Batch name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                minLength={2}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearField('name');
+                }}
               />
+              <FormFieldError message={errors.name} />
             </div>
             <div>
               <FormFieldLabel>Subjects</FormFieldLabel>
@@ -167,7 +179,7 @@ export function EditBatchDialog({
             </button>
             <button
               type="submit"
-              disabled={updateBatch.isPending || !canSubmit}
+              disabled={updateBatch.isPending}
               className={cn(
                 'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',

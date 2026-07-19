@@ -23,6 +23,8 @@ import {
   createAssessmentSchema,
   updateAssessmentSchema,
   listAssessmentsQuerySchema,
+  listAssessmentTypesQuerySchema,
+  listAssessmentSeriesQuerySchema,
   marksSheetQuerySchema,
   bulkMarksSchema,
   reportCardsQuerySchema,
@@ -36,6 +38,8 @@ import type {
   CreateAssessmentInput,
   UpdateAssessmentInput,
   ListAssessmentsQuery,
+  ListAssessmentTypesQuery,
+  ListAssessmentSeriesQuery,
   MarksSheetQuery,
   BulkMarksInput,
   ReportCardsQuery,
@@ -54,8 +58,8 @@ export class AssessmentsController {
 
   @Get('assessment-types')
   @Permissions('assessments.read')
-  listTypes(@Query('all') all?: string) {
-    return this.assessmentsService.listTypes(all === 'true');
+  listTypes(@Query(createZodPipe(listAssessmentTypesQuerySchema)) query: ListAssessmentTypesQuery) {
+    return this.assessmentsService.listTypes(query);
   }
 
   @Post('assessment-types')
@@ -80,8 +84,8 @@ export class AssessmentsController {
 
   @Get('assessment-series')
   @Permissions('assessments.read')
-  listSeries() {
-    return this.assessmentsService.listSeries();
+  listSeries(@Query(createZodPipe(listAssessmentSeriesQuerySchema)) query: ListAssessmentSeriesQuery) {
+    return this.assessmentsService.listSeries(query);
   }
 
   @Post('assessment-series')

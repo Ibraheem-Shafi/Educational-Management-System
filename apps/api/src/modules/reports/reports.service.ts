@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { computeChangePercent } from '../../common/utils/metrics.util';
+import { paginatedResult } from '../../common/utils/pagination.util';
+import type { PaginatedResponse } from '@eims/types';
+import type { PaginationQuery } from '@eims/shared';
 
 const OVERVIEW_CACHE_TTL_MS = 45_000;
 
@@ -176,22 +179,40 @@ export class ReportsService {
     };
   }
 
-  async getFeeDefaulters(branchId: string | null) {
+  async getFeeDefaulters(
+    branchId: string | null,
+    query: PaginationQuery = { page: 1, limit: 8 },
+  ): Promise<PaginatedResponse<{
+    id: string;
+    student: { id: string; fullName: string; phone: string | null; batchId: string | null };
+    feeType: { id: string; name: string; code: string | null } | null;
+    netAmount: number;
+    dueDate: string | null;
+    createdAt: string;
+  }>> {
     const branchFilter = branchId ? { branchId } : {};
     const today = new Date();
+    const where = {
+      ...branchFilter,
+      paidAt: null,
+      OR: [{ dueDate: null }, { dueDate: { lt: today } }],
+    };
 
-    const invoices = await this.prisma.feeInvoice.findMany({
-      where: {
-        ...branchFilter,
-        paidAt: null,
-        OR: [{ dueDate: null }, { dueDate: { lt: today } }],
-      },
-      include: {
-        student: { select: { id: true, fullName: true, phone: true, batchId: true } },
-      },
-      orderBy: { dueDate: 'asc' },
-      take: 100,
-    });
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [invoices, total] = await Promise.all([
+      this.prisma.feeInvoice.findMany({
+        where,
+        include: {
+          student: { select: { id: true, fullName: true, phone: true, batchId: true } },
+        },
+        orderBy: { dueDate: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.feeInvoice.count({ where }),
+    ]);
 
     const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
     const feeTypes = feeTypeIds.length
@@ -199,8 +220,8 @@ export class ReportsService {
       : [];
     const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
 
-    return {
-      data: invoices.map((inv) => ({
+    return paginatedResult(
+      invoices.map((inv) => ({
         id: inv.id,
         student: inv.student,
         feeType: feeTypeMap.get(inv.feeTypeId) ?? null,
@@ -208,7 +229,9 @@ export class ReportsService {
         dueDate: inv.dueDate?.toISOString().slice(0, 10) ?? null,
         createdAt: inv.createdAt.toISOString(),
       })),
-      total: invoices.length,
-    };
+      total,
+      page,
+      limit,
+    );
   }
 }

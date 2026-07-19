@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '@eims/types';
@@ -91,24 +92,34 @@ export class TransportService {
 
   async findAllVehicles(query: ListTransportVehiclesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const vehicles = await this.prisma.transportVehicle.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { plateNumber: { contains: query.search, mode: 'insensitive' } },
-                { makeModel: { contains: query.search, mode: 'insensitive' } },
-                { gpsDeviceId: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { plateNumber: 'asc' },
-      include: vehicleInclude,
-    });
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { plateNumber: { contains: query.search, mode: 'insensitive' as const } },
+              { makeModel: { contains: query.search, mode: 'insensitive' as const } },
+              { gpsDeviceId: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [vehicles, total] = await Promise.all([
+      this.prisma.transportVehicle.findMany({
+        where,
+        orderBy: { plateNumber: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: vehicleInclude,
+      }),
+      this.prisma.transportVehicle.count({ where }),
+    ]);
 
     const data = vehicles.map((vehicle) => ({
       ...vehicle,
@@ -116,7 +127,7 @@ export class TransportService {
       lastLng: vehicle.lastLng ? Number(vehicle.lastLng) : null,
     }));
 
-    return { data };
+    return paginatedResult(data, total, page, limit);
   }
 
   async findOneVehicle(id: string, branchId: string | null) {
@@ -280,24 +291,35 @@ export class TransportService {
 
   async findAllRoutes(query: ListTransportRoutesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const routes = await this.prisma.transportRoute.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { name: { contains: query.search, mode: 'insensitive' } },
-                { code: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-      include: routeInclude,
-    });
-    return { data: routes };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [routes, total] = await Promise.all([
+      this.prisma.transportRoute.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: routeInclude,
+      }),
+      this.prisma.transportRoute.count({ where }),
+    ]);
+
+    return paginatedResult(routes, total, page, limit);
   }
 
   async findOneRoute(id: string, branchId: string | null) {
@@ -417,29 +439,40 @@ export class TransportService {
 
   async findAllStudentAssignments(query: ListStudentTransportQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const assignments = await this.prisma.studentTransport.findMany({
-      where: {
-        deletedAt: null,
-        ...(query.routeId ? { routeId: query.routeId } : {}),
-        ...(query.studentId ? { studentId: query.studentId } : {}),
-        route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
-        ...(query.search
-          ? {
-              student: {
-                fullName: { contains: query.search, mode: 'insensitive' },
-                ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-              },
-            }
-          : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        student: { select: { id: true, fullName: true, phone: true, batchId: true } },
-        route: { select: { id: true, name: true, code: true } },
-        stop: { select: { id: true, name: true, sequence: true, pickupTime: true, dropoffTime: true } },
-      },
-    });
-    return { data: assignments };
+    const where = {
+      deletedAt: null,
+      ...(query.routeId ? { routeId: query.routeId } : {}),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
+      ...(query.search
+        ? {
+            student: {
+              fullName: { contains: query.search, mode: 'insensitive' as const },
+              ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [assignments, total] = await Promise.all([
+      this.prisma.studentTransport.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          student: { select: { id: true, fullName: true, phone: true, batchId: true } },
+          route: { select: { id: true, name: true, code: true } },
+          stop: { select: { id: true, name: true, sequence: true, pickupTime: true, dropoffTime: true } },
+        },
+      }),
+      this.prisma.studentTransport.count({ where }),
+    ]);
+
+    return paginatedResult(assignments, total, page, limit);
   }
 
   async createStudentAssignment(input: CreateStudentTransportInput, user: AuthUser) {
@@ -579,23 +612,34 @@ export class TransportService {
 
   async findAllTrips(query: ListTransportTripsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const trips = await this.prisma.transportTrip.findMany({
-      where: {
-        ...(query.routeId ? { routeId: query.routeId } : {}),
-        ...(query.vehicleId ? { vehicleId: query.vehicleId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.direction ? { direction: query.direction } : {}),
-        ...(query.tripDate ? { tripDate: this.parseTripDate(query.tripDate) } : {}),
-        route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
-      },
-      orderBy: [{ tripDate: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        route: { select: { id: true, name: true, code: true, branchId: true } },
-        vehicle: { select: { id: true, plateNumber: true, makeModel: true } },
-        _count: { select: { attendance: true } },
-      },
-    });
-    return { data: trips };
+    const where = {
+      ...(query.routeId ? { routeId: query.routeId } : {}),
+      ...(query.vehicleId ? { vehicleId: query.vehicleId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.direction ? { direction: query.direction } : {}),
+      ...(query.tripDate ? { tripDate: this.parseTripDate(query.tripDate) } : {}),
+      route: effectiveBranchId ? { branchId: effectiveBranchId, deletedAt: null } : { deletedAt: null },
+    };
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [trips, total] = await Promise.all([
+      this.prisma.transportTrip.findMany({
+        where,
+        orderBy: [{ tripDate: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          route: { select: { id: true, name: true, code: true, branchId: true } },
+          vehicle: { select: { id: true, plateNumber: true, makeModel: true } },
+          _count: { select: { attendance: true } },
+        },
+      }),
+      this.prisma.transportTrip.count({ where }),
+    ]);
+
+    return paginatedResult(trips, total, page, limit);
   }
 
   async findOneTrip(id: string, branchId: string | null) {

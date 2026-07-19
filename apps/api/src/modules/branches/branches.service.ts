@@ -72,7 +72,9 @@ export class BranchesService {
         ? {
             OR: [
               { name: { contains: query.search, mode: 'insensitive' as const } },
-              { code: { contains: query.search, mode: 'insensitive' as const } },
+              // Branch IDs render as BR-<code>; strip the prefix so searching by
+              // the visible branch ID matches the underlying code.
+              { code: { contains: query.search.replace(/^BR-/i, ''), mode: 'insensitive' as const } },
               { id: { contains: query.search, mode: 'insensitive' as const } },
             ],
           }

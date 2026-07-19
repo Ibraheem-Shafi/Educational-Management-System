@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Megaphone } from 'lucide-react';
@@ -10,8 +10,14 @@ import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchId } from '@/hooks/use-branches';
-import type { NoticesStatsResponse } from '@eims/types';
+import type { NoticesStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -23,7 +29,11 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
-import { CreateNoticeDialog } from '@/components/features/notices/create-notice-dialog';
+import { PaginationBar } from '@/components/layout/pagination-bar';
+import {
+  CreateNoticeDialog,
+  type EditableNotice,
+} from '@/components/features/notices/create-notice-dialog';
 import { useNoticesRealtime } from '@/hooks/use-notices-realtime';
 import {
   dataTableClass,
@@ -76,12 +86,6 @@ function getNoticeStatus(notice: Notice): { label: string; code: string } {
   return { label: 'Draft', code: 'draft' };
 }
 
-function matchesStatusFilter(notice: Notice, statusFilter: string): boolean {
-  if (!statusFilter) return true;
-  const status = getNoticeStatus(notice).label.toLowerCase();
-  return status === statusFilter;
-}
-
 export default function NoticesPage() {
   const { session, user } = useAuth();
   const { can } = usePermissions();
@@ -91,10 +95,14 @@ export default function NoticesPage() {
   const searchParams = useSearchParams();
   const canMutate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editNotice, setEditNotice] = useState<EditableNotice | null>(null);
+  const [viewNotice, setViewNotice] = useState<Notice | null>(null);
   const [branchId, setBranchId] = useState(user?.branchId ?? '');
   const [search, setSearch] = useState('');
   const [audience, setAudience] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
 
   useNoticesRealtime(NOTICES_KEYS);
 
@@ -109,6 +117,7 @@ export default function NoticesPage() {
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
+    setPage(1);
   }, []);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -117,30 +126,25 @@ export default function NoticesPage() {
     enabled: !!token,
   });
 
+  const queryString = (() => {
+    const p = new URLSearchParams();
+    if (effectiveBranchId) p.set('branchId', effectiveBranchId);
+    if (search) p.set('search', search);
+    if (audience) p.set('audience', audience);
+    if (statusFilter) p.set('status', statusFilter);
+    p.set('page', String(page));
+    p.set('limit', String(limit));
+    return p.toString();
+  })();
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['notices', effectiveBranchId],
-    queryFn: () =>
-      apiClient<{ data: Notice[] }>(`/notices?branchId=${effectiveBranchId}`, { token }),
+    queryKey: ['notices', effectiveBranchId, search, audience, statusFilter, page, limit],
+    queryFn: () => apiClient<PaginatedResponse<Notice>>(`/notices?${queryString}`, { token }),
     enabled: !!token && !!effectiveBranchId,
+    placeholderData: (previous) => previous,
   });
 
-  const filteredNotices = useMemo(() => {
-    const list = data?.data ?? [];
-    return list.filter((notice) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !notice.title.toLowerCase().includes(q) &&
-          !notice.body.toLowerCase().includes(q)
-        ) {
-          return false;
-        }
-      }
-      if (audience && notice.audience !== audience) return false;
-      if (!matchesStatusFilter(notice, statusFilter)) return false;
-      return true;
-    });
-  }, [data?.data, search, audience, statusFilter]);
+  const notices = data?.data ?? [];
 
   const publishMutation = useMutation({
     mutationFn: (id: string) =>
@@ -167,6 +171,11 @@ export default function NoticesPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const handleLimitChange = useCallback((next: number) => {
+    setLimit(next);
+    setPage(1);
+  }, []);
+
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
@@ -188,10 +197,33 @@ export default function NoticesPage() {
       />
 
       <CreateNoticeDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+        open={createOpen || Boolean(editNotice)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setEditNotice(null);
+          }
+        }}
         branchId={effectiveBranchId}
+        notice={editNotice}
       />
+
+      <Dialog open={Boolean(viewNotice)} onOpenChange={(open) => !open && setViewNotice(null)}>
+        <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 p-0" aria-describedby={undefined}>
+          <div className="shrink-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-5 py-4">
+            <DialogTitle>{viewNotice?.title}</DialogTitle>
+            <DialogDescription className="mt-1">
+              {viewNotice ? formatAudience(viewNotice.audience) : ''} ·{' '}
+              {viewNotice ? formatPublishAt(viewNotice.publishedAt) : ''}
+            </DialogDescription>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--text-main-900,#0A0D14)]">
+              {viewNotice?.body}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <MainStatsSection
         isLoading={statsLoading}
@@ -220,12 +252,15 @@ export default function NoticesPage() {
       />
 
       <FilterBar className="items-center">
-        <SearchInput value={search} onValueChange={handleSearchChange} />
+        <SearchInput value={search} onValueChange={handleSearchChange} placeholder="Search by title, body, ID" />
         <SelectDropdown
           aria-label="Filter by audience"
           placeholder="All audiences"
           value={audience}
-          onValueChange={setAudience}
+          onValueChange={(value) => {
+            setAudience(value);
+            setPage(1);
+          }}
           options={[
             { value: '', label: 'All audiences' },
             { value: 'all', label: 'Everyone' },
@@ -239,7 +274,10 @@ export default function NoticesPage() {
           aria-label="Filter by status"
           placeholder="All statuses"
           value={statusFilter}
-          onValueChange={setStatusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value);
+            setPage(1);
+          }}
           options={[
             { value: '', label: 'All statuses' },
             { value: 'published', label: 'Published' },
@@ -252,7 +290,10 @@ export default function NoticesPage() {
             aria-label="Branch"
             placeholder="Select branch"
             value={branchId}
-            onValueChange={setBranchId}
+            onValueChange={(value) => {
+              setBranchId(value);
+              setPage(1);
+            }}
             options={branches.data.map((b) => ({ value: b.id, label: b.name }))}
           />
         )}
@@ -263,6 +304,7 @@ export default function NoticesPage() {
               setSearch('');
               setAudience('');
               setStatusFilter('');
+              setPage(1);
             }}
           >
             Clear filters
@@ -275,6 +317,7 @@ export default function NoticesPage() {
           <table className={dataTableClass}>
             <thead>
               <tr>
+                <th className={dataTableThClass}>ID</th>
                 <th className={dataTableThClass}>Title</th>
                 <th className={dataTableThClass}>Audience</th>
                 <th className={dataTableThClass}>Status</th>
@@ -283,20 +326,20 @@ export default function NoticesPage() {
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={5} rows={8} />}
+              {isLoading && <DataTableSkeletonRows columns={6} rows={limit} />}
 
               {error && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-red-600">
                     Failed to load notices
                   </td>
                 </tr>
               )}
 
-              {!isLoading && !error && filteredNotices.length === 0 && (
+              {!isLoading && !error && notices.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
                     No notices found
@@ -306,10 +349,13 @@ export default function NoticesPage() {
 
               {!isLoading &&
                 !error &&
-                filteredNotices.map((notice) => {
+                notices.map((notice) => {
                   const status = getNoticeStatus(notice);
                   return (
                     <tr key={notice.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                      <td className={cn(dataTableTdClass, 'font-mono text-xs text-[var(--text-sub-500,#525866)]')}>
+                        {notice.id.slice(0, 8).toUpperCase()}
+                      </td>
                       <td className={dataTableTdClass}>
                         <div className="min-w-0">
                           <p className="font-normal text-[var(--text-main-900,#0A0D14)]">
@@ -326,28 +372,46 @@ export default function NoticesPage() {
                       </td>
                       <td className={dataTableTdClass}>{formatPublishAt(notice.publishedAt)}</td>
                       <td className={cn(dataTableTdClass, 'text-right')}>
-                        {canMutate ? (
-                          <RowActionsMenu
-                            items={[
-                              ...(!notice.isPublished
-                                ? [
-                                    {
-                                      label: 'Publish now',
-                                      onClick: () => publishMutation.mutate(notice.id),
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'View',
+                              onClick: () => setViewNotice(notice),
+                            },
+                            ...(canMutate && !notice.isPublished
+                              ? [
+                                  {
+                                    label: 'Edit',
+                                    onClick: () =>
+                                      setEditNotice({
+                                        id: notice.id,
+                                        title: notice.title,
+                                        body: notice.body,
+                                        audience: notice.audience,
+                                        publishedAt: notice.publishedAt,
+                                        isPublished: notice.isPublished,
+                                      }),
+                                  },
+                                  {
+                                    label: 'Publish now',
+                                    onClick: () => publishMutation.mutate(notice.id),
+                                  },
+                                ]
+                              : []),
+                            ...(canMutate
+                              ? [
+                                  {
+                                    label: 'Delete',
+                                    onClick: () => {
+                                      if (confirm('Delete this notice?')) {
+                                        deleteMutation.mutate(notice.id);
+                                      }
                                     },
-                                  ]
-                                : []),
-                              {
-                                label: 'Delete',
-                                onClick: () => {
-                                  if (confirm('Delete this notice?')) {
-                                    deleteMutation.mutate(notice.id);
-                                  }
-                                },
-                              },
-                            ]}
-                          />
-                        ) : null}
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   );
@@ -355,6 +419,16 @@ export default function NoticesPage() {
             </tbody>
           </table>
         </div>
+
+        {data?.meta && (
+          <PaginationBar
+            page={page}
+            totalPages={data.meta.totalPages}
+            limit={limit}
+            onPageChange={setPage}
+            onLimitChange={handleLimitChange}
+          />
+        )}
       </div>
     </div>
   );

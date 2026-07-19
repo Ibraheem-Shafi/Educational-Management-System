@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fingerprint, Radio } from 'lucide-react';
 import { toast } from 'sonner';
+import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -19,6 +21,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import type { BiometricDevice } from './types';
 import { formatDateTime, statusBadgeCode } from './types';
@@ -30,10 +33,30 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.BIOMETRIC_MANAGE);
 
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(8);
+
+  const queryParams = {
+    branchId,
+    page,
+    limit,
+    isActive: true,
+  };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.biometricDevices(branchId),
-    queryFn: () =>
-      apiClient<{ data: BiometricDevice[] }>(`/biometric/devices?branchId=${branchId}`, { token }),
+    queryKey: queryKeys.biometricDevices(branchId, queryParams),
+    queryFn: () => {
+      const params = new URLSearchParams({
+        branchId,
+        page: String(page),
+        limit: String(limit),
+        isActive: 'true',
+      });
+      return apiClient<PaginatedResponse<BiometricDevice>>(
+        `/biometric/devices?${params.toString()}`,
+        { token },
+      );
+    },
     enabled: !!token && !!branchId,
   });
 
@@ -55,7 +78,7 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
     onError: () => toast.error('Unable to send test punch'),
   });
 
-  const rows = (data?.data ?? []).filter((d) => d.isActive);
+  const rows = data?.data ?? [];
 
   return (
     <div className="space-y-4">
@@ -93,12 +116,13 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
         </div>
       </ContentPanel>
 
-      <ContentPanel title={`Active devices (${rows.length})`}>
+      <ContentPanel title={`Active devices (${data?.meta.total ?? rows.length})`}>
         {error ? (
           <p className="px-5 py-8 text-sm text-red-600">Unable to load devices.</p>
         ) : (
-          <div className={dataTableWrapperClass}>
-            <table className={cn(dataTableClass, 'min-w-[800px]')}>
+          <>
+            <div className={dataTableWrapperClass}>
+              <table className={cn(dataTableClass, 'min-w-[800px]')}>
               <thead>
                 <tr>
                   <th className={dataTableThClass}>Device</th>
@@ -110,7 +134,7 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
                 {isLoading ? (
-                  <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={4} />
+                  <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={limit} />
                 ) : rows.length === 0 ? (
                   <tr>
                     <td
@@ -157,8 +181,21 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
                   ))
                 )}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+            {data?.meta && (
+              <PaginationBar
+                page={page}
+                totalPages={data.meta.totalPages}
+                limit={limit}
+                onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setLimit(next);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </ContentPanel>
     </div>

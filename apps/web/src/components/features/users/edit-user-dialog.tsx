@@ -4,16 +4,20 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SquarePen, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { CNIC_REGEX } from '@eims/shared';
+import { updateUserSchema } from '@eims/shared';
 import type { UserDetailResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { handleFormValidationError } from '@/lib/form-api-error';
+import { normalizePakistanPhone } from '@/lib/form-validation';
+import { useFormErrors } from '@/hooks/use-form-errors';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import {
   FormFieldLabel,
@@ -103,6 +107,8 @@ export function EditUserDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<EditForm>(emptyForm);
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+    useFormErrors(updateUserSchema);
 
   const { data: user, isLoading } = useQuery({
     queryKey: queryKeys.userDetail(userId ?? ''),
@@ -113,34 +119,19 @@ export function EditUserDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm());
+      clearAll();
       return;
     }
     if (user) setForm(userToForm(user));
-  }, [open, user]);
+  }, [open, user, clearAll]);
 
   const updateMutation = useMutation({
-    mutationFn: (payload: EditForm) => {
-      const phoneDigits = payload.phone.replace(/\D/g, '');
-      const fullPhone = phoneDigits
-        ? `${payload.phoneCountryCode}${phoneDigits}`
-        : null;
-      const cnic = payload.cnic.trim() || null;
-      if (cnic && !CNIC_REGEX.test(cnic)) {
-        throw new Error('CNIC must be in format 12345-1234567-1');
-      }
-      return apiClient(`/users/${userId}`, {
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiClient(`/users/${userId}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({
-          fullName: payload.fullName.trim(),
-          phone: fullPhone,
-          gender: payload.gender || undefined,
-          cnic,
-          department: payload.department.trim() || null,
-          designation: payload.designation.trim() || null,
-        }),
-      });
-    },
+        body: JSON.stringify(payload),
+      }),
     onSuccess: () => {
       toast.success('User updated');
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -150,11 +141,36 @@ export function EditUserDialog({
       }
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update user'),
+    onError: (err: Error) => {
+      if (handleFormValidationError(err, applyApiErrors)) return;
+      toast.error(err.message || 'Failed to update user');
+    },
   });
 
   const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const buildPayload = () => {
+    const phoneDigits = form.phone.replace(/\D/g, '');
+    const fullPhone = phoneDigits
+      ? normalizePakistanPhone(`${form.phoneCountryCode}${phoneDigits}`)
+      : null;
+    return {
+      fullName: form.fullName.trim(),
+      phone: fullPhone,
+      gender: form.gender || undefined,
+      cnic: form.cnic.trim() || null,
+      department: form.department.trim() || null,
+      designation: form.designation.trim() || null,
+    };
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!validate(payload)) return;
+    updateMutation.mutate(payload);
   };
 
   const canSubmit = form.fullName.trim().length >= 2;
@@ -185,17 +201,7 @@ export function EditUserDialog({
           </button>
         </div>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!canSubmit) {
-              toast.error('Enter a valid full name');
-              return;
-            }
-            updateMutation.mutate(form);
-          }}
-        >
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
             {isLoading ? (
               <div className="space-y-3">
@@ -217,51 +223,76 @@ export function EditUserDialog({
                   <input
                     type="text"
                     value={form.fullName}
-                    onChange={(e) => update('fullName', e.target.value)}
-                    className={modalFieldClassName}
-                    required
+                    onChange={(e) => {
+                      update('fullName', e.target.value);
+                      clearField('fullName');
+                    }}
+                    className={fieldClassName('fullName', modalFieldClassName)}
                   />
+                  <FormFieldError message={errors.fullName} />
                 </Field>
-                <InvitePhoneField
-                  value={form.phone}
-                  countryCode={form.phoneCountryCode}
-                  onChange={(value) => update('phone', value)}
-                  onCountryCodeChange={(code) => update('phoneCountryCode', code)}
-                />
+                <div>
+                  <InvitePhoneField
+                    value={form.phone}
+                    countryCode={form.phoneCountryCode}
+                    onChange={(value) => {
+                      update('phone', value);
+                      clearField('phone');
+                    }}
+                    onCountryCodeChange={(code) => update('phoneCountryCode', code)}
+                  />
+                  <FormFieldError message={errors.phone} />
+                </div>
                 <Field label="Gender">
                   <SelectDropdown
                     aria-label="Gender"
                     placeholder="Select gender"
                     value={form.gender}
-                    onValueChange={(value) => update('gender', value)}
+                    onValueChange={(value) => {
+                      update('gender', value);
+                      clearField('gender');
+                    }}
                     options={GENDER_OPTIONS}
                     fullWidth
                   />
+                  <FormFieldError message={errors.gender} />
                 </Field>
                 <Field label="CNIC">
                   <input
                     type="text"
                     value={form.cnic}
-                    onChange={(e) => update('cnic', e.target.value)}
+                    onChange={(e) => {
+                      update('cnic', e.target.value);
+                      clearField('cnic');
+                    }}
                     placeholder="12345-1234567-1"
-                    className={modalFieldClassName}
+                    className={fieldClassName('cnic', modalFieldClassName)}
                   />
+                  <FormFieldError message={errors.cnic} />
                 </Field>
                 <Field label="Department">
                   <input
                     type="text"
                     value={form.department}
-                    onChange={(e) => update('department', e.target.value)}
-                    className={modalFieldClassName}
+                    onChange={(e) => {
+                      update('department', e.target.value);
+                      clearField('department');
+                    }}
+                    className={fieldClassName('department', modalFieldClassName)}
                   />
+                  <FormFieldError message={errors.department} />
                 </Field>
                 <Field label="Designation">
                   <input
                     type="text"
                     value={form.designation}
-                    onChange={(e) => update('designation', e.target.value)}
-                    className={modalFieldClassName}
+                    onChange={(e) => {
+                      update('designation', e.target.value);
+                      clearField('designation');
+                    }}
+                    className={fieldClassName('designation', modalFieldClassName)}
                   />
+                  <FormFieldError message={errors.designation} />
                 </Field>
                 {user?.roles[0] && (
                   <Field label="Role">

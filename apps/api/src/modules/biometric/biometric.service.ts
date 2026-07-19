@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
+import { paginatedResult } from '../../common/utils/pagination.util';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -80,27 +81,37 @@ export class BiometricService {
 
   async findAllDevices(query: ListBiometricDevicesQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const devices = await this.prisma.biometricDevice.findMany({
-      where: {
-        deletedAt: null,
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { name: { contains: query.search, mode: 'insensitive' } },
-                { deviceCode: { contains: query.search, mode: 'insensitive' } },
-                { location: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-      include: {
-        _count: { select: { externalIds: true, punchLogs: true } },
-      },
-    });
-    return { data: devices };
+    const where = {
+      deletedAt: null,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { deviceCode: { contains: query.search, mode: 'insensitive' as const } },
+              { location: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [devices, total] = await Promise.all([
+      this.prisma.biometricDevice.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          _count: { select: { externalIds: true, punchLogs: true } },
+        },
+      }),
+      this.prisma.biometricDevice.count({ where }),
+    ]);
+
+    return paginatedResult(devices, total, page, limit);
   }
 
   async findOneDevice(id: string, branchId: string | null) {
@@ -197,22 +208,31 @@ export class BiometricService {
 
   async findAllMappings(query: ListBiometricMappingsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const mappings = await this.prisma.biometricExternalId.findMany({
-      where: {
-        ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-        ...(query.deviceId ? { deviceId: query.deviceId } : {}),
-        ...(query.entityType ? { entityType: query.entityType } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { externalPersonId: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { externalPersonId: 'asc' },
-      include: { device: { select: { id: true, name: true, deviceCode: true } } },
-    });
+    const where = {
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+      ...(query.deviceId ? { deviceId: query.deviceId } : {}),
+      ...(query.entityType ? { entityType: query.entityType } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { externalPersonId: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+
+    const [mappings, total] = await Promise.all([
+      this.prisma.biometricExternalId.findMany({
+        where,
+        orderBy: { externalPersonId: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { device: { select: { id: true, name: true, deviceCode: true } } },
+      }),
+      this.prisma.biometricExternalId.count({ where }),
+    ]);
 
     const studentIds = mappings.filter((m) => m.entityType === 'student').map((m) => m.entityId);
     const userIds = mappings.filter((m) => m.entityType === 'user').map((m) => m.entityId);
@@ -245,7 +265,7 @@ export class BiometricService {
             : null,
     }));
 
-    return { data };
+    return paginatedResult(data, total, page, limit);
   }
 
   async createMapping(input: CreateBiometricMappingInput, user: AuthUser) {
@@ -368,7 +388,8 @@ export class BiometricService {
 
   async findAllPunchLogs(query: ListBiometricPunchLogsQuery, branchId: string | null) {
     const effectiveBranchId = branchId ?? query.branchId;
-    const limit = query.limit ?? 50;
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
 
     const deviceFilter =
       effectiveBranchId || query.deviceId
@@ -383,28 +404,34 @@ export class BiometricService {
           ? { deviceId: query.deviceId }
           : {};
 
-    const logs = await this.prisma.biometricPunchLog.findMany({
-      where: {
-        ...deviceFilter,
-        ...(query.externalPersonId ? { externalPersonId: query.externalPersonId } : {}),
-        ...(query.matched !== undefined ? { matched: query.matched } : {}),
-        ...(query.from || query.to
-          ? {
-              punchedAt: {
-                ...(query.from ? { gte: new Date(query.from) } : {}),
-                ...(query.to ? { lte: new Date(query.to) } : {}),
-              },
-            }
-          : {}),
-      },
-      orderBy: { punchedAt: 'desc' },
-      take: limit,
-      include: {
-        device: { select: { id: true, name: true, deviceCode: true, branchId: true } },
-      },
-    });
+    const where = {
+      ...deviceFilter,
+      ...(query.externalPersonId ? { externalPersonId: query.externalPersonId } : {}),
+      ...(query.matched !== undefined ? { matched: query.matched } : {}),
+      ...(query.from || query.to
+        ? {
+            punchedAt: {
+              ...(query.from ? { gte: new Date(query.from) } : {}),
+              ...(query.to ? { lte: new Date(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
 
-    return { data: logs };
+    const [logs, total] = await Promise.all([
+      this.prisma.biometricPunchLog.findMany({
+        where,
+        orderBy: { punchedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          device: { select: { id: true, name: true, deviceCode: true, branchId: true } },
+        },
+      }),
+      this.prisma.biometricPunchLog.count({ where }),
+    ]);
+
+    return paginatedResult(logs, total, page, limit);
   }
 
   // --- Webhook ---

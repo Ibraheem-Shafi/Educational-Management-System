@@ -8,7 +8,8 @@ import { AuditService } from '../audit/audit.service';
 import { CommunicationsService } from '../communications/communications.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
-import { countWithTrend, thirtyDaysAgo, todayStart } from '../../common/utils/stats.util';
+import { countWithTrend, todayStart } from '../../common/utils/stats.util';
+import { computeChangePercent } from '../../common/utils/metrics.util';
 import type { AttendanceStatsResponse, AttendanceTrendResponse, AuthUser } from '@eims/types';
 import type {
   AttendanceSheetQuery,
@@ -56,7 +57,6 @@ export class AttendanceService {
     if (cached) return cached;
 
     const today = todayStart();
-    const thirtyAgo = thirtyDaysAgo();
     const branchFilter = branchId ? { branchId } : {};
     const studentFilter = { entityType: ATTENDANCE_ENTITY_STUDENT, ...branchFilter };
 
@@ -66,17 +66,27 @@ export class AttendanceService {
     ]);
 
     const todayWhere = { ...studentFilter, date: today };
-    const monthStart = new Date(today);
-    monthStart.setUTCDate(1);
+
+    // Yesterday, for a meaningful day-over-day comparison on Today's rate.
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayWhere = { ...studentFilter, date: yesterday };
+
+    // Month average is computed over the previous *completed* calendar month,
+    // excluding the current partial month.
+    const currentMonthStart = new Date(today);
+    currentMonthStart.setUTCDate(1);
+    const prevMonthStart = new Date(currentMonthStart);
+    prevMonthStart.setUTCMonth(prevMonthStart.getUTCMonth() - 1);
 
     const [
       todayTotal,
       todayPresent,
       todayAbsent,
-      monthTotal,
-      monthPresent,
-      prevMonthTotal,
-      prevMonthPresent,
+      yesterdayTotal,
+      yesterdayPresent,
+      completedMonthTotal,
+      completedMonthPresent,
     ] = await Promise.all([
       this.prisma.attendanceRecord.count({ where: todayWhere }),
       presentId
@@ -85,22 +95,18 @@ export class AttendanceService {
       absentId
         ? this.prisma.attendanceRecord.count({ where: { ...todayWhere, statusId: absentId } })
         : Promise.resolve(0),
-      this.prisma.attendanceRecord.count({
-        where: { ...studentFilter, date: { gte: monthStart, lte: today } },
-      }),
+      this.prisma.attendanceRecord.count({ where: yesterdayWhere }),
       presentId
-        ? this.prisma.attendanceRecord.count({
-            where: { ...studentFilter, date: { gte: monthStart, lte: today }, statusId: presentId },
-          })
+        ? this.prisma.attendanceRecord.count({ where: { ...yesterdayWhere, statusId: presentId } })
         : Promise.resolve(0),
       this.prisma.attendanceRecord.count({
-        where: { ...studentFilter, date: { gte: thirtyAgo, lt: monthStart } },
+        where: { ...studentFilter, date: { gte: prevMonthStart, lt: currentMonthStart } },
       }),
       presentId
         ? this.prisma.attendanceRecord.count({
             where: {
               ...studentFilter,
-              date: { gte: thirtyAgo, lt: monthStart },
+              date: { gte: prevMonthStart, lt: currentMonthStart },
               statusId: presentId,
             },
           })
@@ -108,12 +114,19 @@ export class AttendanceService {
     ]);
 
     const todayRate = todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0;
-    const monthAvg = monthTotal > 0 ? Math.round((monthPresent / monthTotal) * 100) : 0;
-    const prevMonthAvg = prevMonthTotal > 0 ? Math.round((prevMonthPresent / prevMonthTotal) * 100) : 0;
+    const yesterdayRate = yesterdayTotal > 0 ? Math.round((yesterdayPresent / yesterdayTotal) * 100) : 0;
+    const monthAvg =
+      completedMonthTotal > 0 ? Math.round((completedMonthPresent / completedMonthTotal) * 100) : 0;
 
     const result: AttendanceStatsResponse = {
-      todayRate: countWithTrend(todayRate, prevMonthAvg),
-      monthAverage: countWithTrend(monthAvg, prevMonthAvg),
+      // Only show a day-over-day delta when today has recorded attendance;
+      // otherwise there is nothing meaningful to compare against.
+      todayRate: {
+        total: todayRate,
+        changePercent: todayTotal > 0 ? computeChangePercent(todayRate, yesterdayRate) : null,
+      },
+      // Month average over the previous completed month; no spurious trend chip.
+      monthAverage: { total: monthAvg, changePercent: null },
       presentToday: countWithTrend(todayPresent, 0),
       absentToday: countWithTrend(todayAbsent, 0),
     };

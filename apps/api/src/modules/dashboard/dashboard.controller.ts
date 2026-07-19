@@ -1,12 +1,14 @@
-import { Controller, ForbiddenException, Get, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, paginationQuerySchema } from '@eims/shared';
 import { DashboardService } from './dashboard.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchId, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import type { AuthUser } from '@eims/types';
+import type { PaginationQuery } from '@eims/shared';
 
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -39,8 +41,11 @@ export class DashboardController {
 
   @Get('branch-performance')
   @Permissions('branches.read')
-  getBranchPerformance(@BranchId() branchId: string | null) {
-    return this.dashboardService.getBranchPerformance(branchId);
+  getBranchPerformance(
+    @BranchId() branchId: string | null,
+    @Query(createZodPipe(paginationQuerySchema)) query: PaginationQuery,
+  ) {
+    return this.dashboardService.getBranchPerformance(branchId, query);
   }
 
   @Get('recent-activities')
