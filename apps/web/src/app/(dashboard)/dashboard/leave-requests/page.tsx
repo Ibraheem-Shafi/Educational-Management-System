@@ -17,7 +17,6 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/layout/status-badge';
-import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
@@ -30,6 +29,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { cn } from '@/lib/utils';
 
 type Tab = 'all' | 'student' | 'employee' | 'mine';
@@ -183,24 +183,20 @@ export default function LeaveRequestsPage() {
                     <td className={dataTableTdClass}>
                       {row.status === 'pending' && tab !== 'mine' ? (
                         <PermissionGate permission={PERMISSIONS.LEAVE_MANAGE} fallback="—">
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={review.isPending}
-                              onClick={() => review.mutate({ id: row.id, status: 'approved' })}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={review.isPending}
-                              onClick={() => review.mutate({ id: row.id, status: 'rejected' })}
-                            >
-                              Reject
-                            </Button>
-                          </div>
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Approve',
+                                onClick: () =>
+                                  review.mutate({ id: row.id, status: 'approved' }),
+                              },
+                              {
+                                label: 'Reject',
+                                onClick: () =>
+                                  review.mutate({ id: row.id, status: 'rejected' }),
+                              },
+                            ]}
+                          />
                         </PermissionGate>
                       ) : (
                         '—'

@@ -2,12 +2,10 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, transportVehicleStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
-import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
@@ -16,11 +14,11 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -37,10 +35,8 @@ import { formatCoords, formatDateTime, formatLabel, statusBadgeCode } from './ty
 
 export function VehiclesPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();
-  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
-  const canManage = can(PERMISSIONS.TRANSPORT_MANAGE);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -177,29 +173,17 @@ export function VehiclesPanel({ branchId }: { branchId: string }) {
                         </td>
                         <td className={dataTableTdClass}>
                           <PermissionGate permission={PERMISSIONS.TRANSPORT_MANAGE} fallback="—">
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditVehicle(row)}
-                                aria-label="Edit vehicle"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  if (window.confirm('Remove this vehicle?')) remove.mutate(row.id);
-                                }}
-                                aria-label="Remove vehicle"
-                                disabled={!canManage}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'Edit', onClick: () => setEditVehicle(row) },
+                                {
+                                  label: 'Remove',
+                                  onClick: () => {
+                                    if (window.confirm('Remove this vehicle?')) remove.mutate(row.id);
+                                  },
+                                },
+                              ]}
+                            />
                           </PermissionGate>
                         </td>
                       </tr>

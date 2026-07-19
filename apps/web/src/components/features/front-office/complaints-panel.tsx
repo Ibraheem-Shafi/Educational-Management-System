@@ -2,10 +2,11 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
+import { MessageSquareWarning } from 'lucide-react';
 import { toast } from 'sonner';
 import { complaintStatuses, complaintTypes, PERMISSIONS, priorities } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
+import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
@@ -20,6 +21,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -31,13 +33,16 @@ import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { ComplaintDialog } from './complaint-dialog';
+import { FrontOfficeDetailDialog } from './front-office-detail-dialog';
 import type { ComplaintRequest } from './types';
 import { formatDateTime, formatLabel, statusBadgeCode } from './types';
 
 export function ComplaintsPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();
+  const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const canManage = can(PERMISSIONS.FRONT_OFFICE_MANAGE);
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -47,6 +52,7 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
   const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
   const [editComplaint, setEditComplaint] = useState<ComplaintRequest | null>(null);
+  const [viewComplaint, setViewComplaint] = useState<ComplaintRequest | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -229,30 +235,24 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
                       <td className={dataTableTdClass}>{row.requesterName ?? '—'}</td>
                       <td className={dataTableTdClass}>{formatDateTime(row.createdAt)}</td>
                       <td className={dataTableTdClass}>
-                        <PermissionGate permission={PERMISSIONS.FRONT_OFFICE_MANAGE} fallback="—">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setEditComplaint(row)}
-                              aria-label="Edit record"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (window.confirm('Delete this record?')) remove.mutate(row.id);
-                              }}
-                              aria-label="Delete record"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </PermissionGate>
+                        <RowActionsMenu
+                          items={[
+                            { label: 'View', onClick: () => setViewComplaint(row) },
+                            ...(canManage
+                              ? [
+                                  { label: 'Edit', onClick: () => setEditComplaint(row) },
+                                  {
+                                    label: 'Delete',
+                                    onClick: () => {
+                                      if (window.confirm('Delete this record?')) {
+                                        remove.mutate(row.id);
+                                      }
+                                    },
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))
@@ -281,6 +281,56 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
         }}
         branchId={branchId}
         complaint={editComplaint}
+      />
+      <FrontOfficeDetailDialog
+        open={Boolean(viewComplaint)}
+        onOpenChange={(open) => {
+          if (!open) setViewComplaint(null);
+        }}
+        title="Complaint details"
+        description="Complaint or request record"
+        icon={MessageSquareWarning}
+        fields={
+          viewComplaint
+            ? [
+                { label: 'Type', value: formatLabel(viewComplaint.type) },
+                { label: 'Priority', value: formatLabel(viewComplaint.priority) },
+                {
+                  label: 'Status',
+                  value: (
+                    <StatusBadge
+                      label={formatLabel(viewComplaint.status)}
+                      code={statusBadgeCode(viewComplaint.status)}
+                    />
+                  ),
+                },
+                { label: 'Subject', value: viewComplaint.subject, fullWidth: true },
+                { label: 'Requester', value: viewComplaint.requesterName ?? '—' },
+                { label: 'Requester phone', value: viewComplaint.requesterPhone ?? '—' },
+                { label: 'Created', value: formatDateTime(viewComplaint.createdAt) },
+                { label: 'Resolved', value: formatDateTime(viewComplaint.resolvedAt) },
+                { label: 'Details', value: viewComplaint.body || '—', fullWidth: true },
+              ]
+            : []
+        }
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setViewComplaint(null)}>
+              Close
+            </Button>
+            {canManage && viewComplaint ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditComplaint(viewComplaint);
+                  setViewComplaint(null);
+                }}
+              >
+                Edit
+              </Button>
+            ) : null}
+          </div>
+        }
       />
     </>
   );

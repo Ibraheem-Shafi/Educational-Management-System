@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, Trash2 } from 'lucide-react';
+import { UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -21,6 +21,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -31,6 +32,7 @@ import {
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
+import { FrontOfficeDetailDialog } from './front-office-detail-dialog';
 import { VisitorDialog } from './visitor-dialog';
 import type { Visitor } from './types';
 import { formatDateTime } from './types';
@@ -47,6 +49,7 @@ export function VisitorsPanel({ branchId }: { branchId: string }) {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
   const [createOpen, setCreateOpen] = useState(false);
+  const [viewVisitor, setViewVisitor] = useState<Visitor | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -204,35 +207,31 @@ export function VisitorsPanel({ branchId }: { branchId: string }) {
                           />
                         </td>
                         <td className={dataTableTdClass}>
-                          <PermissionGate permission={PERMISSIONS.FRONT_OFFICE_MANAGE} fallback="—">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {isCheckedIn ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => checkOut.mutate(row.id)}
-                                  disabled={checkOut.isPending}
-                                >
-                                  <LogOut className="mr-1 h-3.5 w-3.5" />
-                                  Check out
-                                </Button>
-                              ) : null}
-                              {canManage ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    if (window.confirm('Delete this visitor record?')) remove.mutate(row.id);
-                                  }}
-                                  aria-label="Delete visitor"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              ) : null}
-                            </div>
-                          </PermissionGate>
+                          <RowActionsMenu
+                            items={[
+                              { label: 'View', onClick: () => setViewVisitor(row) },
+                              ...(canManage && isCheckedIn
+                                ? [
+                                    {
+                                      label: 'Check out',
+                                      onClick: () => checkOut.mutate(row.id),
+                                    },
+                                  ]
+                                : []),
+                              ...(canManage
+                                ? [
+                                    {
+                                      label: 'Delete',
+                                      onClick: () => {
+                                        if (window.confirm('Delete this visitor record?')) {
+                                          remove.mutate(row.id);
+                                        }
+                                      },
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
                         </td>
                       </tr>
                     );
@@ -255,6 +254,43 @@ export function VisitorsPanel({ branchId }: { branchId: string }) {
       </ContentPanel>
 
       <VisitorDialog open={createOpen} onOpenChange={setCreateOpen} branchId={branchId} />
+      <FrontOfficeDetailDialog
+        open={Boolean(viewVisitor)}
+        onOpenChange={(open) => {
+          if (!open) setViewVisitor(null);
+        }}
+        title="Visitor details"
+        description="Visitor check-in record"
+        icon={UserRound}
+        fields={
+          viewVisitor
+            ? [
+                { label: 'Full name', value: viewVisitor.fullName },
+                { label: 'Phone', value: viewVisitor.phone ?? '—' },
+                { label: 'Purpose', value: viewVisitor.purpose ?? '—' },
+                { label: 'Host', value: viewVisitor.hostName ?? '—' },
+                { label: 'Checked in', value: formatDateTime(viewVisitor.checkedInAt) },
+                {
+                  label: 'Checked out',
+                  value: viewVisitor.checkedOutAt
+                    ? formatDateTime(viewVisitor.checkedOutAt)
+                    : 'Still checked in',
+                },
+                {
+                  label: 'Status',
+                  value: (
+                    <StatusBadge
+                      label={viewVisitor.checkedOutAt ? 'Checked out' : 'Checked in'}
+                      code={viewVisitor.checkedOutAt ? 'inactive' : 'present'}
+                    />
+                  ),
+                },
+                { label: 'Created', value: formatDateTime(viewVisitor.createdAt) },
+                { label: 'Notes', value: viewVisitor.notes ?? '—', fullWidth: true },
+              ]
+            : []
+        }
+      />
     </>
   );
 }

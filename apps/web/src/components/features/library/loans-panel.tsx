@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LIBRARY_MAX_RENEWALS, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -19,6 +18,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -192,29 +192,22 @@ export function LoansPanel({ branchId }: { branchId: string }) {
                         {canManage && (
                           <td className={dataTableTdClass}>
                             {!loan.returnedAt ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-[var(--midnight-blue-950,#01366C)] hover:bg-neutral-50"
-                                  disabled={
-                                    renewLoan.isPending ||
-                                    loan.renewedCount >= LIBRARY_MAX_RENEWALS
-                                  }
-                                  onClick={() => renewLoan.mutate(loan.id)}
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                  Renew
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
-                                  disabled={returnLoan.isPending}
-                                  onClick={() => returnLoan.mutate(loan.id)}
-                                >
-                                  <Undo2 className="h-3.5 w-3.5" />
-                                  Return
-                                </button>
-                              </div>
+                              <RowActionsMenu
+                                items={[
+                                  ...(loan.renewedCount < LIBRARY_MAX_RENEWALS
+                                    ? [
+                                        {
+                                          label: 'Renew',
+                                          onClick: () => renewLoan.mutate(loan.id),
+                                        },
+                                      ]
+                                    : []),
+                                  {
+                                    label: 'Return',
+                                    onClick: () => returnLoan.mutate(loan.id),
+                                  },
+                                ]}
+                              />
                             ) : (
                               <StatusBadge code={statusBadgeCode('returned')} label="Closed" />
                             )}

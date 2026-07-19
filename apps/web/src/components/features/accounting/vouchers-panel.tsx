@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Eye, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS, voucherStatuses, voucherTypes } from '@eims/shared';
@@ -16,11 +15,11 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -188,51 +187,20 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                         <td className={dataTableTdClass}>PKR {formatMoney(total)}</td>
                         {canManage ? (
                           <td className={`${dataTableTdClass} text-right`}>
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="View voucher"
-                                onClick={() => setViewVoucher(row)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              {row.status === 'draft' ? (
-                                <>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    aria-label="Post voucher"
-                                    onClick={() => post.mutate(row.id)}
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                  </Button>
-                                  {isManual ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      aria-label="Delete voucher"
-                                      onClick={() => remove.mutate(row.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  ) : null}
-                                </>
-                              ) : row.status === 'posted' && isManual ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  aria-label="Unpost voucher"
-                                  onClick={() => unpost.mutate(row.id)}
-                                >
-                                  <Undo2 className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'View', onClick: () => setViewVoucher(row) },
+                                ...(row.status === 'draft'
+                                  ? [{ label: 'Post', onClick: () => post.mutate(row.id) }]
+                                  : []),
+                                ...(row.status === 'draft' && isManual
+                                  ? [{ label: 'Delete', onClick: () => remove.mutate(row.id) }]
+                                  : []),
+                                ...(row.status === 'posted' && isManual
+                                  ? [{ label: 'Unpost', onClick: () => unpost.mutate(row.id) }]
+                                  : []),
+                              ]}
+                            />
                           </td>
                         ) : null}
                       </tr>

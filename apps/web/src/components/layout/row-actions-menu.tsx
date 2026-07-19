@@ -5,18 +5,26 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
   CircleDollarSign,
+  ClipboardCheck,
   ClipboardPen,
   CreditCard,
   ExternalLink,
   Eye,
   EyeOff,
+  GraduationCap,
+  LogOut,
   MoreVertical,
   Pencil,
+  RotateCcw,
   Send,
   ShieldOff,
   Trash2,
+  Undo2,
   Unlink,
   UserX,
+  CheckCircle,
+  Download,
+  Printer,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -52,6 +60,7 @@ export function getDefaultActionIcon(label: string): ReactNode | null {
     open: renderActionIcon(ExternalLink),
     remove: renderActionIcon(Trash2, true),
     delete: renderActionIcon(Trash2, true),
+    cancel: renderActionIcon(Trash2, true),
     publish: renderActionIcon(Send),
     'publish now': renderActionIcon(Send),
     unpublish: renderActionIcon(EyeOff),
@@ -62,20 +71,48 @@ export function getDefaultActionIcon(label: string): ReactNode | null {
     'pay in full': renderActionIcon(CircleDollarSign),
     'enter marks': renderActionIcon(ClipboardPen),
     'submit for review': renderActionIcon(Send),
+    convert: renderActionIcon(GraduationCap),
+    'check out': renderActionIcon(LogOut),
+    renew: renderActionIcon(RotateCcw),
+    return: renderActionIcon(Undo2),
+    fulfill: renderActionIcon(CheckCircle),
+    post: renderActionIcon(CheckCircle),
+    unpost: renderActionIcon(Undo2),
+    'mark attendance': renderActionIcon(ClipboardCheck),
+    adjust: renderActionIcon(Pencil),
+    export: renderActionIcon(Download),
+    download: renderActionIcon(Download),
+    approve: renderActionIcon(CheckCircle),
+    reject: renderActionIcon(Trash2, true),
+    'mark paid': renderActionIcon(CircleDollarSign),
+    waive: renderActionIcon(ShieldOff),
+    print: renderActionIcon(Printer),
   };
 
   if (exactMatches[key]) return exactMatches[key];
 
-  if (key.includes('delete') || key.includes('remove')) return renderActionIcon(Trash2, true);
+  if (key.includes('delete') || key.includes('remove') || key.includes('cancel')) {
+    return renderActionIcon(Trash2, true);
+  }
   if (key.includes('unlink')) return renderActionIcon(Unlink, true);
   if (key.includes('revoke')) return renderActionIcon(ShieldOff, true);
   if (key.includes('deactivate')) return renderActionIcon(UserX, true);
   if (key.includes('unpublish')) return renderActionIcon(EyeOff);
   if (key.includes('publish')) return renderActionIcon(Send);
   if (key.includes('payment')) return renderActionIcon(CreditCard);
-  if (key.includes('edit')) return renderActionIcon(Pencil);
+  if (key.includes('edit') || key.includes('adjust')) return renderActionIcon(Pencil);
   if (key.includes('open')) return renderActionIcon(ExternalLink);
   if (key.includes('marks')) return renderActionIcon(ClipboardPen);
+  if (key.includes('convert')) return renderActionIcon(GraduationCap);
+  if (key.includes('check out')) return renderActionIcon(LogOut);
+  if (key.includes('renew')) return renderActionIcon(RotateCcw);
+  if (key.includes('return') || key.includes('unpost')) return renderActionIcon(Undo2);
+  if (key.includes('post') || key.includes('fulfill') || key.includes('approve')) {
+    return renderActionIcon(CheckCircle);
+  }
+  if (key.includes('attendance')) return renderActionIcon(ClipboardCheck);
+  if (key.includes('export') || key.includes('download')) return renderActionIcon(Download);
+  if (key.includes('print')) return renderActionIcon(Printer);
 
   return null;
 }
@@ -83,7 +120,13 @@ export function getDefaultActionIcon(label: string): ReactNode | null {
 export function RowActionsMenu({
   items,
 }: {
-  items: Array<{ label: string; href?: string; onClick?: () => void; icon?: ReactNode }>;
+  items: Array<{
+    label: string;
+    href?: string;
+    target?: string;
+    onClick?: () => void;
+    icon?: ReactNode;
+  }>;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -146,6 +189,8 @@ export function RowActionsMenu({
                     href={item.href}
                     role="menuitem"
                     className={itemClass}
+                    target={item.target}
+                    rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
                     onClick={() => setOpen(false)}
                   >
                     {content}

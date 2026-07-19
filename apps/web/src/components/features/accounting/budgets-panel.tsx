@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
@@ -12,11 +11,11 @@ import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PermissionGate } from '@/components/auth/permission-gate';
-import { Button } from '@/components/ui/button';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -118,26 +117,12 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
                         <td className={dataTableTdClass}>PKR {formatMoney(total)}</td>
                         {canManage ? (
                           <td className={`${dataTableTdClass} text-right`}>
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Edit budget"
-                                onClick={() => setEditBudget(row)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Delete budget"
-                                onClick={() => remove.mutate(row.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <RowActionsMenu
+                              items={[
+                                { label: 'Edit', onClick: () => setEditBudget(row) },
+                                { label: 'Delete', onClick: () => remove.mutate(row.id) },
+                              ]}
+                            />
                           </td>
                         ) : null}
                       </tr>

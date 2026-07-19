@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ZodSchema } from 'zod';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, GraduationCap, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { createStudentSchema, updateStudentSchema } from '@eims/shared';
@@ -34,6 +34,7 @@ import {
   AdmitStudentSideNav,
   type AdmitStudentSectionId,
 } from '@/components/features/students/admit-student-side-nav';
+import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 interface Branch {
@@ -78,6 +79,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inquiryId = searchParams.get('inquiryId');
+  const queryClient = useQueryClient();
   const { session, user } = useAuth();
   const token = session?.access_token;
   const formRef = useRef<HTMLFormElement>(null);
@@ -341,11 +343,32 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         }
       }
       toast.success(isEditing ? 'Student updated successfully' : 'Student admitted successfully');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['student', created.id] }),
+        queryClient.invalidateQueries({ queryKey: ['students'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.studentsStats }),
+        queryClient.invalidateQueries({ queryKey: ['student-parents', created.id] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.studentsRecent }),
+      ]);
       router.push(isEditing ? `/dashboard/students/${studentId}` : '/dashboard/students');
     },
     onError: (err: Error) => {
       if (err instanceof ApiClientError && applyApiErrors(err.details)) {
-        scrollToErrorSection(Object.keys(mapApiDetailsToFields(err.details))[0] ?? null);
+        const fieldErrors = mapApiDetailsToFields(err.details);
+        const messages = Object.values(fieldErrors);
+        const firstField = Object.keys(fieldErrors)[0] ?? null;
+        scrollToErrorSection(firstField);
+        if (messages.length === 1) {
+          toast.error(messages[0]!);
+        } else if (messages.length > 1) {
+          toast.error(
+            `Please fix ${messages.length} validation errors: ${messages.slice(0, 3).join('; ')}${
+              messages.length > 3 ? '…' : ''
+            }`,
+          );
+        } else {
+          toast.error(err.message || 'Validation failed');
+        }
         return;
       }
       toast.error(err.message || (isEditing ? 'Failed to update student' : 'Failed to create student'));
@@ -355,12 +378,14 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const scrollToErrorSection = useCallback(
     (field: string | null) => {
       if (!field) return;
-      if (
-        ['fullName', 'gender', 'dateOfBirth', 'cnicOrBForm', 'branchId', 'statusId'].includes(field)
-      ) {
+      const isCustomField = (formFields?.data ?? []).some((f) => f.code === field);
+      if (['fullName', 'gender', 'dateOfBirth', 'cnicOrBForm', 'branchId', 'statusId'].includes(field)) {
         scrollToSection('student-information');
       } else if (['phone', 'email', 'address'].includes(field)) {
         scrollToSection('contact-information');
+      } else if (['programId', 'batchId'].includes(field) || isCustomField) {
+        // Custom/additional fields render under Academic Information.
+        scrollToSection('academic-information');
       } else if (
         field.startsWith('guardian') ||
         ['guardianFullName', 'guardianPhone', 'guardianEmail', 'guardianCnic'].includes(field)
@@ -370,7 +395,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         scrollToSection('emergency-contact');
       }
     },
-    [scrollToSection],
+    [formFields?.data, scrollToSection],
   );
 
   const buildGuardians = () => {
@@ -425,50 +450,71 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
     return { branchId: effectiveBranchId, ...base };
   };
 
-  const validateCustomFields = useCallback((): boolean => {
+  const validateCustomFields = useCallback((): Record<string, string> => {
     const defs = formFields?.data ?? [];
-    let valid = true;
+    const customErrors: Record<string, string> = {};
     for (const field of defs) {
       if (!field.isRequired) continue;
       if (field.fieldType === 'file') {
-        if (!customFieldFiles[field.code]) {
-          setFieldError(field.code, `${field.label} is required`);
-          valid = false;
+        const hasNewFile = !!customFieldFiles[field.code];
+        const existing = customFieldValues[field.code];
+        const hasExisting =
+          typeof existing === 'string' && existing.trim().length > 0;
+        // On edit, an already-uploaded path in customFields satisfies the requirement.
+        if (!hasNewFile && !hasExisting) {
+          const message = `${field.label} is required`;
+          setFieldError(field.code, message);
+          customErrors[field.code] = message;
         }
         continue;
       }
       if (field.fieldType === 'checkbox') {
         if (!customFieldValues[field.code]) {
-          setFieldError(field.code, `${field.label} is required`);
-          valid = false;
+          const message = `${field.label} is required`;
+          setFieldError(field.code, message);
+          customErrors[field.code] = message;
         }
         continue;
       }
       const value = String(customFieldValues[field.code] ?? '').trim();
       if (!value) {
-        setFieldError(field.code, `${field.label} is required`);
-        valid = false;
+        const message = `${field.label} is required`;
+        setFieldError(field.code, message);
+        customErrors[field.code] = message;
       }
     }
-    return valid;
+    return customErrors;
   }, [customFieldFiles, customFieldValues, formFields?.data, setFieldError]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload = buildPayload();
-    const schemaValid = validate(payload);
-    const customValid = validateCustomFields();
-    if (!schemaValid || !customValid) {
-      if (!schemaValid) {
-        const result = validateSchema(schema, payload);
-        if (!result.success) {
-          scrollToErrorSection(Object.keys(flattenFieldErrors(result.fieldErrors))[0] ?? null);
-        }
+    const schemaResult = validateSchema(schema, payload);
+    const schemaErrors = schemaResult.success
+      ? ({} as Record<string, string>)
+      : flattenFieldErrors(schemaResult.fieldErrors);
+    // Keep field-level UI errors in sync with schema validation.
+    validate(payload);
+    const customErrors = validateCustomFields();
+    const allErrors = { ...schemaErrors, ...customErrors };
+    const errorMessages = Object.values(allErrors).filter(Boolean);
+
+    if (errorMessages.length > 0) {
+      const firstError = Object.keys(allErrors)[0] ?? null;
+      if (firstError) scrollToErrorSection(firstError);
+
+      if (errorMessages.length === 1) {
+        toast.error(errorMessages[0]!);
       } else {
-        scrollToSection('student-information');
+        toast.error(
+          `Please fix ${errorMessages.length} validation errors: ${errorMessages.slice(0, 3).join('; ')}${
+            errorMessages.length > 3 ? '…' : ''
+          }`,
+        );
       }
       return;
     }
+
     createMutation.mutate(payload);
   };
 
@@ -554,7 +600,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
       ) : null}
 
       <div className="flex items-start gap-8">
-        <form ref={formRef} onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-5">
+        <form ref={formRef} onSubmit={handleSubmit} noValidate className="min-w-0 flex-1 space-y-5">
           <AdmitStudentSection
             id="student-information"
             title="Basic Information"

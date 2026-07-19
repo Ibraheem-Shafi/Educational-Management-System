@@ -44,21 +44,21 @@ Client-demo walkthrough list. Mark each item done as you test. Order: **Super Ad
 
 ### Students (`/dashboard/students`)
 
-- [ ] Student list loads (search / filters)
-- [ ] Open student detail
-- [ ] Admit new student (`/dashboard/students/new` or admission flow)
-- [ ] Edit student
-- [ ] Assign / view subjects
-- [ ] Soft-delete or deactivate (if exposed in UI)
+- [x] Student list loads (search / filters)
+- [x] Open student detail
+- [x] Admit new student (`/dashboard/students/new` or admission flow)
+- [x] Edit student
+- [x] Assign / view subjects
+- [x] Soft-delete or deactivate (if exposed in UI)
 - [ ] Student documents section visible from student context
 
 ### Parents (`/dashboard/parents`)
 
-- [ ] Parent list loads
-- [ ] Open parent detail
-- [ ] Create parent
-- [ ] Link student to parent
-- [ ] Unlink student from parent
+- [x] Parent list loads
+- [x] Open parent detail
+- [x] Create parent
+- [x] Link student to parent
+- [x] Unlink student from parent
 
 ### Front office (`/dashboard/front-office`)
 
