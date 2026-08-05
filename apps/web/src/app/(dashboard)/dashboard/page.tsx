@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { LayoutDashboard } from 'lucide-react';
-import { formatCurrency, PERMISSIONS } from '@eims/shared';
+import { currencyStat, formatNumberPk, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { useInstitution } from '@/providers/institution-provider';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -27,7 +27,7 @@ import { RecentActivitiesCard } from '@/components/dashboard/recent-activities-c
 import { QuickActionsCard } from '@/components/dashboard/quick-actions-card';
 
 function formatStatValue(value: number): string {
-  return value.toLocaleString('en-US');
+  return formatNumberPk(value, { maximumFractionDigits: 0 });
 }
 
 export default function DashboardPage() {
@@ -151,12 +151,12 @@ export default function DashboardPage() {
       ? [
           {
             label: 'Outstanding',
-            value: formatCurrency(feesStats.outstandingAmount.total),
+            ...currencyStat(feesStats.outstandingAmount.total),
             changePercent: feesStats.outstandingAmount.changePercent,
           },
           {
             label: 'Collected (30d)',
-            value: formatCurrency(feesStats.collectedLast30Days.total),
+            ...currencyStat(feesStats.collectedLast30Days.total),
             changePercent: feesStats.collectedLast30Days.changePercent,
           },
           {

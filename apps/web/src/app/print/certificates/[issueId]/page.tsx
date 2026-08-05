@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { printQueryUiState } from '@/components/print/print-shell';
 
 interface PrintData {
   issue: { title: string; serialNo: string | null; issuedAt: string };
@@ -55,10 +56,10 @@ function bodyForType(type: string, student: PrintData['student']): string {
 
 export default function PrintCertificatePage() {
   const { issueId } = useParams<{ issueId: string }>();
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const token = session?.access_token;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isPending, error } = useQuery({
     queryKey: ['certificate-print', issueId],
     queryFn: () => apiClient<PrintData>(`/certificates/issues/${issueId}/print-data`, { token }),
     enabled: !!token && !!issueId,
@@ -71,11 +72,21 @@ export default function PrintCertificatePage() {
     }
   }, [data]);
 
-  if (isLoading) {
+  const { loading, error: showError } = printQueryUiState({
+    authLoading,
+    hasToken: !!token,
+    ready: !!issueId,
+    isLoading,
+    isPending,
+    error,
+    data,
+  });
+
+  if (loading) {
     return <p className="p-8 text-center text-sm text-[var(--text-sub-500)]">Preparing certificate…</p>;
   }
 
-  if (error || !data) {
+  if (showError || !data) {
     return <p className="p-8 text-center text-sm text-red-600">Unable to load certificate</p>;
   }
 

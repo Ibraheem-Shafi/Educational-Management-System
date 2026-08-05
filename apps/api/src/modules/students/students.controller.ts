@@ -5,11 +5,12 @@ import { StudentsService } from './students.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createStudentSchema, listStudentsQuerySchema, updateStudentSchema, setStudentSubjectsSchema } from '@eims/shared';
+import { createStudentSchema, listStudentsQuerySchema, updateStudentSchema, setStudentSubjectsSchema, generateRollNumbersSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput, SetStudentSubjectsInput } from '@eims/shared';
+import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput, SetStudentSubjectsInput, GenerateRollNumbersInput } from '@eims/shared';
+import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util';
 
 @ApiTags('students')
 @ApiBearerAuth()
@@ -17,6 +18,29 @@ import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput, SetStud
 @UseGuards(AuthGuard, BranchGuard, PermissionsGuard)
 export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
+
+  /** Lightweight catalog for staff dropdowns — no students.read required. */
+  @Get('options')
+  listOptions(
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+    @Query('branchId') branchId?: string,
+    @Query('batchId') batchId?: string,
+    @Query('q') q?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    assertStaffCatalogAccess(user);
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    return this.studentsService.listOptions(
+      {
+        branchId,
+        batchId,
+        q,
+        ...(Number.isFinite(limit) ? { limit } : {}),
+      },
+      scope,
+    );
+  }
 
   @Get()
   @Permissions('students.read')
@@ -31,6 +55,29 @@ export class StudentsController {
   @Permissions('students.read')
   getStats(@BranchScopeParam() scope: BranchScope) {
     return this.studentsService.getStats(scope);
+  }
+
+  @Get(':id/roll-slip/print-data')
+  @Permissions('students.read')
+  getRollSlipPrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.studentsService.getRollSlipPrintData(id, scope);
+  }
+
+  @Get('rosters/:batchId/print-data')
+  @Permissions('students.read')
+  getRosterPrintData(@Param('batchId') batchId: string, @BranchScopeParam() scope: BranchScope) {
+    return this.studentsService.getRosterPrintData(batchId, scope);
+  }
+
+  @Post('generate-roll-numbers')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('students.update')
+  generateRollNumbers(
+    @Body(createZodPipe(generateRollNumbersSchema)) body: GenerateRollNumbersInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.studentsService.generateRollNumbers(body, user, scope);
   }
 
   @Get(':id/subjects')

@@ -104,7 +104,7 @@ export function AuthProvider({
           setUser(profile);
           void queryClient.prefetchQuery({
             queryKey: queryKeys.branches,
-            queryFn: () => apiClient<{ data: unknown[] }>('/branches', { token: accessToken }),
+            queryFn: () => apiClient<{ data: unknown[] }>('/branches/options', { token: accessToken }),
             ...referenceQueryOptions(),
           });
         } else {

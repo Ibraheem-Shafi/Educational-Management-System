@@ -1,9 +1,20 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["INSTITUTION_NAME"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": [
+        "INSTITUTION_NAME",
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_INSTITUTION_NAME",
+        "NEXT_PUBLIC_SKIP_ADMIN_MFA",
+        "NEXT_PUBLIC_E2E_SKIP_AUTH"
+      ]
     },
     "dev": {
       "cache": false,

@@ -27,6 +27,7 @@ import {
   updateFeeStructureSchema,
   listFeeStructuresQuerySchema,
   generateBulkInvoicesSchema,
+  previewBulkInvoicesSchema,
   createFeeTypeSchema,
   updateFeeTypeSchema,
 } from '@eims/shared';
@@ -41,6 +42,7 @@ import type {
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
   GenerateBulkInvoicesInput,
+  PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
   UpdateFeeTypeInput,
 } from '@eims/shared';
@@ -130,6 +132,14 @@ export class FeesController {
     return this.feesService.deleteStructure(id, user, scope);
   }
 
+  @Post('fee-structures/preview-invoices')
+  @Permissions('fees.collect')
+  previewBulkInvoices(
+    @Body(createZodPipe(previewBulkInvoicesSchema)) body: PreviewBulkInvoicesInput,
+  ) {
+    return this.feesService.previewBulkInvoices(body);
+  }
+
   @Post('fee-structures/generate-invoices')
   @HttpCode(HttpStatus.CREATED)
   @Permissions('fees.collect')
@@ -153,6 +163,18 @@ export class FeesController {
   @Permissions('fees.read')
   getInvoice(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
     return this.feesService.getInvoice(id, scope);
+  }
+
+  @Get('fee-invoices/:id/print-data')
+  @Permissions('fees.read')
+  getInvoicePrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getInvoicePrintData(id, scope);
+  }
+
+  @Get('fee-payments/:id/print-data')
+  @Permissions('fees.read')
+  getPaymentPrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getPaymentPrintData(id, scope);
   }
 
   @Post('fee-invoices')

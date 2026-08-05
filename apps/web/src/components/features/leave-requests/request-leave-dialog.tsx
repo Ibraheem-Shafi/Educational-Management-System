@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { DateField } from '@/components/ui/date-field';
 import { cn } from '@/lib/utils';
 
 export function RequestLeaveDialog({
@@ -103,13 +104,12 @@ export function RequestLeaveDialog({
               <FormFieldLabel htmlFor="leave-from" required>
                 From
               </FormFieldLabel>
-              <input
+              <DateField
                 id="leave-from"
-                type="date"
                 className={fieldClassName('fromDate', modalFieldClassName)}
                 value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
+                onValueChange={(next) => {
+                  setFromDate(next);
                   clearField('fromDate');
                 }}
               />
@@ -119,14 +119,13 @@ export function RequestLeaveDialog({
               <FormFieldLabel htmlFor="leave-to" required>
                 To
               </FormFieldLabel>
-              <input
+              <DateField
                 id="leave-to"
-                type="date"
                 className={fieldClassName('toDate', modalFieldClassName)}
                 value={toDate}
                 min={fromDate || undefined}
-                onChange={(e) => {
-                  setToDate(e.target.value);
+                onValueChange={(next) => {
+                  setToDate(next);
                   clearField('toDate');
                 }}
               />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -15,6 +15,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useUsersOptions } from '@/hooks/use-users-options';
 import {
   Dialog,
   DialogContent,
@@ -59,14 +60,7 @@ export function VehicleDialog({
     isEdit ? updateTransportVehicleSchema : createTransportVehicleSchema,
   );
 
-  const { data: usersData } = useQuery({
-    queryKey: ['users', branchId],
-    queryFn: () =>
-      apiClient<{ data: { id: string; fullName: string }[] }>(`/users?limit=100&branchId=${branchId}`, {
-        token,
-      }),
-    enabled: !!token && open,
-  });
+  const { data: usersData } = useUsersOptions(token, branchId, { enabled: open });
 
   useEffect(() => {
     if (!open) {

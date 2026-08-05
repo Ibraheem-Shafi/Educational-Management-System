@@ -22,6 +22,7 @@ import { PermissionGate } from '@/components/auth/permission-gate';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { cn } from '@/lib/utils';
+import { PrintTemplatesPanel } from '@/components/features/settings/print-templates-panel';
 
 const studentStatusSchema = z.object({
   code: requiredString('Code', 1, 50),
@@ -359,6 +360,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </ContentPanel>
+
+      <PrintTemplatesPanel />
 
       <PermissionGate permission={PERMISSIONS.SETTINGS_MANAGE}>
         <Button onClick={handleSave} disabled={saveMutation.isPending}>

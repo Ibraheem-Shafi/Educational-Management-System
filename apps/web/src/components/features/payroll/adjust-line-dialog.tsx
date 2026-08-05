@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { adjustPayrollLineSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -89,9 +89,12 @@ export function AdjustLineDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+      <DialogContent className="flex max-h-[calc(100vh-2rem)] max-w-md gap-0 p-0">
+        <div className="flex shrink-0 items-center gap-4 border-b border-[var(--stroke-soft-200,#E2E4E9)] py-4 pl-5 pr-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
+            <Pencil className="h-6 w-6 text-[#57646F]" strokeWidth={1.5} />
+          </div>
+          <div className="min-w-0 flex-1">
             <DialogTitle>Adjust payroll line</DialogTitle>
             <DialogDescription className="mt-1">
               {line?.user?.fullName ?? 'Staff member'} — add bonus or deduction adjustment
@@ -100,51 +103,67 @@ export function AdjustLineDialog({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="rounded-md p-1 text-[var(--text-sub-500)] hover:bg-neutral-50"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-sub-500)] hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)]"
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <FormFieldLabel label="Adjustment amount (PKR)" required />
-            <input
-              type="number"
-              value={adjustmentsTotal}
-              onChange={(e) => {
-                clearField('adjustmentsTotal');
-                setAdjustmentsTotal(e.target.value);
-              }}
-              className={fieldClassName('adjustmentsTotal', modalFieldClassName)}
-              placeholder="Positive for bonus, negative for deduction"
-            />
-            <FormFieldError message={errors.adjustmentsTotal} />
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+            <div>
+              <FormFieldLabel label="Adjustment amount (PKR)" required />
+              <input
+                type="number"
+                value={adjustmentsTotal}
+                onChange={(e) => {
+                  clearField('adjustmentsTotal');
+                  setAdjustmentsTotal(e.target.value);
+                }}
+                className={fieldClassName('adjustmentsTotal', modalFieldClassName)}
+                placeholder="Positive for bonus, negative for deduction"
+              />
+              <FormFieldError message={errors.adjustmentsTotal} />
+            </div>
+            <div>
+              <FormFieldLabel label="Reason" />
+              <textarea
+                value={reason}
+                onChange={(e) => {
+                  clearField('reason');
+                  setReason(e.target.value);
+                }}
+                rows={2}
+                className={fieldClassName('reason', cn(modalFieldClassName, 'h-auto resize-none'))}
+              />
+              <FormFieldError message={errors.reason} />
+            </div>
           </div>
-          <div>
-            <FormFieldLabel label="Reason" />
-            <textarea
-              value={reason}
-              onChange={(e) => {
-                clearField('reason');
-                setReason(e.target.value);
-              }}
-              rows={2}
-              className={fieldClassName('reason', cn(modalFieldClassName, 'resize-none'))}
-            />
-            <FormFieldError message={errors.reason} />
+
+          <div className="flex shrink-0 gap-4 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-5 pb-5 pt-4">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              disabled={saveMutation.isPending}
+              className={cn(
+                'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white p-[10px]',
+                'text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] hover:bg-[var(--neutral-50)] disabled:opacity-50',
+              )}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saveMutation.isPending || !line}
+              className={cn(
+                'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] p-[10px]',
+                'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',
+              )}
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save adjustment'}
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={saveMutation.isPending || !line}
-            className={cn(
-              'w-full rounded-[10px] bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
-              saveMutation.isPending && 'opacity-50',
-            )}
-          >
-            {saveMutation.isPending ? 'Saving…' : 'Save adjustment'}
-          </button>
         </form>
       </DialogContent>
     </Dialog>

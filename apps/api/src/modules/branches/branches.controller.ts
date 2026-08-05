@@ -23,6 +23,12 @@ export class BranchesController {
     return this.branchesService.getStats(scope);
   }
 
+  /** Lightweight catalog for headers/dropdowns — any authenticated staff in scope. */
+  @Get('options')
+  listOptions(@BranchScopeParam() scope: BranchScope) {
+    return this.branchesService.listOptions(scope);
+  }
+
   @Get()
   @Permissions('branches.read')
   findAll(

@@ -8,7 +8,7 @@ import { PERMISSIONS, accountTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { queryKeys } from '@/lib/query-keys';
+import { queryKeys, queryRoots } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
@@ -52,6 +52,14 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
     setPage(1);
   }, []);
 
+  const resetListView = useCallback((saved?: AccountingAccount) => {
+    setTypeFilter('');
+    setPage(1);
+    // Focus the list on the saved account so it isn't hidden on a later page
+    // (accounts are sorted by code, 8 per page).
+    setSearch(saved?.code ?? '');
+  }, []);
+
   const queryParams = {
     branchId,
     page,
@@ -84,7 +92,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
     mutationFn: (id: string) => apiClient(`/accounting/accounts/${id}`, { method: 'DELETE', token }),
     onSuccess: async () => {
       toast.success('Account removed');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingAccounts(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingAccounts });
     },
     onError: () => toast.error('Unable to remove account'),
   });
@@ -208,6 +216,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
         }}
         branchId={branchId}
         account={editAccount}
+        onSaved={resetListView}
       />
     </>
   );

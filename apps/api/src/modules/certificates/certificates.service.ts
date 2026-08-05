@@ -189,6 +189,7 @@ export class CertificatesService {
     return {
       issue: this.toIssueResponse(issue),
       template: this.toTemplateResponse(issue.template),
+      printLayout: await this.resolvePrintLayout('certificate', issue.branchId),
       student: {
         id: issue.student.id,
         fullName: issue.student.fullName,
@@ -196,6 +197,8 @@ export class CertificatesService {
         gender: issue.student.gender,
         cnicOrBForm: issue.student.cnicOrBForm,
         photographUrl: issue.student.photographUrl,
+        rollNumber: issue.student.rollNumber,
+        admissionNumber: issue.student.admissionNumber,
         program: issue.student.program?.name ?? null,
         batch: issue.student.batch?.name ?? null,
         branch: issue.student.branch,
@@ -228,9 +231,11 @@ export class CertificatesService {
     });
 
     const institution = await this.settings.getInstitutionSettings();
+    const printLayout = await this.resolvePrintLayout('id_card', student.branchId);
 
     return {
       template: template ? this.toTemplateResponse(template) : null,
+      printLayout,
       student: {
         id: student.id,
         fullName: student.fullName,
@@ -238,6 +243,8 @@ export class CertificatesService {
         gender: student.gender,
         cnicOrBForm: student.cnicOrBForm,
         photographUrl: student.photographUrl,
+        rollNumber: student.rollNumber,
+        admissionNumber: student.admissionNumber,
         program: student.program?.name ?? null,
         batch: student.batch?.name ?? null,
         branch: student.branch,
@@ -249,6 +256,30 @@ export class CertificatesService {
         phone: institution.phone,
         email: institution.email,
       },
+    };
+  }
+
+  private async resolvePrintLayout(type: 'id_card' | 'certificate', branchId: string) {
+    const row = await this.prisma.printDocumentTemplate.findFirst({
+      where: {
+        type,
+        isActive: true,
+        OR: [{ branchId }, { branchId: null }],
+      },
+      orderBy: { branchId: 'desc' },
+    });
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS[type];
+    const stored =
+      row?.fields && typeof row.fields === 'object' && !Array.isArray(row.fields)
+        ? (row.fields as Record<string, boolean>)
+        : {};
+    return {
+      paperSize: row?.paperSize ?? (type === 'id_card' ? 'a5' : 'a4'),
+      fields: { ...defaults, ...stored },
+      headerText: row?.headerText ?? null,
+      footerText: row?.footerText ?? null,
+      name: row?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES[type],
     };
   }
 

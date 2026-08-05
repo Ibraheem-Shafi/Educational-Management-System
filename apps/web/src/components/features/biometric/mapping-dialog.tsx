@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { queryKeys } from '@/lib/query-keys';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useUsersOptions } from '@/hooks/use-users-options';
 import {
   Dialog,
   DialogContent,
@@ -66,20 +67,14 @@ export function MappingDialog({
     queryKey: queryKeys.students({ branchId, limit: 200 }),
     queryFn: () =>
       apiClient<{ data: { id: string; fullName: string }[] }>(
-        `/students?branchId=${branchId}&limit=200`,
+        `/students/options?branchId=${branchId}&limit=200`,
         { token },
       ),
     enabled: !!token && open && form.entityType === 'student',
   });
 
-  const { data: usersData } = useQuery({
-    queryKey: ['users', branchId],
-    queryFn: () =>
-      apiClient<{ data: { id: string; fullName: string }[] }>(
-        `/users?limit=100&branchId=${branchId}`,
-        { token },
-      ),
-    enabled: !!token && open && form.entityType === 'user',
+  const { data: usersData } = useUsersOptions(token, branchId, {
+    enabled: open && form.entityType === 'user',
   });
 
   useEffect(() => {

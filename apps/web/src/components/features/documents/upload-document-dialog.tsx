@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createDocumentSchema } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { uploadStudentDocument } from '@/lib/upload-document';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useStudentsOptions } from '@/hooks/use-students-options';
 import {
   Dialog,
   DialogContent,
@@ -32,11 +32,6 @@ const CATEGORIES = [
   { value: 'academic_record', label: 'Academic record' },
   { value: 'other', label: 'Other' },
 ] as const;
-
-interface Student {
-  id: string;
-  fullName: string;
-}
 
 const emptyForm = {
   studentId: '',
@@ -63,11 +58,7 @@ export function UploadDocumentDialog({
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors, setFieldError } =
     useFormErrors(createDocumentSchema);
 
-  const { data: students } = useQuery({
-    queryKey: ['students-docs'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && open,
-  });
+  const { data: students } = useStudentsOptions(token, effectiveBranchId, open);
 
   useEffect(() => {
     if (!open) {
@@ -77,6 +68,10 @@ export function UploadDocumentDialog({
       clearAll();
     }
   }, [open, clearAll]);
+
+  useEffect(() => {
+    setForm((prev) => (prev.studentId ? { ...prev, studentId: '' } : prev));
+  }, [effectiveBranchId]);
 
   const uploadMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
@@ -124,7 +119,7 @@ export function UploadDocumentDialog({
     uploadMutation.mutate(payload);
   };
 
-  const canSubmit = form.studentId && form.title.trim() && file;
+  const canSubmit = form.studentId && form.title.trim() && file && effectiveBranchId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -178,7 +173,8 @@ export function UploadDocumentDialog({
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown
                 aria-label="Student"
-                placeholder="Select student"
+                placeholder={effectiveBranchId ? 'Select student' : 'Select branch first'}
+                disabled={!effectiveBranchId}
                 value={form.studentId}
                 onValueChange={(value) => {
                   setForm((prev) => ({ ...prev, studentId: value }));

@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 const MENU_GAP = 4;
@@ -10,6 +17,7 @@ const BACKDROP_Z_INDEX = 99999;
 const CLICK_SHIELD_MS = 400;
 const CLICK_SHIELD_ID = 'dropdown-click-shield';
 const LEGACY_PORTAL_ID = 'dropdown-portal-root';
+const MIN_MENU_HEIGHT = 96;
 
 function removeLegacyDropdownPortal() {
   if (typeof document === 'undefined') return;
@@ -26,10 +34,10 @@ function mountImmediateClickShield() {
   let shield = document.getElementById(CLICK_SHIELD_ID);
   if (!shield) {
     shield = document.createElement('div');
-  shield.id = CLICK_SHIELD_ID;
-  shield.setAttribute('aria-hidden', 'true');
-  shield.setAttribute('data-dropdown-layer', '');
-  document.body.appendChild(shield);
+    shield.id = CLICK_SHIELD_ID;
+    shield.setAttribute('aria-hidden', 'true');
+    shield.setAttribute('data-dropdown-layer', '');
+    document.body.appendChild(shield);
   }
 
   const absorb = (event: Event) => {
@@ -56,6 +64,8 @@ export interface DropdownMenuPosition {
   left: number;
   width: number;
   minWidth?: number;
+  /** Constrained to remaining viewport space so the menu never spills off-screen. */
+  maxHeight: number;
   placement: 'top' | 'bottom';
 }
 
@@ -66,12 +76,15 @@ export function computeDropdownPosition(
     gap?: number;
     minWidth?: number;
     align?: 'left' | 'right' | 'match';
+    /** Measured menu height when known; falls back to maxHeight for the flip check. */
+    contentHeight?: number;
   },
 ): DropdownMenuPosition {
   const maxHeight = options?.maxHeight ?? DEFAULT_MAX_HEIGHT;
   const gap = options?.gap ?? MENU_GAP;
   const minWidth = options?.minWidth;
   const align = options?.align ?? 'match';
+  const contentHeight = options?.contentHeight;
 
   const width =
     align === 'match' ? triggerRect.width : Math.max(minWidth ?? triggerRect.width, triggerRect.width);
@@ -79,8 +92,15 @@ export function computeDropdownPosition(
 
   const spaceBelow = window.innerHeight - triggerRect.bottom - gap;
   const spaceAbove = triggerRect.top - gap;
-  const preferredHeight = Math.min(maxHeight, 160);
-  const openUp = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+  // Open upward when the menu won't fit below and there is more room above.
+  const needed = Math.min(maxHeight, contentHeight ?? maxHeight);
+  const openUp = spaceBelow < needed && spaceAbove > spaceBelow;
+
+  const available = Math.max(0, openUp ? spaceAbove : spaceBelow);
+  const constrainedMaxHeight = Math.max(
+    MIN_MENU_HEIGHT,
+    Math.min(maxHeight, available > 0 ? available : maxHeight),
+  );
 
   if (openUp) {
     return {
@@ -88,6 +108,7 @@ export function computeDropdownPosition(
       left,
       width: align === 'match' ? triggerRect.width : width,
       minWidth,
+      maxHeight: constrainedMaxHeight,
       placement: 'top',
     };
   }
@@ -97,6 +118,7 @@ export function computeDropdownPosition(
     left,
     width: align === 'match' ? triggerRect.width : width,
     minWidth,
+    maxHeight: constrainedMaxHeight,
     placement: 'bottom',
   };
 }
@@ -134,6 +156,7 @@ export function useDropdownMenu<TMenu extends HTMLElement = HTMLElement>({
         maxHeight,
         align,
         minWidth,
+        contentHeight: menuRef.current?.scrollHeight,
       }),
     );
   }, [align, maxHeight, minWidth]);
@@ -145,7 +168,11 @@ export function useDropdownMenu<TMenu extends HTMLElement = HTMLElement>({
     }
 
     updatePosition();
-    window.addEventListener('resize', updatePosition);
+    // Remeasure after the portal menu paints so short lists don't wrongly flip,
+    // and tall lists flip/clamp against real height.
+    const raf = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(updatePosition);
+    });
 
     const onScroll = (event: Event) => {
       const target = event.target;
@@ -155,8 +182,10 @@ export function useDropdownMenu<TMenu extends HTMLElement = HTMLElement>({
       updatePosition();
     };
 
+    window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', onScroll, true);
     return () => {
+      window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', onScroll, true);
     };
@@ -194,6 +223,7 @@ export function dropdownMenuStyle(position: DropdownMenuPosition): CSSProperties
     left: position.left,
     width: position.width,
     minWidth: position.minWidth,
+    maxHeight: position.maxHeight,
     zIndex: MENU_Z_INDEX,
   };
 }

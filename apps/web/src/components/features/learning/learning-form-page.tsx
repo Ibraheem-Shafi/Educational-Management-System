@@ -18,6 +18,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
+import { useSubjectsOptions } from '@/hooks/use-subjects-options';
 import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { ContentPanel } from '@/components/layout/content-panel';
@@ -25,15 +26,11 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { DateField } from '@/components/ui/date-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 interface Program {
-  id: string;
-  name: string;
-}
-
-interface Subject {
   id: string;
   name: string;
 }
@@ -105,17 +102,13 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
 
   const { data: programs } = useQuery({
     queryKey: ['programs', effectiveBranchId],
-    queryFn: () => apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+    queryFn: () => apiClient<{ data: Program[] }>(`/programs/options?branchId=${effectiveBranchId}`, { token }),
     enabled: !!token && !!effectiveBranchId,
   });
 
   const { data: batches } = useBatches(token, effectiveBranchId, programId || undefined, !!effectiveBranchId);
 
-  const { data: subjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
-    enabled: !!token,
-  });
+  const { data: subjects } = useSubjectsOptions(token);
 
   const requiresProgram = visibilityScope === 'program';
   const requiresBatch = visibilityScope === 'batch' || visibilityScope === 'batch_subject';
@@ -322,12 +315,12 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
               <>
                 <div>
                   <FormFieldLabel required>Starts at</FormFieldLabel>
-                  <input
+                  <DateField
                     type="datetime-local"
                     className={fieldClassName('startsAt', modalFieldClassName)}
                     value={startsAt}
-                    onChange={(e) => {
-                      setStartsAt(e.target.value);
+                    onValueChange={(next) => {
+                      setStartsAt(next);
                       clearField('startsAt');
                     }}
                   />
@@ -335,12 +328,12 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 </div>
                 <div>
                   <FormFieldLabel>Ends at</FormFieldLabel>
-                  <input
+                  <DateField
                     type="datetime-local"
                     className={fieldClassName('endsAt', modalFieldClassName)}
                     value={endsAt}
-                    onChange={(e) => {
-                      setEndsAt(e.target.value);
+                    onValueChange={(next) => {
+                      setEndsAt(next);
                       clearField('endsAt');
                     }}
                   />
@@ -377,11 +370,11 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
             ) : (
               <div>
                 <FormFieldLabel>Due at</FormFieldLabel>
-                <input
+                <DateField
                   type="datetime-local"
                   className={modalFieldClassName}
                   value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
+                  onValueChange={setDueAt}
                 />
               </div>
             )}

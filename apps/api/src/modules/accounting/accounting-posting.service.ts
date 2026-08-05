@@ -94,6 +94,14 @@ export class AccountingPostingService implements OnModuleInit {
     });
     if (existing) return existing;
 
+    const payment = await this.prisma.feePayment.findUnique({
+      where: { id: paymentId },
+      select: { invoice: { select: { feeTypeId: true } } },
+    });
+    if (!payment) {
+      throw new BadRequestException('Fee payment not found');
+    }
+
     const [cash, feeIncome] = await Promise.all([
       this.getSystemAccount('1000'),
       this.getSystemAccount('4000'),
@@ -112,6 +120,7 @@ export class AccountingPostingService implements OnModuleInit {
         status: 'posted',
         sourceType: 'fee_payment',
         sourceId: paymentId,
+        feeTypeId: payment.invoice.feeTypeId,
         postedAt: now,
         createdById: userId,
         lines: {

@@ -13,6 +13,8 @@ import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useUsersOptions } from '@/hooks/use-users-options';
+import { useSubjectsOptions } from '@/hooks/use-subjects-options';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
@@ -218,23 +220,17 @@ export default function TimetablePage() {
     queryKey: ['batches', effectiveBranchId],
     queryFn: () =>
       apiClient<{ data: { id: string; name: string }[] }>(
-        `/batches?branchId=${effectiveBranchId}`,
+        `/batches/options?branchId=${effectiveBranchId}`,
         { token },
       ),
     enabled: !!token && !!effectiveBranchId,
   });
 
-  const { data: subjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => apiClient<{ data: { id: string; name: string }[] }>('/subjects', { token }),
-    enabled: !!token,
-  });
+  const { data: subjects } = useSubjectsOptions(token);
 
-  const { data: teachers } = useQuery({
-    queryKey: ['users-teachers'],
-    queryFn: () =>
-      apiClient<{ data: { id: string; fullName: string }[] }>('/users?limit=100', { token }),
-    enabled: !!token,
+  const { data: teachers } = useUsersOptions(token, effectiveBranchId ?? '', {
+    enabled: !!effectiveBranchId,
+    role: 'teacher',
   });
 
   const batchFilterOptions = [

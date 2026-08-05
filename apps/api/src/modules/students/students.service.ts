@@ -1,4 +1,4 @@
-import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
+import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
 import type { BranchScope } from '@eims/shared';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -11,6 +11,14 @@ import type { AuthUser, PaginatedResponse, StudentsStatsResponse } from '@eims/t
 import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
+const OPTIONS_LIMIT_MAX = 200;
+
+export type StudentOptionsQuery = {
+  branchId?: string;
+  batchId?: string;
+  q?: string;
+  limit?: number;
+};
 
 @Injectable()
 export class StudentsService {
@@ -99,6 +107,37 @@ export class StudentsService {
     };
   }
 
+  /** Lightweight catalog for staff dropdowns (no students.read required). */
+  async listOptions(query: StudentOptionsQuery, scope: BranchScope) {
+    const effective = narrowScope(scope, query.branchId);
+    const limit = Math.min(Math.max(query.limit ?? 100, 1), OPTIONS_LIMIT_MAX);
+    const q = query.q?.trim();
+
+    const activeStatusId = await this.lookupCache.getStatusId('student_status', 'active');
+    const students = await this.prisma.student.findMany({
+      where: {
+        deletedAt: null,
+        ...prismaBranchFilter(effective),
+        ...(activeStatusId ? { statusId: activeStatusId } : {}),
+        ...(query.batchId ? { batchId: query.batchId } : {}),
+        ...(q
+          ? {
+              OR: [
+                { fullName: { contains: q, mode: 'insensitive' as const } },
+                { rollNumber: { contains: q, mode: 'insensitive' as const } },
+                { admissionNumber: { contains: q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      select: { id: true, fullName: true, rollNumber: true, batchId: true },
+      orderBy: { fullName: 'asc' },
+      take: limit,
+    });
+
+    return { data: students };
+  }
+
   async findAll(
     query: ListStudentsQuery,
     scope: BranchScope,
@@ -112,10 +151,10 @@ export class StudentsService {
         ? {
             OR: [
               { fullName: { contains: query.search, mode: 'insensitive' as const } },
-              // Student IDs render as STD-<last6 of id>; strip the prefix so
-              // searching by the visible student ID matches the underlying id.
               { id: { contains: query.search.replace(/^STD-/i, ''), mode: 'insensitive' as const } },
               { cnicOrBForm: { contains: query.search, mode: 'insensitive' as const } },
+              { rollNumber: { contains: query.search, mode: 'insensitive' as const } },
+              { admissionNumber: { contains: query.search, mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -138,6 +177,8 @@ export class StudentsService {
           programId: true,
           batchId: true,
           statusId: true,
+          admissionNumber: true,
+          rollNumber: true,
           customFields: true,
           createdAt: true,
           updatedAt: true,
@@ -199,6 +240,8 @@ export class StudentsService {
           programId: input.programId,
           batchId: input.batchId,
           statusId: input.statusId,
+          admissionNumber: input.admissionNumber ?? null,
+          rollNumber: input.rollNumber ?? null,
           customFields: input.customFields ?? {},
           createdById: user.id,
         },
@@ -262,11 +305,14 @@ export class StudentsService {
         programId: true,
         batchId: true,
         statusId: true,
+        admissionNumber: true,
+        rollNumber: true,
         customFields: true,
         createdAt: true,
         updatedAt: true,
         batch: { select: { id: true, name: true } },
         program: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true, code: true } },
       },
     });
     if (!student) throw new NotFoundException('Student not found');
@@ -319,6 +365,8 @@ export class StudentsService {
         ...(input.programId !== undefined ? { programId: input.programId } : {}),
         ...(input.batchId !== undefined ? { batchId: input.batchId } : {}),
         ...(input.statusId !== undefined ? { statusId: input.statusId } : {}),
+        ...(input.admissionNumber !== undefined ? { admissionNumber: input.admissionNumber } : {}),
+        ...(input.rollNumber !== undefined ? { rollNumber: input.rollNumber } : {}),
         ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
       },
       include: { batch: true, program: true },
@@ -373,12 +421,14 @@ export class StudentsService {
     programId: string | null;
     batchId: string | null;
     statusId: string;
+    admissionNumber?: string | null;
+    rollNumber?: string | null;
     customFields?: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
     batch?: { id: string; name: string } | null;
     program?: { id: string; name: string } | null;
-    branch?: { id: string; name: string } | null;
+    branch?: { id: string; name: string; code?: string } | null;
     status?: { id: string; code: string; label: string } | null;
   }) {
     return {
@@ -395,18 +445,219 @@ export class StudentsService {
       programId: student.programId,
       batchId: student.batchId,
       statusId: student.statusId,
+      admissionNumber: student.admissionNumber ?? null,
+      rollNumber: student.rollNumber ?? null,
       customFields:
         student.customFields && typeof student.customFields === 'object' && !Array.isArray(student.customFields)
           ? (student.customFields as Record<string, unknown>)
           : {},
       batch: student.batch ? { id: student.batch.id, name: student.batch.name } : undefined,
       program: student.program ? { id: student.program.id, name: student.program.name } : undefined,
-      branch: student.branch ? { id: student.branch.id, name: student.branch.name } : undefined,
+      branch: student.branch
+        ? { id: student.branch.id, name: student.branch.name, code: student.branch.code }
+        : undefined,
       status: student.status
         ? { id: student.status.id, code: student.status.code, label: student.status.label }
         : undefined,
       createdAt: student.createdAt.toISOString(),
       updatedAt: student.updatedAt.toISOString(),
+    };
+  }
+
+  async generateRollNumbers(
+    input: import('@eims/shared').GenerateRollNumbersInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const batch = await this.prisma.batch.findFirst({
+      where: { id: input.batchId, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!batch) throw new NotFoundException('Batch not found');
+
+    const students = await this.prisma.student.findMany({
+      where: {
+        batchId: input.batchId,
+        deletedAt: null,
+        ...prismaBranchFilter(scope),
+        ...(input.overwriteExisting ? {} : { rollNumber: null }),
+      },
+      orderBy: { fullName: 'asc' },
+      select: { id: true, rollNumber: true },
+    });
+
+    let next = input.startFrom;
+    let updated = 0;
+    for (const student of students) {
+      if (!input.overwriteExisting && student.rollNumber) continue;
+      const rollNumber = `${input.prefix ?? ''}${String(next).padStart(input.padLength, '0')}`;
+      await this.prisma.student.update({
+        where: { id: student.id },
+        data: { rollNumber },
+      });
+      next += 1;
+      updated += 1;
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'student.roll_numbers_generated',
+      entityType: 'Batch',
+      entityId: input.batchId,
+      newValue: { updated, startFrom: input.startFrom },
+    });
+
+    return { updated, batchId: input.batchId };
+  }
+
+  async getRollSlipPrintData(id: string, scope: BranchScope) {
+    const student = await this.prisma.student.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+      select: {
+        id: true,
+        fullName: true,
+        rollNumber: true,
+        admissionNumber: true,
+        photographUrl: true,
+        cnicOrBForm: true,
+        phone: true,
+        program: { select: { name: true } },
+        batch: { select: { name: true } },
+        branch: { select: { name: true, code: true } },
+        branchId: true,
+      },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    const [settings, template] = await Promise.all([
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'roll_slip',
+          isActive: true,
+          OR: [{ branchId: student.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+    ]);
+
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS.roll_slip;
+    const stored =
+      template?.fields && typeof template.fields === 'object' && !Array.isArray(template.fields)
+        ? (template.fields as Record<string, boolean>)
+        : {};
+
+    return {
+      student: {
+        id: student.id,
+        fullName: student.fullName,
+        rollNumber: student.rollNumber,
+        admissionNumber: student.admissionNumber,
+        photographUrl: student.photographUrl,
+        cnicOrBForm: student.cnicOrBForm,
+        phone: student.phone,
+        program: student.program?.name ?? null,
+        batch: student.batch?.name ?? null,
+        branch: student.branch,
+      },
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+        phone: settings?.phone ?? null,
+        email: settings?.email ?? null,
+      },
+      template: {
+        id: template?.id ?? null,
+        type: 'roll_slip',
+        name: template?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.roll_slip,
+        paperSize: template?.paperSize ?? 'a4',
+        fields: { ...defaults, ...stored },
+        headerText: template?.headerText ?? null,
+        footerText: template?.footerText ?? null,
+        extraNote: template?.extraNote ?? null,
+      },
+    };
+  }
+
+  async getRosterPrintData(batchId: string, scope: BranchScope) {
+    const batch = await this.prisma.batch.findFirst({
+      where: { id: batchId, deletedAt: null, ...prismaBranchFilter(scope) },
+      include: {
+        program: { select: { name: true } },
+      },
+    });
+    if (!batch) throw new NotFoundException('Batch not found');
+
+    const students = await this.prisma.student.findMany({
+      where: { batchId, deletedAt: null, ...prismaBranchFilter(scope) },
+      orderBy: [{ rollNumber: 'asc' }, { fullName: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        rollNumber: true,
+        admissionNumber: true,
+        phone: true,
+        statusId: true,
+      },
+    });
+
+    const statusIds = [...new Set(students.map((s) => s.statusId))];
+    const statuses = statusIds.length
+      ? await this.prisma.lookupStatus.findMany({ where: { id: { in: statusIds } } })
+      : [];
+    const statusMap = new Map(statuses.map((s) => [s.id, s]));
+
+    const [settings, template, branch] = await Promise.all([
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'student_roster',
+          isActive: true,
+          OR: [{ branchId: batch.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+      this.prisma.branch.findUnique({
+        where: { id: batch.branchId },
+        select: { name: true, code: true },
+      }),
+    ]);
+
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS.student_roster;
+    const stored =
+      template?.fields && typeof template.fields === 'object' && !Array.isArray(template.fields)
+        ? (template.fields as Record<string, boolean>)
+        : {};
+
+    return {
+      batch: {
+        id: batch.id,
+        name: batch.name,
+        program: batch.program?.name ?? null,
+        branch: branch,
+      },
+      students: students.map((s) => ({
+        id: s.id,
+        fullName: s.fullName,
+        rollNumber: s.rollNumber,
+        admissionNumber: s.admissionNumber,
+        phone: s.phone,
+        status: statusMap.get(s.statusId)?.label ?? null,
+      })),
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+      },
+      template: {
+        paperSize: template?.paperSize ?? 'a4',
+        fields: { ...defaults, ...stored },
+        headerText: template?.headerText ?? null,
+        footerText: template?.footerText ?? null,
+        name: template?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.student_roster,
+      },
     };
   }
 

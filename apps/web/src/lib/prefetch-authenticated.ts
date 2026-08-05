@@ -31,7 +31,7 @@ export async function prefetchAuthenticatedQueries() {
     serverApiClient<InstitutionSettingsResponse>('/settings/institution', token),
     queryClient.prefetchQuery({
       queryKey: queryKeys.branches,
-      queryFn: () => serverApiClient<{ data: unknown[] }>('/branches', token),
+      queryFn: () => serverApiClient<{ data: unknown[] }>('/branches/options', token),
     }),
   ]);
 

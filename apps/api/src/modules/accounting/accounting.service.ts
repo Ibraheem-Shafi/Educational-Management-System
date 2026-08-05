@@ -29,6 +29,7 @@ import type {
 } from '@eims/shared';
 
 const voucherInclude = {
+  feeType: { select: { id: true, code: true, name: true } },
   lines: {
     include: {
       account: { select: { id: true, code: true, name: true, type: true } },
@@ -145,10 +146,12 @@ export class AccountingService {
     status: string;
     sourceType: string | null;
     sourceId: string | null;
+    feeTypeId: string | null;
     postedAt: Date | null;
     createdById: string | null;
     createdAt: Date;
     updatedAt: Date;
+    feeType: { id: string; code: string; name: string } | null;
     lines: Array<{
       id: string;
       accountId: string;
@@ -168,6 +171,8 @@ export class AccountingService {
       status: voucher.status,
       sourceType: voucher.sourceType,
       sourceId: voucher.sourceId,
+      feeTypeId: voucher.feeTypeId,
+      feeType: voucher.feeType,
       postedAt: voucher.postedAt?.toISOString() ?? null,
       createdById: voucher.createdById,
       createdAt: voucher.createdAt.toISOString(),
@@ -384,6 +389,42 @@ export class AccountingService {
     return this.toVoucherResponse(voucher);
   }
 
+  async getVoucherPrintData(id: string, scope: BranchScope) {
+    const voucher = await this.findVoucher(id, scope);
+    const [settings, template] = await Promise.all([
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'accounting_voucher',
+          isActive: true,
+          OR: [{ branchId: voucher.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+    ]);
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS.accounting_voucher;
+    const stored =
+      template?.fields && typeof template.fields === 'object' && !Array.isArray(template.fields)
+        ? (template.fields as Record<string, boolean>)
+        : {};
+    return {
+      voucher,
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+      },
+      template: {
+        paperSize: template?.paperSize ?? 'a4',
+        fields: { ...defaults, ...stored },
+        headerText: template?.headerText ?? null,
+        footerText: template?.footerText ?? null,
+        name: template?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.accounting_voucher,
+      },
+    };
+  }
+
   async createVoucher(input: CreateVoucherInput, user: AuthUser, scope: BranchScope) {
     const effectiveBranchId = getSingleBranchId(scope) ?? input.branchId;
     this.validateLinesBalance(input.lines);
@@ -494,7 +535,7 @@ export class AccountingService {
                 },
               }
             : {}),
-        },
+            },
         include: voucherInclude,
       });
     });

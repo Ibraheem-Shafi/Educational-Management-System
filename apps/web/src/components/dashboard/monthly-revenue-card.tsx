@@ -10,27 +10,11 @@ import {
   YAxis,
 } from 'recharts';
 import { TrendingUp } from 'lucide-react';
+import { formatCurrency, formatCurrencyCompact } from '@eims/shared';
 import type { DashboardMonthlyRevenueResponse } from '@eims/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip as AppTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-
-function formatCompactAmount(amount: number, currency: string): string {
-  const millions = amount / 1_000_000;
-  if (millions >= 1) {
-    const symbol =
-      new Intl.NumberFormat('en-US', { style: 'currency', currency })
-        .formatToParts(0)
-        .find((part) => part.type === 'currency')?.value ?? currency;
-    return `${symbol}${millions.toFixed(2)}M`;
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    notation: 'compact',
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
 
 function formatTrend(changePercent: number | null): string | null {
   if (changePercent === null) return null;
@@ -41,7 +25,6 @@ function formatTrend(changePercent: number | null): string | null {
 export function MonthlyRevenueCard({
   data,
   isLoading,
-  currency = 'PKR',
 }: {
   data?: DashboardMonthlyRevenueResponse;
   isLoading?: boolean;
@@ -67,11 +50,12 @@ export function MonthlyRevenueCard({
 
   const chartData = data.months.map((month) => ({
     label: month.label,
-    amountK: Math.round(month.amount / 1000),
+    amount: month.amount,
+    amountLakh: Math.round((month.amount / 100_000) * 100) / 100,
   }));
 
-  const maxAmountK = Math.max(...chartData.map((point) => point.amountK), 1);
-  const yMax = Math.ceil(maxAmountK / 200) * 200 || 800;
+  const maxLakh = Math.max(...chartData.map((point) => point.amountLakh), 1);
+  const yMax = Math.ceil(maxLakh / 2) * 2 || 10;
   const yTicks = Array.from({ length: 5 }, (_, i) => (yMax / 4) * i);
   const trendLabel = formatTrend(data.changePercentVsLastYear);
   const isPositiveTrend = (data.changePercentVsLastYear ?? 0) >= 0;
@@ -79,7 +63,7 @@ export function MonthlyRevenueCard({
   return (
     <div className="rounded-xl border border-stroke-soft-200 bg-neutral-0 p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-base font-medium leading-6 text-[var(--text-main-900)]">
             Monthly Revenue
           </h3>
@@ -87,10 +71,12 @@ export function MonthlyRevenueCard({
             Fiscal year {data.fiscalYear}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-xl font-semibold leading-7 tracking-[-0.02em] text-[var(--text-main-900)]">
-            {formatCompactAmount(data.totalAmount, currency)}
-          </p>
+        <div className="min-w-0 text-right">
+          <AppTooltip content={formatCurrency(data.totalAmount)} className="justify-end">
+            <p className="truncate text-xl font-semibold leading-7 tracking-[-0.02em] text-[var(--text-main-900)]">
+              {formatCurrencyCompact(data.totalAmount)}
+            </p>
+          </AppTooltip>
           {trendLabel && (
             <p
               className={cn(
@@ -128,17 +114,14 @@ export function MonthlyRevenueCard({
               ticks={yTicks}
               domain={[0, yMax]}
               tick={{ fontSize: 12, fill: 'var(--text-soft-400, #868C98)' }}
+              tickFormatter={(v) => `${v}L`}
             />
             <Tooltip
-              formatter={(value: number) => [
-                new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency,
-                  maximumFractionDigits: 0,
-                }).format(value * 1000),
-                'Revenue',
-              ]}
-              labelFormatter={(label) => label}
+              formatter={(value, _name, item) => {
+                const amount = (item?.payload as { amount?: number } | undefined)?.amount;
+                return [formatCurrency(Number(amount ?? Number(value) * 100_000)), 'Revenue'];
+              }}
+              labelFormatter={(label) => String(label)}
               contentStyle={{
                 borderRadius: 8,
                 border: '1px solid var(--stroke-soft-200, #E2E4E9)',
@@ -147,7 +130,7 @@ export function MonthlyRevenueCard({
             />
             <Area
               type="monotone"
-              dataKey="amountK"
+              dataKey="amountLakh"
               stroke="#003E73"
               strokeWidth={2.5}
               fill="url(#dashboardRevenueGradient)"

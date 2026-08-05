@@ -55,6 +55,13 @@ export async function seedStudentsAndParents(prisma: PrismaClient, ctx: DemoCont
     });
 
     const customFields = { ...student.customFields, _demoKey: student.demoKey };
+    let rollSeq = 1;
+    for (const s of ctx.config.students) {
+      if (s.batchCode === student.batchCode && s.demoKey === student.demoKey) break;
+      if (s.batchCode === student.batchCode) rollSeq += 1;
+    }
+    const admissionNumber = `ADM-${batch.branchCode}-${student.demoKey.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()}`;
+    const rollNumber = String(rollSeq).padStart(3, '0');
 
     const row =
       existing ??
@@ -71,6 +78,8 @@ export async function seedStudentsAndParents(prisma: PrismaClient, ctx: DemoCont
           email: student.email ?? null,
           address: `${student.address}, ${student.city}`,
           statusId,
+          admissionNumber,
+          rollNumber,
           customFields,
         },
       }));
@@ -86,6 +95,8 @@ export async function seedStudentsAndParents(prisma: PrismaClient, ctx: DemoCont
           fullName: student.fullName,
           phone: student.phone,
           email: student.email ?? null,
+          admissionNumber: existing.admissionNumber ?? admissionNumber,
+          rollNumber: existing.rollNumber ?? rollNumber,
         },
       });
     }

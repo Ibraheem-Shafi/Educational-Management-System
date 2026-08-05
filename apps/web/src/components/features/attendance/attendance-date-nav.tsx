@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { isPastYmd } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 
 function ordinal(day: number): string {
@@ -34,50 +37,85 @@ export function AttendanceDateNav({
   value,
   onChange,
   className,
+  confirmPast = true,
 }: {
   value: string;
   onChange: (next: string) => void;
   className?: string;
+  confirmPast?: boolean;
 }) {
+  const [pending, setPending] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function requestChange(next: string) {
+    if (!next || next === value) return;
+    if (!confirmPast || !isPastYmd(next)) {
+      onChange(next);
+      return;
+    }
+    setPending(next);
+    setConfirmOpen(true);
+  }
+
   return (
-    <div
-      className={cn(
-        'flex h-10 items-center gap-2 rounded-[10px] bg-white px-2',
-        className,
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => onChange(shiftIsoDate(value, -1))}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
-        aria-label="Previous day"
+    <>
+      <div
+        className={cn(
+          'flex h-10 items-center gap-2 rounded-[10px] bg-white px-2',
+          className,
+        )}
       >
-        <ChevronLeft className="h-4 w-4" strokeWidth={2} />
-      </button>
-      <label
-        className="relative flex min-w-[120px] cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
-        title="Pick a date"
-      >
-        <CalendarDays className="h-4 w-4 text-[var(--text-sub-500,#525866)]" strokeWidth={1.75} />
-        <span>{formatAttendanceNavDate(value)}</span>
-        <input
-          type="date"
-          value={value}
-          onChange={(e) => {
-            if (e.target.value) onChange(e.target.value);
-          }}
-          className="absolute inset-0 cursor-pointer opacity-0"
-          aria-label="Jump to date"
-        />
-      </label>
-      <button
-        type="button"
-        onClick={() => onChange(shiftIsoDate(value, 1))}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
-        aria-label="Next day"
-      >
-        <ChevronRight className="h-4 w-4" strokeWidth={2} />
-      </button>
-    </div>
+        <button
+          type="button"
+          onClick={() => requestChange(shiftIsoDate(value, -1))}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+          aria-label="Previous day"
+        >
+          <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+        </button>
+        <label
+          className="relative flex min-w-[120px] cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+          title="Pick a date"
+        >
+          <CalendarDays className="h-4 w-4 text-[var(--text-sub-500,#525866)]" strokeWidth={1.75} />
+          <span>{formatAttendanceNavDate(value)}</span>
+          <input
+            type="date"
+            value={value}
+            onChange={(e) => {
+              if (e.target.value) requestChange(e.target.value);
+            }}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="Jump to date"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => requestChange(shiftIsoDate(value, 1))}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+          aria-label="Next day"
+        >
+          <ChevronRight className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPending(null);
+            setConfirmOpen(false);
+          }
+        }}
+        title="This is an old date"
+        description="You selected a date in the past. Continue only if you meant to backdate attendance."
+        confirmLabel="Use this date"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          if (pending) onChange(pending);
+          setPending(null);
+          setConfirmOpen(false);
+        }}
+      />
+    </>
   );
 }

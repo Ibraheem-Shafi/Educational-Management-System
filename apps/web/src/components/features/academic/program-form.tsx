@@ -89,7 +89,7 @@ export function ProgramForm({
 
   const { data: branches } = useQuery({
     queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: Branch[] }>('/branches', { token }),
+    queryFn: () => apiClient<{ data: Branch[] }>('/branches/options', { token }),
     enabled: !!token,
   });
 

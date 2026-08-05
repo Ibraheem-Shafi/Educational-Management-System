@@ -1,10 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { TrendBadge } from './trend-badge';
 
 export interface MainStatItem {
   label: string;
   value: ReactNode;
+  /** Full value shown on hover (app tooltip). */
+  title?: string;
   changePercent?: number | null;
 }
 
@@ -88,26 +91,28 @@ export function MainStatsSection({
     <div className={cn('py-[11px]', className)} style={dashedBorderStyle}>
       <div className={statsGridClassName()} style={statsGridStyle(stats.length)}>
         {stats.map((stat, index) => (
-          <div
-            key={stat.label}
-            className={cn(
-              'flex min-w-0 flex-col items-center gap-1 px-4 py-2 text-center lg:items-start lg:px-5 lg:text-left',
-              cellBorderClassName(index),
-            )}
-          >
-            <div className="flex items-start justify-center gap-2 lg:w-full lg:justify-between">
-              <p className="text-sm font-medium leading-5 text-[var(--base-muted-foreground)]">
-                {stat.label}
-              </p>
-              {stat.changePercent != null && (
-                <TrendBadge changePercent={stat.changePercent} />
+            <div
+              key={stat.label}
+              className={cn(
+                'flex min-w-0 flex-col items-center gap-1 px-3 py-2 text-center sm:px-4 lg:items-start lg:px-5 lg:text-left',
+                cellBorderClassName(index),
               )}
+            >
+              <div className="flex w-full min-w-0 items-start justify-center gap-2 lg:justify-between">
+                <p className="min-w-0 truncate text-sm font-medium leading-5 text-[var(--base-muted-foreground)]">
+                  {stat.label}
+                </p>
+                {stat.changePercent != null && (
+                  <TrendBadge changePercent={stat.changePercent} />
+                )}
+              </div>
+              <Tooltip content={stat.title} className="w-full min-w-0">
+                <p className="w-full min-w-0 truncate text-2xl font-semibold leading-8 tracking-tight text-[var(--base-foreground)] sm:text-[1.75rem] sm:leading-9 lg:text-3xl">
+                  {stat.value}
+                </p>
+              </Tooltip>
             </div>
-            <p className="text-3xl font-semibold leading-9 text-[var(--base-foreground)]">
-              {stat.value}
-            </p>
-          </div>
-        ))}
+          ))}
       </div>
     </div>
   );

@@ -673,6 +673,31 @@ export class PayrollService {
       },
       institution: institution ?? { name: 'Institution', logoUrl: null, address: null },
       components: breakdown.components ?? [],
+      printLayout: await this.resolvePrintLayout(line.run.branchId),
+    };
+  }
+
+  private async resolvePrintLayout(branchId: string) {
+    const row = await this.prisma.printDocumentTemplate.findFirst({
+      where: {
+        type: 'salary_slip',
+        isActive: true,
+        OR: [{ branchId }, { branchId: null }],
+      },
+      orderBy: { branchId: 'desc' },
+    });
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS.salary_slip;
+    const stored =
+      row?.fields && typeof row.fields === 'object' && !Array.isArray(row.fields)
+        ? (row.fields as Record<string, boolean>)
+        : {};
+    return {
+      paperSize: row?.paperSize ?? 'a4',
+      fields: { ...defaults, ...stored },
+      headerText: row?.headerText ?? null,
+      footerText: row?.footerText ?? null,
+      name: row?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.salary_slip,
     };
   }
 

@@ -165,6 +165,8 @@ export class ReportsService {
     student: { id: string; fullName: string; phone: string | null; batchId: string | null };
     feeType: { id: string; name: string; code: string | null } | null;
     netAmount: number;
+    paidAmount: number;
+    remainingAmount: number;
     dueDate: string | null;
     createdAt: string;
   }>> {
@@ -184,6 +186,10 @@ export class ReportsService {
         where,
         include: {
           student: { select: { id: true, fullName: true, phone: true, batchId: true } },
+          payments: {
+            where: { status: { in: ['succeeded', 'completed'] } },
+            select: { amount: true },
+          },
         },
         orderBy: { dueDate: 'asc' },
         skip: (page - 1) * limit,
@@ -199,14 +205,23 @@ export class ReportsService {
     const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
 
     return paginatedResult(
-      invoices.map((inv) => ({
-        id: inv.id,
-        student: inv.student,
-        feeType: feeTypeMap.get(inv.feeTypeId) ?? null,
-        netAmount: Number(inv.netAmount),
-        dueDate: inv.dueDate?.toISOString().slice(0, 10) ?? null,
-        createdAt: inv.createdAt.toISOString(),
-      })),
+      invoices.map((inv) => {
+        const paidAmount = Math.round(
+          ((inv.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0) + Number.EPSILON) * 100,
+        ) / 100;
+        const netAmount = Math.round((Number(inv.netAmount) + Number.EPSILON) * 100) / 100;
+        const remainingAmount = Math.max(0, Math.round((netAmount - paidAmount + Number.EPSILON) * 100) / 100);
+        return {
+          id: inv.id,
+          student: inv.student,
+          feeType: feeTypeMap.get(inv.feeTypeId) ?? null,
+          netAmount,
+          paidAmount,
+          remainingAmount,
+          dueDate: inv.dueDate?.toISOString().slice(0, 10) ?? null,
+          createdAt: inv.createdAt.toISOString(),
+        };
+      }),
       total,
       page,
       limit,

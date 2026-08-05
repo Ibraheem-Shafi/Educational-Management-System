@@ -1,4 +1,4 @@
-import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
+import { narrowScope, prismaBranchFilter } from '../../common/utils/branch-scope.util';
 import { allBranchScope, selectedBranchScope } from '@eims/shared';
 import type { BranchScope } from '@eims/shared';
 import {
@@ -48,6 +48,24 @@ export class ProgramsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  /** Lightweight catalog for staff dropdowns (no academic.read required). */
+  async listOptions(
+    scope: BranchScope,
+    query: { branchId?: string } = {},
+  ) {
+    const effective = narrowScope(scope, query.branchId);
+    const programs = await this.prisma.program.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        ...prismaBranchFilter(effective),
+      },
+      select: { id: true, name: true, branchId: true },
+      orderBy: { name: 'asc' },
+    });
+    return { data: programs };
+  }
 
   async findAll(query: ListProgramsQuery, scope: BranchScope) {
     const effective =
@@ -313,6 +331,25 @@ export class BatchesService {
     private readonly audit: AuditService,
   ) {}
 
+  /** Lightweight catalog for staff dropdowns (no academic.read required). */
+  async listOptions(
+    scope: BranchScope,
+    query: { branchId?: string; programId?: string } = {},
+  ) {
+    const effective = narrowScope(scope, query.branchId);
+    const batches = await this.prisma.batch.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        ...prismaBranchFilter(effective),
+        ...(query.programId ? { programId: query.programId } : {}),
+      },
+      select: { id: true, name: true, branchId: true, programId: true },
+      orderBy: { name: 'asc' },
+    });
+    return { data: batches };
+  }
+
   async findAll(query: ListBatchesQuery, scope: BranchScope) {
     const effective =
       scope.kind === 'selected'
@@ -473,6 +510,32 @@ export class SubjectsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  /** Lightweight catalog for staff dropdowns — no academic.read required. */
+  async listOptions(query: { q?: string; limit?: number } = {}) {
+    const limit = Math.min(Math.max(query.limit ?? 100, 1), 200);
+    const q = query.q?.trim();
+
+    const subjects = await this.prisma.subject.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' as const } },
+                { code: { contains: q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      select: { id: true, name: true, code: true },
+      orderBy: { name: 'asc' },
+      take: limit,
+    });
+
+    return { data: subjects };
+  }
 
   async findAll(query: ListSubjectsQuery) {
     const where = {

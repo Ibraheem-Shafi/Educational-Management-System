@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, LayoutDashboard } from 'lucide-react';
-import { formatCurrency } from '@eims/shared';
+import { currencyStat, formatCurrency } from '@eims/shared';
 import type { LearningResourceResponse, PortalParentStatsResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -110,7 +110,7 @@ function ParentPortalHomeContent() {
             },
             {
               label: 'Total outstanding',
-              value: formatCurrency(stats?.totalOutstanding.total ?? 0),
+              ...currencyStat(stats?.totalOutstanding.total ?? 0),
               changePercent: stats?.totalOutstanding.changePercent,
             },
             {

@@ -103,7 +103,10 @@ export default function StudentDetailPage() {
         token,
         body: JSON.stringify({ subjectIds: selectedSubjectIds }),
       }),
-    onSuccess: () => toast.success('Subjects updated'),
+    onSuccess: async () => {
+      toast.success('Subjects updated');
+      await queryClient.invalidateQueries({ queryKey: ['student-subjects', id] });
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -379,6 +382,13 @@ export default function StudentDetailPage() {
                   Print ID card
                 </Link>
               )}
+              <Link
+                href={`/print/roll-slips/${id}`}
+                target="_blank"
+                className="inline-flex items-center rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-2 text-sm font-medium text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+              >
+                Print roll slip
+              </Link>
               {canIssueCert && (
                 <button
                   type="button"

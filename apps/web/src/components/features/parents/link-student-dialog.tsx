@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { linkParentStudentSchema } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useStudentsOptions } from '@/hooks/use-students-options';
 import {
   Dialog,
   DialogContent,
@@ -17,48 +17,49 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-
-interface Student {
-  id: string;
-  fullName: string;
-}
 
 export function LinkStudentDialog({
   open,
   onOpenChange,
   parentId,
   parentName,
+  branchId = '',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   parentId: string;
   parentName: string;
+  branchId?: string;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [studentId, setStudentId] = useState('');
+  const [pickedBranchId, setPickedBranchId] = useState('');
   const [relationship, setRelationship] = useState('guardian');
+  const effectiveBranchId = branchId || pickedBranchId;
   const { errors, validate, clearField, clearAll, applyApiErrors } =
     useFormErrors(linkParentStudentSchema);
 
-  const { data: students } = useQuery({
-    queryKey: ['students-parents', parentId],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && open,
-  });
+  const { data: students } = useStudentsOptions(token, effectiveBranchId, open);
 
   useEffect(() => {
     if (!open) {
       setStudentId('');
+      setPickedBranchId('');
       setRelationship('guardian');
       clearAll();
     }
   }, [open, clearAll]);
+
+  useEffect(() => {
+    setStudentId('');
+  }, [effectiveBranchId]);
 
   const linkMutation = useMutation({
     mutationFn: (body: { studentId: string; relationshipCode: string }) =>
@@ -111,11 +112,19 @@ export function LinkStudentDialog({
 
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={setPickedBranchId}
+              />
+            )}
+
             <div>
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown
                 aria-label="Select student"
-                placeholder="Select student"
+                placeholder={effectiveBranchId ? 'Select student' : 'Select branch first'}
+                disabled={!effectiveBranchId}
                 value={studentId}
                 onValueChange={(value) => {
                   setStudentId(value);

@@ -11,6 +11,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
+import { useSubjectsOptions } from '@/hooks/use-subjects-options';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
@@ -21,11 +22,6 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 interface Program {
-  id: string;
-  name: string;
-}
-
-interface Subject {
   id: string;
   name: string;
 }
@@ -97,17 +93,13 @@ export function CreateLearningDialog({
   const { data: programs } = useQuery({
     queryKey: ['programs', effectiveBranchId],
     queryFn: () =>
-      apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+      apiClient<{ data: Program[] }>(`/programs/options?branchId=${effectiveBranchId}`, { token }),
     enabled: !!token && !!effectiveBranchId && open,
   });
 
   const { data: batches } = useBatches(token, effectiveBranchId, form.programId || undefined, open);
 
-  const { data: subjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
-    enabled: !!token && open,
-  });
+  const { data: subjects } = useSubjectsOptions(token, { enabled: open });
 
   const requiresProgram = form.visibilityScope === 'program';
   const requiresBatch = form.visibilityScope === 'batch' || form.visibilityScope === 'batch_subject';

@@ -94,6 +94,7 @@ export async function seedFees(prisma: PrismaClient, ctx: DemoContext): Promise<
             branchId,
             studentId: student.id,
             feeTypeId: monthlyFeeTypeId,
+            invoiceNo: `INV-${branchCode}-${due.getUTCFullYear()}${String(due.getUTCMonth() + 1).padStart(2, '0')}-${student.id.slice(-6).toUpperCase()}`,
             amount,
             discount,
             fine,
@@ -131,6 +132,7 @@ async function ensureFeePayment(
     data: {
       invoiceId,
       branchId,
+      receiptNo: `RCP-${invoiceId.slice(-10).toUpperCase()}`,
       amount,
       method: 'cash',
       provider: 'manual',

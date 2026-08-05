@@ -27,6 +27,8 @@ import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const STATS_CACHE_TTL_MS = 45_000;
+const OPTIONS_LIMIT_MAX = 200;
+const PORTAL_ROLE_CODES = ['parent', 'student'] as const;
 
 const userDetailInclude = {
   branch: { select: { id: true, name: true, code: true } },
@@ -109,6 +111,52 @@ export class UsersService {
     }
 
     return this.findStaffCombined(query, effective);
+  }
+
+  /** Lightweight catalog for staff dropdowns — no users.manage required. */
+  async listOptions(
+    scope: BranchScope,
+    query: { branchId?: string; q?: string; limit?: number; role?: string } = {},
+  ) {
+    const effective = narrowScope(scope, query.branchId);
+    const limit = Math.min(Math.max(query.limit ?? 100, 1), OPTIONS_LIMIT_MAX);
+    const q = query.q?.trim();
+    const role = query.role?.trim();
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        ...prismaBranchFilter(effective),
+        userRoles: {
+          some: {
+            role: role
+              ? { code: role }
+              : { code: { notIn: [...PORTAL_ROLE_CODES] } },
+          },
+        },
+        ...(q
+          ? {
+              OR: [
+                { fullName: { contains: q, mode: 'insensitive' as const } },
+                { email: { contains: q, mode: 'insensitive' as const } },
+                { id: { contains: q.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      select: { id: true, fullName: true },
+      orderBy: { fullName: 'asc' },
+      take: limit,
+    });
+
+    return {
+      data: users.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        staffCode: this.formatStaffCode(user.id),
+      })),
+    };
   }
 
   private async findUsersPaginated(

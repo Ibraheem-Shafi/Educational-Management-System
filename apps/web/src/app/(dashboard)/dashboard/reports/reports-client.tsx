@@ -11,8 +11,9 @@ import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { useBatches } from '@/hooks/use-batches';
 import { downloadCsv } from '@/lib/download-csv';
-import { formatCurrency, PERMISSIONS } from '@eims/shared';
+import { formatCurrency, formatCurrencyCompact, PERMISSIONS } from '@eims/shared';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
@@ -186,33 +187,46 @@ export default function ReportsPage() {
           }
         >
           <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-[var(--text-sub-500)]">Collected</p>
-              <p className="text-xl font-semibold text-[var(--text-main-900)]">
-                {formatCurrency(overview.fees.collectedAmount)}
-              </p>
+              <Tooltip content={formatCurrency(overview.fees.collectedAmount)} className="w-full">
+                <p className="truncate text-xl font-semibold text-[var(--text-main-900)]">
+                  {formatCurrencyCompact(overview.fees.collectedAmount)}
+                </p>
+              </Tooltip>
               <p className="text-xs text-[var(--text-sub-500)]">
                 {overview.fees.paidCount} paid invoices
               </p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-[var(--text-sub-500)]">Pending</p>
-              <p className="text-xl font-semibold text-[var(--text-main-900)]">
-                {formatCurrency(overview.fees.pendingAmount)}
-              </p>
+              <Tooltip content={formatCurrency(overview.fees.pendingAmount)} className="w-full">
+                <p className="truncate text-xl font-semibold text-[var(--text-main-900)]">
+                  {formatCurrencyCompact(overview.fees.pendingAmount)}
+                </p>
+              </Tooltip>
               <p className="text-xs text-[var(--text-sub-500)]">
                 {overview.fees.pendingCount} unpaid invoices
               </p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-[var(--text-sub-500)]">Collection rate</p>
               <p className="text-xl font-semibold text-[var(--text-main-900)]">{collectionRate ?? '—'}%</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-[var(--text-sub-500)]">Total billed</p>
-              <p className="text-xl font-semibold text-[var(--text-main-900)]">
-                {formatCurrency(overview.fees.collectedAmount + overview.fees.pendingAmount)}
-              </p>
+              <Tooltip
+                content={formatCurrency(
+                  overview.fees.collectedAmount + overview.fees.pendingAmount,
+                )}
+                className="w-full"
+              >
+                <p className="truncate text-xl font-semibold text-[var(--text-main-900)]">
+                  {formatCurrencyCompact(
+                    overview.fees.collectedAmount + overview.fees.pendingAmount,
+                  )}
+                </p>
+              </Tooltip>
             </div>
           </div>
         </ContentPanel>

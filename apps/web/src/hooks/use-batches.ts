@@ -22,7 +22,7 @@ export function useBatches(
     queryFn: () => {
       const params = new URLSearchParams({ branchId });
       if (programId) params.set('programId', programId);
-      return apiClient<{ data: Batch[] }>(`/batches?${params}`, { token });
+      return apiClient<{ data: Batch[] }>(`/batches/options?${params}`, { token });
     },
     enabled: enabled && !!token && !!branchId,
     ...referenceQueryOptions(),

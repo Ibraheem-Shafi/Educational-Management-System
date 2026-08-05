@@ -9,6 +9,8 @@ import { paginationQuerySchema } from './common.schema';
 
 export const accountTypes = ['asset', 'liability', 'equity', 'income', 'expense'] as const;
 export const voucherTypes = ['journal', 'receipt', 'payment'] as const;
+/** Manual vouchers from Accounting UI — fee receipts are created only via Fees payments. */
+export const manualVoucherTypes = ['journal', 'payment'] as const;
 export const voucherStatuses = ['draft', 'posted', 'cancelled'] as const;
 
 export const createAccountSchema = z.object({
@@ -50,7 +52,9 @@ export type JournalLineInput = z.infer<typeof journalLineInputSchema>;
 
 export const createVoucherSchema = z.object({
   branchId: requiredId('Branch'),
-  voucherType: z.enum(voucherTypes, { errorMap: () => ({ message: MSG.select('voucher type') }) }),
+  voucherType: z.enum(manualVoucherTypes, {
+    errorMap: () => ({ message: MSG.select('voucher type') }),
+  }),
   voucherDate: requiredId('Voucher date'),
   narration: optionalString(1000),
   lines: z.array(journalLineInputSchema).min(2),
@@ -59,7 +63,9 @@ export const createVoucherSchema = z.object({
 export type CreateVoucherInput = z.infer<typeof createVoucherSchema>;
 
 export const updateVoucherSchema = z.object({
-  voucherType: z.enum(voucherTypes, { errorMap: () => ({ message: MSG.select('voucher type') }) }).optional(),
+  voucherType: z
+    .enum(manualVoucherTypes, { errorMap: () => ({ message: MSG.select('voucher type') }) })
+    .optional(),
   voucherDate: requiredId('Voucher date').optional(),
   narration: optionalString(1000).nullable(),
   lines: z.array(journalLineInputSchema).min(2).optional(),

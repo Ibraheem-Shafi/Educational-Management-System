@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Link2, Mail, Phone, Unlink, Users } from 'lucide-react';
@@ -10,7 +10,7 @@ import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { Button } from '@/components/ui/button';
+import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader, pageHeaderActionClassName } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
@@ -58,6 +58,7 @@ export default function ParentDetailPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const { singleBranchId } = useEffectiveBranchScope();
   const canUpdate = can(PERMISSIONS.STUDENTS_UPDATE);
   const [linkOpen, setLinkOpen] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<{ studentId: string; name: string } | null>(null);
@@ -147,6 +148,7 @@ export default function ParentDetailPage() {
             onOpenChange={setLinkOpen}
             parentId={parent.id}
             parentName={parent.fullName}
+            branchId={singleBranchId ?? ''}
           />
 
           <ConfirmDialog

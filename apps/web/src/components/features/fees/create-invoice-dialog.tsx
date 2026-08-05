@@ -9,8 +9,8 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useStudentsOptions } from '@/hooks/use-students-options';
 import { FormFieldError } from '@/components/forms/form-field-error';
-import type { PaginatedResponse } from '@eims/types';
 import {
   Dialog,
   DialogContent,
@@ -20,13 +20,9 @@ import {
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { DateField } from '@/components/ui/date-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-
-interface Student {
-  id: string;
-  fullName: string;
-}
 
 interface FeeType {
   id: string;
@@ -60,11 +56,7 @@ export function CreateInvoiceDialog({
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(createFeeInvoiceSchema);
 
-  const { data: students } = useQuery({
-    queryKey: ['students-fees'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && open,
-  });
+  const { data: students } = useStudentsOptions(token, effectiveBranchId, open);
 
   const { data: feeTypes } = useQuery({
     queryKey: ['fee-types'],
@@ -80,6 +72,10 @@ export function CreateInvoiceDialog({
     }
   }, [open, clearAll]);
 
+  useEffect(() => {
+    setForm((prev) => (prev.studentId ? { ...prev, studentId: '' } : prev));
+  }, [effectiveBranchId]);
+
   const createMutation = useMutation({
     mutationFn: (payload: ReturnType<typeof buildPayload>) =>
       apiClient('/fee-invoices', {
@@ -91,6 +87,15 @@ export function CreateInvoiceDialog({
       toast.success('Invoice created');
       queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
+      queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportsFeeDefaulters() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.feesRevenueTrend });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardMonthlyRevenue });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportsOverview });
+      queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentFees() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.portalParentFees() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentStats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.portalParentStats });
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -156,7 +161,8 @@ export function CreateInvoiceDialog({
               <FormFieldLabel required>Student</FormFieldLabel>
               <SelectDropdown
                 aria-label="Student"
-                placeholder="Select student"
+                placeholder={effectiveBranchId ? 'Select student' : 'Select branch first'}
+                disabled={!effectiveBranchId}
                 value={form.studentId}
                 onValueChange={(value) => {
                   clearField('studentId');
@@ -238,13 +244,12 @@ export function CreateInvoiceDialog({
               </div>
               <div>
                 <FormFieldLabel>Due date</FormFieldLabel>
-                <input
-                  type="date"
+                <DateField
                   className={fieldClassName('dueDate', modalFieldClassName)}
                   value={form.dueDate}
-                  onChange={(e) => {
+                  onValueChange={(next) => {
                     clearField('dueDate');
-                    setForm((prev) => ({ ...prev, dueDate: e.target.value }));
+                    setForm((prev) => ({ ...prev, dueDate: next }));
                   }}
                 />
                 <FormFieldError message={errors.dueDate} />

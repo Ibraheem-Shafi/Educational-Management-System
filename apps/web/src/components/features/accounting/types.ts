@@ -1,3 +1,5 @@
+import { formatNumberPk } from '@eims/shared';
+
 export interface AccountingAccount {
   id: string;
   branchId: string | null;
@@ -27,6 +29,8 @@ export interface JournalVoucher {
   status: string;
   sourceType: string | null;
   sourceId: string | null;
+  feeTypeId: string | null;
+  feeType?: { id: string; code: string; name: string } | null;
   postedAt: string | null;
   lines: JournalLine[];
 }
@@ -47,7 +51,7 @@ export interface Budget {
 }
 
 export function formatMoney(value: number) {
-  return value.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return formatNumberPk(value, { maximumFractionDigits: 2 });
 }
 
 export function formatLabel(value: string) {

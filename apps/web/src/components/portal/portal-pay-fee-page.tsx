@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { formatCurrency } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { cn } from '@/lib/utils';
 
@@ -52,7 +53,13 @@ export function PortalPayFeePage({ returnPath }: { returnPath: string }) {
     onSuccess: () => {
       toast.success('Payment confirmed');
       refetch();
-      queryClient.invalidateQueries({ queryKey: ['portal'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentFees() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.portalParentFees() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentStats });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.portalParentStats });
+      void queryClient.invalidateQueries({ queryKey: ['payment', paymentId] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
+      void queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
     },
     onError: (err: Error) => toast.error(err.message),
   });

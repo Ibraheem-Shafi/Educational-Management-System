@@ -10,6 +10,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useSubjectsOptions } from '@/hooks/use-subjects-options';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,11 +23,6 @@ import { MarksStudentRow } from '@/components/features/marks-student-row';
 import { PermissionGate } from '@/components/auth/permission-gate';
 
 interface Batch {
-  id: string;
-  name: string;
-}
-
-interface Subject {
   id: string;
   name: string;
 }
@@ -57,17 +53,13 @@ export default function MarksEntryPage() {
     queryKey: ['batches', user?.branchId],
     queryFn: () =>
       apiClient<{ data: Batch[] }>(
-        `/batches${user?.branchId ? `?branchId=${user.branchId}` : ''}`,
+        `/batches/options${user?.branchId ? `?branchId=${user.branchId}` : ''}`,
         { token },
       ),
     enabled: !!token,
   });
 
-  const { data: subjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
-    enabled: !!token,
-  });
+  const { data: subjects } = useSubjectsOptions(token);
 
   const sheetKey = ['marks-sheet', id, batchId];
   const { data: sheet, isLoading } = useQuery({

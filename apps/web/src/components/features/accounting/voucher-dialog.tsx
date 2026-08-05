@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { createVoucherSchema, voucherTypes } from '@eims/shared';
+import { createVoucherSchema, manualVoucherTypes } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
-import { queryKeys } from '@/lib/query-keys';
+import { queryKeys, queryRoots } from '@/lib/query-keys';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { Button } from '@/components/ui/button';
+import { DateField } from '@/components/ui/date-field';
 import { cn } from '@/lib/utils';
 import type { AccountingAccount, JournalVoucher } from './types';
 import { formatLabel, formatMoney } from './types';
@@ -106,7 +107,7 @@ export function VoucherDialog({
       apiClient('/accounting/vouchers', { method: 'POST', token, body: payload }),
     onSuccess: async () => {
       toast.success('Voucher created');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingVouchers(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingVouchers });
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -145,46 +146,58 @@ export function VoucherDialog({
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-icon-primary" />
             <DialogTitle className="text-base font-medium">
-              {isView ? voucher?.voucherNo ?? 'Voucher' : 'New journal voucher'}
+              {isView ? voucher?.voucherNo ?? 'Voucher' : 'New voucher'}
             </DialogTitle>
           </div>
           <button type="button" onClick={() => onOpenChange(false)} aria-label="Close">
             <X className="h-5 w-5 text-icon-primary" />
           </button>
         </div>
-        <DialogDescription className="sr-only">Journal voucher form</DialogDescription>
+        <DialogDescription className="sr-only">
+          {isView ? 'View voucher' : 'Create journal or payment voucher'}
+        </DialogDescription>
 
         <form className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <FormFieldLabel>Type</FormFieldLabel>
-              <SelectDropdown
-                aria-label="Voucher type"
-                value={voucherType}
-                onValueChange={(value) => {
-                  if (isView) return;
-                  clearField('voucherType');
-                  setVoucherType(value);
-                }}
-                options={voucherTypes.map((t) => ({ value: t, label: formatLabel(t) }))}
-                className={cn(
-                  fieldClassName('voucherType', 'w-full'),
-                  isView && 'pointer-events-none opacity-60',
-                )}
-              />
-              <FormFieldError message={errors.voucherType} />
+              {isView ? (
+                <input
+                  className={modalFieldClassName}
+                  value={formatLabel(voucherType)}
+                  disabled
+                  readOnly
+                />
+              ) : (
+                <>
+                  <SelectDropdown
+                    aria-label="Voucher type"
+                    value={voucherType}
+                    onValueChange={(value) => {
+                      clearField('voucherType');
+                      setVoucherType(value);
+                    }}
+                    options={manualVoucherTypes.map((t) => ({
+                      value: t,
+                      label: formatLabel(t),
+                    }))}
+                    className={fieldClassName('voucherType', 'w-full')}
+                  />
+                  <FormFieldError message={errors.voucherType} />
+                </>
+              )}
             </div>
             <div>
               <FormFieldLabel htmlFor="voucher-date">Date</FormFieldLabel>
-              <input
+              <DateField
                 id="voucher-date"
-                type="date"
                 className={fieldClassName('voucherDate', modalFieldClassName)}
                 value={voucherDate}
                 disabled={isView}
-                onChange={(e) => {
+                confirmPast={!isView}
+                onValueChange={(next) => {
                   clearField('voucherDate');
-                  setVoucherDate(e.target.value);
+                  setVoucherDate(next);
                 }}
               />
               <FormFieldError message={errors.voucherDate} />
@@ -198,6 +211,18 @@ export function VoucherDialog({
               />
             </div>
           </div>
+
+          {isView && voucher?.feeType ? (
+            <div>
+              <FormFieldLabel>Fee type</FormFieldLabel>
+              <input
+                className={modalFieldClassName}
+                value={voucher.feeType.name}
+                disabled
+                readOnly
+              />
+            </div>
+          ) : null}
 
           <div>
             <FormFieldLabel htmlFor="voucher-narration">Narration</FormFieldLabel>
@@ -330,8 +355,8 @@ export function VoucherDialog({
               type="submit"
               disabled={mutation.isPending || !totals.balanced}
               className={cn(
-                'w-full rounded-lg bg-primary-base px-4 py-2.5 text-sm font-medium text-neutral-0',
-                (mutation.isPending || !totals.balanced) && 'opacity-60',
+                'w-full rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
+                'hover:opacity-90 disabled:pointer-events-none disabled:opacity-60',
               )}
             >
               {mutation.isPending ? 'Saving…' : 'Create draft voucher'}

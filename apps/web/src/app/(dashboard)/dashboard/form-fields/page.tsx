@@ -91,7 +91,7 @@ export default function FormFieldsPage() {
   const [limit, setLimit] = useState(8);
   const createFormErrors = useFormErrors(createFormFieldSchema);
   const updateFormErrors = useFormErrors(updateFormFieldSchema);
-  const { errors, clearField, validate, applyApiErrors, fieldClassName, clearAll } = editId
+  const { errors, clearField, validate, fieldClassName } = editId
     ? updateFormErrors
     : createFormErrors;
 

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { DateField } from '@/components/ui/date-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 import type { TransportRoute, TransportTrip, TransportVehicle } from './types';
@@ -182,12 +183,11 @@ export function TripDialog({
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <FormFieldLabel required>Trip date</FormFieldLabel>
-              <input
-                type="date"
+              <DateField
                 className={fieldClassName('tripDate', modalFieldClassName)}
                 value={tripDate}
-                onChange={(e) => {
-                  setTripDate(e.target.value);
+                onValueChange={(next) => {
+                  setTripDate(next);
                   clearField('tripDate');
                 }}
               />

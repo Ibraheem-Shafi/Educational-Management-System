@@ -52,6 +52,7 @@ export function SelectDropdown({
   className,
   size = 'default',
   fullWidth = false,
+  disabled = false,
   'aria-label': ariaLabel,
 }: {
   value: string;
@@ -61,6 +62,7 @@ export function SelectDropdown({
   className?: string;
   size?: 'default' | 'sm';
   fullWidth?: boolean;
+  disabled?: boolean;
   'aria-label'?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -92,12 +94,16 @@ export function SelectDropdown({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
         aria-label={ariaLabel ?? placeholder}
         onPointerDown={(event) => event.stopPropagation()}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((current) => !current);
+        }}
         className={cn(
           'flex w-full items-center justify-between bg-white',
           'font-[family-name:var(--font-inter)] text-sm font-normal',
@@ -111,17 +117,19 @@ export function SelectDropdown({
           selected?.value
             ? 'text-[var(--text-main-900,#0A0D14)]'
             : 'text-[var(--text-soft-400,#868C98)]',
+          disabled && 'cursor-not-allowed opacity-50 hover:bg-white',
         )}
       >
         <span className="truncate">{displayLabel}</span>
         <SelectChevron open={open} placement={position?.placement} />
       </button>
 
-      {open && position && typeof document !== 'undefined' && (
+      {open && !disabled && position && typeof document !== 'undefined' && (
         <DropdownMenuBackdrop onClose={closeMenu} />
       )}
 
       {open &&
+        !disabled &&
         position &&
         typeof document !== 'undefined' &&
         createPortal(

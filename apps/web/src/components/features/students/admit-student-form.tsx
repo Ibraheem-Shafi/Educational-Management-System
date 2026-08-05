@@ -18,6 +18,7 @@ import {
   mapApiDetailsToFields,
 } from '@/lib/form-validation';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useBatches } from '@/hooks/use-batches';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadStudentPhoto } from '@/lib/upload-photo';
 import { uploadStudentDocument } from '@/lib/upload-document';
@@ -47,12 +48,6 @@ interface Program {
   id: string;
   name: string;
   branchId: string;
-}
-
-interface Batch {
-  id: string;
-  name: string;
-  programId: string;
 }
 
 interface LookupStatus {
@@ -105,6 +100,8 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const [batchId, setBatchId] = useState('');
   const [statusId, setStatusId] = useState('');
   const [fullName, setFullName] = useState('');
+  const [rollNumber, setRollNumber] = useState('');
+  const [admissionNumber, setAdmissionNumber] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [cnicOrBForm, setCnicOrBForm] = useState('');
@@ -136,7 +133,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
-    queryFn: () => apiClient<{ data: Branch[] }>('/branches', { token }),
+    queryFn: () => apiClient<{ data: Branch[] }>('/branches/options', { token }),
     enabled: !!token,
   });
 
@@ -147,21 +144,18 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const effectiveBranchId = branchId || user?.branchId || scopedSingleBranchId || '';
 
   const { data: programs } = useQuery({
-    queryKey: ['programs', effectiveBranchId],
+    queryKey: ['programs-options', effectiveBranchId],
     queryFn: () =>
-      apiClient<{ data: Program[] }>(`/programs?branchId=${effectiveBranchId}`, { token }),
+      apiClient<{ data: Program[] }>(`/programs/options?branchId=${effectiveBranchId}`, { token }),
     enabled: !!token && !!effectiveBranchId,
   });
 
-  const { data: batches } = useQuery({
-    queryKey: ['batches', effectiveBranchId, programId],
-    queryFn: () =>
-      apiClient<{ data: Batch[] }>(
-        `/batches?branchId=${effectiveBranchId}${programId ? `&programId=${programId}` : ''}`,
-        { token },
-      ),
-    enabled: !!token && !!effectiveBranchId,
-  });
+  const { data: batches } = useBatches(
+    token,
+    effectiveBranchId,
+    programId || undefined,
+    !!effectiveBranchId,
+  );
 
   const { data: lookups } = useQuery({
     queryKey: ['lookups', 'student_status'],
@@ -197,6 +191,8 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         gender: string | null;
         dateOfBirth: string | null;
         photographUrl: string | null;
+        rollNumber?: string | null;
+        admissionNumber?: string | null;
         branchId: string;
         programId?: string | null;
         batchId?: string | null;
@@ -209,6 +205,8 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   useEffect(() => {
     if (!editingStudent || editPrefilledRef.current) return;
     setFullName(editingStudent.fullName ?? '');
+    setRollNumber(editingStudent.rollNumber ?? '');
+    setAdmissionNumber(editingStudent.admissionNumber ?? '');
     setPhone(editingStudent.phone ?? '');
     setEmail(editingStudent.email ?? '');
     setCnicOrBForm(editingStudent.cnicOrBForm ?? '');
@@ -429,6 +427,8 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
     const base: Record<string, unknown> = {
       fullName: fullName.trim(),
       statusId,
+      ...(rollNumber.trim() ? { rollNumber: rollNumber.trim() } : {}),
+      ...(admissionNumber.trim() ? { admissionNumber: admissionNumber.trim() } : {}),
       ...(phone.trim() ? { phone: normalizePakistanPhone(phone.trim()) } : {}),
       ...(email.trim() ? { email: email.trim() } : {}),
       ...(cnicOrBForm.trim() ? { cnicOrBForm: cnicOrBForm.trim() } : {}),
@@ -677,6 +677,24 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                 <FormFieldError message={errors.fullName} />
               </div>
               <div>
+                <FormFieldLabel>Roll number</FormFieldLabel>
+                <input
+                  className={modalFieldClassName}
+                  placeholder="e.g. 001"
+                  value={rollNumber}
+                  onChange={(e) => setRollNumber(e.target.value)}
+                />
+              </div>
+              <div>
+                <FormFieldLabel>Admission number</FormFieldLabel>
+                <input
+                  className={modalFieldClassName}
+                  placeholder="e.g. ADM-2026-001"
+                  value={admissionNumber}
+                  onChange={(e) => setAdmissionNumber(e.target.value)}
+                />
+              </div>
+              <div>
                 <FormFieldLabel>Gender</FormFieldLabel>
                 <SelectDropdown
                   fullWidth
@@ -826,9 +844,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   onValueChange={setBatchId}
                   options={[
                     { value: '', label: 'Select batch' },
-                    ...(batches?.data
-                      .filter((b) => !programId || b.programId === programId)
-                      .map((b) => ({ value: b.id, label: b.name })) ?? []),
+                    ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
                   ]}
                 />
               </div>
