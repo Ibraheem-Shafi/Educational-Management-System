@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/providers/auth-provider';
@@ -21,7 +21,7 @@ interface RosterData {
   template: PrintTemplateConfig;
 }
 
-export default function PrintRosterPage() {
+function PrintRosterContent() {
   const searchParams = useSearchParams();
   const batchId = searchParams.get('batchId') ?? '';
   const { session, loading: authLoading } = useAuth();
@@ -94,5 +94,13 @@ export default function PrintRosterPage() {
         </article>
       ) : null}
     </PrintShell>
+  );
+}
+
+export default function PrintRosterPage() {
+  return (
+    <Suspense fallback={<PrintShell title="Student roster" loading />}>
+      <PrintRosterContent />
+    </Suspense>
   );
 }

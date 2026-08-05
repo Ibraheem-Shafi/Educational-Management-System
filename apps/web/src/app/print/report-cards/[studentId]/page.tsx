@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { Suspense, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
@@ -32,7 +32,7 @@ interface ReportCardResponse {
   records: ReportCardRecord[];
 }
 
-export default function ReportCardPrintPage() {
+function ReportCardPrintContent() {
   const { studentId } = useParams<{ studentId: string }>();
   const { session, loading: authLoading } = useAuth();
   const token = session?.access_token;
@@ -149,5 +149,13 @@ export default function ReportCardPrintPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function ReportCardPrintPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-[var(--text-sub-500)]">Loading…</div>}>
+      <ReportCardPrintContent />
+    </Suspense>
   );
 }

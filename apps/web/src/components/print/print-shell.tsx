@@ -37,7 +37,7 @@ export function PrintShell({
 }: {
   title: string;
   template?: PrintTemplateConfig | null;
-  children: ReactNode;
+  children?: ReactNode;
   loading?: boolean;
   error?: boolean;
 }) {

@@ -117,11 +117,11 @@ export function MonthlyRevenueCard({
               tickFormatter={(v) => `${v}L`}
             />
             <Tooltip
-              formatter={(value: number, _name: string, item) => [
-                formatCurrency(Number(item?.payload?.amount ?? value * 100_000)),
-                'Revenue',
-              ]}
-              labelFormatter={(label) => label}
+              formatter={(value, _name, item) => {
+                const amount = (item?.payload as { amount?: number } | undefined)?.amount;
+                return [formatCurrency(Number(amount ?? Number(value) * 100_000)), 'Revenue'];
+              }}
+              labelFormatter={(label) => String(label)}
               contentStyle={{
                 borderRadius: 8,
                 border: '1px solid var(--stroke-soft-200, #E2E4E9)',

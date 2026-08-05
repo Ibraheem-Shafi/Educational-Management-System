@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/providers/auth-provider';
@@ -21,7 +21,7 @@ interface SheetData {
   template: PrintTemplateConfig;
 }
 
-export default function PrintAttendanceSheetPage() {
+function PrintAttendanceSheetContent() {
   const searchParams = useSearchParams();
   const batchId = searchParams.get('batchId') ?? '';
   const date = searchParams.get('date') ?? '';
@@ -98,5 +98,13 @@ export default function PrintAttendanceSheetPage() {
         </article>
       ) : null}
     </PrintShell>
+  );
+}
+
+export default function PrintAttendanceSheetPage() {
+  return (
+    <Suspense fallback={<PrintShell title="Attendance sheet" loading />}>
+      <PrintAttendanceSheetContent />
+    </Suspense>
   );
 }
