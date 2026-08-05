@@ -52,7 +52,7 @@ export function ReservationDialog({
     queryKey: queryKeys.students({ branchId, limit: 200 }),
     queryFn: () =>
       apiClient<{ data: { id: string; fullName: string }[] }>(
-        `/students?branchId=${branchId}&limit=200`,
+        `/students/options?branchId=${branchId}&limit=200`,
         { token },
       ),
     enabled: !!token && !!branchId && open,

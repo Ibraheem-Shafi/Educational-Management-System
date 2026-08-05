@@ -37,5 +37,6 @@ export * from './schemas/payroll.schema';
 export * from './schemas/accounting.schema';
 export * from './schemas/biometric.schema';
 export * from './schemas/device-token.schema';
+export * from './schemas/print-template.schema';
 export * from './utils/fuzzy-match';
 export * from './utils/grade';

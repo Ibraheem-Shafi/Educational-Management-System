@@ -77,7 +77,7 @@ export function InviteUserDialog({
 
   const { data: branches } = useQuery({
     queryKey: queryKeys.branches,
-    queryFn: () => apiClient<{ data: BranchOption[] }>('/branches', { token }),
+    queryFn: () => apiClient<{ data: BranchOption[] }>('/branches/options', { token }),
     enabled: !!token && open,
   });
 

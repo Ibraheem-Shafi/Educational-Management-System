@@ -21,9 +21,11 @@ import type {
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
   GenerateBulkInvoicesInput,
+  PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
   UpdateFeeTypeInput,
 } from '@eims/shared';
+import { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
@@ -168,7 +170,14 @@ export class FeesService {
     const [invoices, total] = await Promise.all([
       this.prisma.feeInvoice.findMany({
         where,
-        include: { student: { select: { id: true, fullName: true } } },
+        include: {
+          student: { select: { id: true, fullName: true } },
+          payments: {
+            where: { status: { in: ['succeeded', 'completed'] } },
+            orderBy: { paidAt: 'desc' },
+            select: { id: true, amount: true },
+          },
+        },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: { createdAt: 'desc' },
@@ -186,7 +195,11 @@ export class FeesService {
     const statusMap = new Map(statuses.map((s) => [s.id, s]));
 
     return {
-      data: invoices.map((inv) => this.toResponse(inv, feeTypeMap, statusMap)),
+      data: invoices.map((inv) => ({
+        ...this.toResponse(inv, feeTypeMap, statusMap),
+        ...this.paymentSummary(inv),
+        latestPaymentId: inv.payments[0]?.id ?? null,
+      })),
       meta: {
         total,
         page: query.page,
@@ -216,11 +229,13 @@ export class FeesService {
     const fine = input.fine ?? 0;
     const netAmount = input.amount - discount + fine;
 
+    const invoiceNo = await this.nextDocumentNumber(input.branchId, 'INV');
     const invoice = await this.prisma.feeInvoice.create({
       data: {
         branchId: input.branchId,
         studentId: input.studentId,
         feeTypeId: input.feeTypeId,
+        invoiceNo,
         amount: input.amount,
         discount,
         fine,
@@ -243,13 +258,17 @@ export class FeesService {
 
     const feeTypeMap = new Map([[feeType.id, feeType]]);
     const statusMap = new Map([[pendingStatus.id, pendingStatus]]);
-    return this.toResponse(invoice, feeTypeMap, statusMap);
+    return {
+      ...this.toResponse(invoice, feeTypeMap, statusMap),
+      paidAmount: 0,
+      remainingAmount: this.roundMoney(netAmount),
+    };
   }
 
   async recordPayment(id: string, input: RecordPaymentInput, user: AuthUser, scope: BranchScope) {
     const invoice = await this.prisma.feeInvoice.findFirst({
       where: { id, ...prismaBranchFilter(scope) },
-      include: { payments: { where: { status: 'succeeded' } } },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
@@ -280,7 +299,7 @@ export class FeesService {
       where: { id, ...prismaBranchFilter(scope) },
       include: {
         student: { select: { id: true, fullName: true } },
-        payments: { where: { status: 'succeeded' } },
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -291,18 +310,21 @@ export class FeesService {
     }
 
     const remaining = this.getRemainingAmount(invoice);
-    if (input.amount > remaining) {
+    const amount = this.roundMoney(input.amount);
+    if (amount > remaining) {
       throw new BadRequestException(`Payment amount exceeds remaining balance (${remaining})`);
     }
 
     const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
     const status = options?.status ?? 'succeeded';
+    const receiptNo = await this.nextDocumentNumber(invoice.branchId, 'RCP');
 
     const payment = await this.prisma.feePayment.create({
       data: {
         invoiceId: id,
         branchId: invoice.branchId,
-        amount: input.amount,
+        receiptNo,
+        amount,
         method: input.method,
         provider: options?.provider ?? 'manual',
         providerRef: options?.providerRef,
@@ -318,7 +340,7 @@ export class FeesService {
       await this.accountingPosting.postFeePayment(
         payment.id,
         invoice.branchId,
-        Number(input.amount),
+        amount,
         user.id,
       );
     }
@@ -343,6 +365,7 @@ export class FeesService {
     return {
       payment: {
         id: payment.id,
+        receiptNo: payment.receiptNo,
         amount: Number(payment.amount),
         method: payment.method,
         status: payment.status,
@@ -355,12 +378,12 @@ export class FeesService {
   async syncInvoiceAfterPayment(invoiceId: string) {
     const invoice = await this.prisma.feeInvoice.findUnique({
       where: { id: invoiceId },
-      include: { payments: { where: { status: 'succeeded' } } },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
-    const paidTotal = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const netAmount = Number(invoice.netAmount);
+    const paidTotal = this.getPaidAmount(invoice);
+    const netAmount = this.roundMoney(Number(invoice.netAmount));
     const statusCodes = await this.getFeeStatusMap();
 
     let statusCode: string;
@@ -393,18 +416,39 @@ export class FeesService {
   async getInvoiceRemainingAmount(id: string, scope: BranchScope): Promise<number> {
     const invoice = await this.prisma.feeInvoice.findFirst({
       where: { id, ...prismaBranchFilter(scope) },
-      include: { payments: { where: { status: 'succeeded' } } },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return this.getRemainingAmount(invoice);
+  }
+
+  private roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  private getPaidAmount(invoice: {
+    payments?: Array<{ amount: { toString(): string } }>;
+  }): number {
+    const paid = (invoice.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+    return this.roundMoney(paid);
   }
 
   private getRemainingAmount(invoice: {
     netAmount: { toString(): string };
     payments?: Array<{ amount: { toString(): string } }>;
   }): number {
-    const paid = (invoice.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
-    return Math.max(0, Number(invoice.netAmount) - paid);
+    return Math.max(0, this.roundMoney(Number(invoice.netAmount) - this.getPaidAmount(invoice)));
+  }
+
+  private paymentSummary(invoice: {
+    netAmount: { toString(): string };
+    payments?: Array<{ amount: { toString(): string } }>;
+  }) {
+    const paidAmount = this.getPaidAmount(invoice);
+    return {
+      paidAmount,
+      remainingAmount: this.getRemainingAmount(invoice),
+    };
   }
 
   private async getFeeStatusMap(): Promise<Map<string, string>> {
@@ -422,7 +466,7 @@ export class FeesService {
 
     const invoices = await this.prisma.feeInvoice.findMany({
       where: { studentId },
-      include: { payments: { where: { status: 'succeeded' } } },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
@@ -442,7 +486,10 @@ export class FeesService {
       studentId,
       studentName: student.fullName,
       outstanding,
-      invoices: invoices.map((inv) => this.toResponse(inv, feeTypeMap, statusMap)),
+      invoices: invoices.map((inv) => ({
+        ...this.toResponse(inv, feeTypeMap, statusMap),
+        ...this.paymentSummary(inv),
+      })),
     };
   }
 
@@ -543,64 +590,204 @@ export class FeesService {
     return this.updateStructure(id, { isActive: false }, user, scope);
   }
 
+  async previewBulkInvoices(input: PreviewBulkInvoicesInput) {
+    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
+    if (!feeType) throw new BadRequestException('Invalid fee type');
+
+    const activeStatus = await this.prisma.lookupStatus.findFirst({
+      where: { code: 'active', category: { code: 'student_status' } },
+    });
+
+    const students = await this.prisma.student.findMany({
+      where: {
+        branchId: input.branchId,
+        deletedAt: null,
+        ...(input.batchId ? { batchId: input.batchId } : {}),
+        ...(activeStatus ? { statusId: activeStatus.id } : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        programId: true,
+        batchId: true,
+        program: { select: { id: true, name: true } },
+        batch: { select: { id: true, name: true } },
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    const structures = await this.loadFeeStructuresForBulk({
+      branchId: input.branchId,
+      feeTypeId: input.feeTypeId,
+      feeStructureId: input.feeStructureId,
+    });
+
+    const overrideAmount =
+      input.defaultAmount !== undefined ? this.roundMoney(input.defaultAmount) : null;
+
+    const previewStudents = students.map((student) => {
+      const structure = this.matchFeeStructureForStudent(structures, {
+        batchId: student.batchId,
+        programId: student.programId,
+        feeStructureId: input.feeStructureId,
+      });
+      const structureAmount = structure ? this.roundMoney(Number(structure.amount)) : null;
+      // Explicit override fills missing structures; does not replace matched rates.
+      const suggestedAmount =
+        structureAmount ?? overrideAmount;
+
+      return {
+        studentId: student.id,
+        fullName: student.fullName,
+        programId: student.programId,
+        batchId: student.batchId,
+        programName: student.program?.name ?? null,
+        batchName: student.batch?.name ?? null,
+        feeStructureId: structure?.id ?? null,
+        defaultAmount: suggestedAmount,
+        suggestedAmount,
+        dueDayOfMonth: structure?.dueDayOfMonth ?? null,
+      };
+    });
+
+    const matchedWithStructure = previewStudents.filter((s) => s.feeStructureId);
+    const uniqueStructureIds = new Set(matchedWithStructure.map((s) => s.feeStructureId));
+    const amounts = matchedWithStructure
+      .map((s) => s.suggestedAmount)
+      .filter((a): a is number => a !== null);
+    const uniqueAmounts = new Set(amounts);
+
+    return {
+      feeType: { id: feeType.id, name: feeType.name, code: feeType.code },
+      scope: input.batchId ? 'batch' : 'branch',
+      feeStructureId: uniqueStructureIds.size === 1 ? [...uniqueStructureIds][0]! : null,
+      defaultAmount: uniqueAmounts.size === 1 ? [...uniqueAmounts][0]! : null,
+      dueDayOfMonth:
+        matchedWithStructure.length > 0 &&
+        matchedWithStructure.every(
+          (s) => s.dueDayOfMonth === matchedWithStructure[0]!.dueDayOfMonth,
+        )
+          ? matchedWithStructure[0]!.dueDayOfMonth
+          : null,
+      students: previewStudents,
+    };
+  }
+
   async generateBulkInvoices(input: GenerateBulkInvoicesInput, user: AuthUser) {
+    if (input.lines?.length) {
+      return this.generateBulkInvoicesFromLines(input, user);
+    }
+
+    if (!input.batchId) {
+      throw new BadRequestException(
+        'Batch is required when generating without per-student lines; use preview lines for branch-wide runs',
+      );
+    }
+
     const students = await this.prisma.student.findMany({
       where: { branchId: input.branchId, batchId: input.batchId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, programId: true, batchId: true },
     });
     if (students.length === 0) throw new BadRequestException('No students in batch');
 
-    const structures = await this.prisma.feeStructure.findMany({
-      where: {
-        branchId: input.branchId,
-        isActive: true,
-        OR: [{ batchId: input.batchId }, { batchId: null }],
-        ...(input.feeStructureIds?.length ? { id: { in: input.feeStructureIds } } : {}),
-      },
-    });
+    if (!input.feeTypeId && !input.feeStructureIds?.length) {
+      throw new BadRequestException('Fee type or fee structures are required');
+    }
+
+    const [pendingStatus, siblingInfo, branch, structures] = await Promise.all([
+      this.prisma.lookupStatus.findFirst({
+        where: { code: 'pending', category: { code: 'fee_status' } },
+      }),
+      this.loadSiblingDiscountContext(students.map((s) => s.id)),
+      this.prisma.branch.findUnique({
+        where: { id: input.branchId },
+        select: { code: true },
+      }),
+      input.feeStructureIds?.length
+        ? this.prisma.feeStructure.findMany({
+            where: {
+              id: { in: input.feeStructureIds },
+              branchId: input.branchId,
+              isActive: true,
+            },
+          })
+        : this.loadFeeStructuresForBulk({
+            branchId: input.branchId,
+            feeTypeId: input.feeTypeId!,
+          }),
+    ]);
+
+    if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
     if (structures.length === 0) throw new BadRequestException('No fee structures for batch');
 
-    const pendingStatus = await this.prisma.lookupStatus.findFirst({
-      where: { code: 'pending', category: { code: 'fee_status' } },
-    });
-    if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
+    const dueDate = this.resolveBulkDueDate(input.dueDate);
+    const year = new Date().getFullYear();
+    const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+    const useExplicitStructures = Boolean(input.feeStructureIds?.length);
 
-    const dueDate = input.dueDate
-      ? new Date(input.dueDate)
-      : (() => {
-          const d = new Date();
-          d.setMonth(d.getMonth() + 1);
-          d.setDate(1);
-          return d;
-        })();
+    type Row = {
+      branchId: string;
+      studentId: string;
+      feeTypeId: string;
+      invoiceNo: string;
+      amount: number;
+      discount: number;
+      fine: number;
+      netAmount: number;
+      dueDate: Date;
+      statusId: string;
+      remarks: string | null;
+      createdById: string;
+    };
 
-    let created = 0;
+    const draft: Omit<Row, 'invoiceNo'>[] = [];
     for (const student of students) {
-      for (const structure of structures) {
-        const siblingDiscount = await this.computeSiblingDiscount(student.id, Number(structure.amount));
-        const amount = Number(structure.amount);
-        const netAmount = amount - siblingDiscount;
+      const matched = useExplicitStructures
+        ? structures
+        : (() => {
+            const one = this.matchFeeStructureForStudent(structures, {
+              batchId: student.batchId,
+              programId: student.programId,
+            });
+            return one ? [one] : [];
+          })();
 
-        await this.prisma.feeInvoice.create({
-          data: {
-            branchId: input.branchId,
-            studentId: student.id,
-            feeTypeId: structure.feeTypeId,
-            amount,
-            discount: siblingDiscount,
-            fine: 0,
-            netAmount,
-            dueDate: structure.dueDayOfMonth
-              ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
-              : dueDate,
-            statusId: pendingStatus.id,
-            remarks: siblingDiscount > 0 ? `Sibling discount applied: ${siblingDiscount}` : null,
-            createdById: user.id,
-          },
+      for (const structure of matched) {
+        const amount = this.roundMoney(Number(structure.amount));
+        const siblingDiscount = siblingInfo.eligibleIds.has(student.id)
+          ? Math.round((amount * siblingInfo.percent) / 100)
+          : 0;
+        draft.push({
+          branchId: input.branchId,
+          studentId: student.id,
+          feeTypeId: structure.feeTypeId,
+          amount,
+          discount: siblingDiscount,
+          fine: 0,
+          netAmount: this.roundMoney(amount - siblingDiscount),
+          dueDate: structure.dueDayOfMonth
+            ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
+            : dueDate,
+          statusId: pendingStatus.id,
+          remarks: siblingDiscount > 0 ? `Sibling discount applied: ${siblingDiscount}` : null,
+          createdById: user.id,
         });
-        created++;
       }
     }
+
+    if (draft.length === 0) {
+      throw new BadRequestException('No fee structures matched students in batch');
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
+      const rows: Row[] = draft.map((row, index) => ({
+        ...row,
+        invoiceNo: `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`,
+      }));
+      await tx.feeInvoice.createMany({ data: rows });
+      return rows.length;
+    });
 
     await this.audit.log({
       userId: user.id,
@@ -611,6 +798,181 @@ export class FeesService {
     });
 
     return { created };
+  }
+
+  private async generateBulkInvoicesFromLines(input: GenerateBulkInvoicesInput, user: AuthUser) {
+    // Lines with include:false are ignored; amounts validated only for included students.
+    if (!input.feeTypeId) throw new BadRequestException('Fee type is required');
+    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
+    if (!feeType) throw new BadRequestException('Invalid fee type');
+
+    const selectedLines = (input.lines ?? []).filter((line) => line.include !== false);
+    if (selectedLines.length === 0) {
+      throw new BadRequestException('Select at least one student');
+    }
+
+    const studentIds = selectedLines.map((l) => l.studentId);
+
+    const [scopeStudents, pendingStatus, structures, siblingInfo, branch] = await Promise.all([
+      this.prisma.student.findMany({
+        where: {
+          branchId: input.branchId,
+          deletedAt: null,
+          ...(input.batchId ? { batchId: input.batchId } : {}),
+          id: { in: studentIds },
+        },
+        select: { id: true, programId: true, batchId: true },
+      }),
+      this.prisma.lookupStatus.findFirst({
+        where: { code: 'pending', category: { code: 'fee_status' } },
+      }),
+      this.loadFeeStructuresForBulk({
+        branchId: input.branchId,
+        feeTypeId: input.feeTypeId,
+      }),
+      this.loadSiblingDiscountContext(studentIds),
+      this.prisma.branch.findUnique({
+        where: { id: input.branchId },
+        select: { code: true },
+      }),
+    ]);
+
+    const scopeStudentIds = new Set(scopeStudents.map((s) => s.id));
+    for (const line of selectedLines) {
+      if (!scopeStudentIds.has(line.studentId)) {
+        throw new BadRequestException(
+          input.batchId
+            ? 'One or more students are not in the selected batch'
+            : 'One or more students are invalid for this branch',
+        );
+      }
+      if (this.roundMoney(line.amount) <= 0) {
+        throw new BadRequestException('Amount must be greater than 0');
+      }
+    }
+
+    if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
+
+    const studentById = new Map(scopeStudents.map((s) => [s.id, s]));
+    const dueDate = this.resolveBulkDueDate(input.dueDate);
+    const year = new Date().getFullYear();
+    const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
+
+      const rows = selectedLines.map((line, index) => {
+        const student = studentById.get(line.studentId)!;
+        const structure = this.matchFeeStructureForStudent(structures, {
+          batchId: student.batchId,
+          programId: student.programId,
+        });
+        const amount = this.roundMoney(line.amount);
+        const siblingDiscount = siblingInfo.eligibleIds.has(line.studentId)
+          ? Math.round((amount * siblingInfo.percent) / 100)
+          : 0;
+        const netAmount = this.roundMoney(amount - siblingDiscount);
+        const invoiceNo = `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`;
+
+        return {
+          branchId: input.branchId,
+          studentId: line.studentId,
+          feeTypeId: input.feeTypeId!,
+          invoiceNo,
+          amount,
+          discount: siblingDiscount,
+          fine: 0,
+          netAmount,
+          dueDate: structure?.dueDayOfMonth
+            ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
+            : dueDate,
+          statusId: pendingStatus.id,
+          remarks: siblingDiscount > 0 ? `Sibling discount applied: ${siblingDiscount}` : null,
+          createdById: user.id,
+        };
+      });
+
+      await tx.feeInvoice.createMany({ data: rows });
+      return rows.length;
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_invoices.bulk_generated',
+      entityType: input.batchId ? 'Batch' : 'Branch',
+      entityId: input.batchId ?? input.branchId,
+      newValue: { count: created, feeTypeId: input.feeTypeId },
+    });
+
+    return { created };
+  }
+
+  private resolveBulkDueDate(dueDate?: string) {
+    if (dueDate) return new Date(dueDate);
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(1);
+    return d;
+  }
+
+  private async loadFeeStructuresForBulk(input: {
+    branchId: string;
+    feeTypeId: string;
+    feeStructureId?: string;
+  }) {
+    if (input.feeStructureId) {
+      const structure = await this.prisma.feeStructure.findFirst({
+        where: {
+          id: input.feeStructureId,
+          branchId: input.branchId,
+          feeTypeId: input.feeTypeId,
+          isActive: true,
+        },
+      });
+      if (!structure) throw new BadRequestException('Invalid fee structure');
+      return [structure];
+    }
+
+    return this.prisma.feeStructure.findMany({
+      where: {
+        branchId: input.branchId,
+        feeTypeId: input.feeTypeId,
+        isActive: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Pick the best FeeStructure for a student:
+   * explicit id → exact batch → program (batch null) → branch default (program+batch null).
+   */
+  private matchFeeStructureForStudent(
+    structures: Array<{
+      id: string;
+      amount: { toString(): string } | number;
+      dueDayOfMonth: number | null;
+      programId: string | null;
+      batchId: string | null;
+      feeTypeId: string;
+    }>,
+    student: { batchId: string | null; programId: string | null; feeStructureId?: string },
+  ) {
+    if (student.feeStructureId) {
+      return structures.find((s) => s.id === student.feeStructureId) ?? null;
+    }
+
+    if (student.batchId) {
+      const byBatch = structures.find((s) => s.batchId === student.batchId);
+      if (byBatch) return byBatch;
+    }
+    if (student.programId) {
+      const byProgram = structures.find(
+        (s) => s.programId === student.programId && s.batchId === null,
+      );
+      if (byProgram) return byProgram;
+    }
+    return structures.find((s) => s.programId === null && s.batchId === null) ?? null;
   }
 
   async createFeeType(input: CreateFeeTypeInput, user: AuthUser) {
@@ -671,25 +1033,63 @@ export class FeesService {
   }
 
   private async computeSiblingDiscount(studentId: string, amount: number): Promise<number> {
+    const { percent, eligibleIds } = await this.loadSiblingDiscountContext([studentId]);
+    if (percent <= 0 || !eligibleIds.has(studentId)) return 0;
+    return Math.round((amount * percent) / 100);
+  }
+
+  /** One settings + sibling graph lookup for many students (bulk generate). */
+  private async loadSiblingDiscountContext(studentIds: string[]): Promise<{
+    percent: number;
+    eligibleIds: Set<string>;
+  }> {
+    const eligibleIds = new Set<string>();
+    if (studentIds.length === 0) return { percent: 0, eligibleIds };
+
     const settings = await this.prisma.institutionSettings.findFirst();
     const percent = settings?.siblingDiscountPercent ? Number(settings.siblingDiscountPercent) : 0;
-    if (percent <= 0) return 0;
+    if (percent <= 0) return { percent: 0, eligibleIds };
 
     const parentLinks = await this.prisma.studentParent.findMany({
-      where: { studentId },
-      select: { parentId: true },
+      where: { studentId: { in: studentIds } },
+      select: { studentId: true, parentId: true },
     });
-    if (parentLinks.length === 0) return 0;
+    if (parentLinks.length === 0) return { percent, eligibleIds };
 
-    const parentIds = parentLinks.map((p) => p.parentId);
-    const siblings = await this.prisma.studentParent.findMany({
-      where: { parentId: { in: parentIds }, studentId: { not: studentId } },
-      select: { studentId: true },
-      distinct: ['studentId'],
+    const parentIds = [...new Set(parentLinks.map((p) => p.parentId))];
+    const familyLinks = await this.prisma.studentParent.findMany({
+      where: { parentId: { in: parentIds } },
+      select: { studentId: true, parentId: true },
     });
-    if (siblings.length === 0) return 0;
 
-    return Math.round((amount * percent) / 100);
+    const siblingsByParent = new Map<string, Set<string>>();
+    for (const link of familyLinks) {
+      const set = siblingsByParent.get(link.parentId) ?? new Set<string>();
+      set.add(link.studentId);
+      siblingsByParent.set(link.parentId, set);
+    }
+
+    const parentsByStudent = new Map<string, string[]>();
+    for (const link of parentLinks) {
+      const list = parentsByStudent.get(link.studentId) ?? [];
+      list.push(link.parentId);
+      parentsByStudent.set(link.studentId, list);
+    }
+
+    for (const studentId of studentIds) {
+      const parents = parentsByStudent.get(studentId) ?? [];
+      const hasSibling = parents.some((parentId) => {
+        const family = siblingsByParent.get(parentId);
+        if (!family || family.size <= 1) return false;
+        for (const otherId of family) {
+          if (otherId !== studentId) return true;
+        }
+        return false;
+      });
+      if (hasSibling) eligibleIds.add(studentId);
+    }
+
+    return { percent, eligibleIds };
   }
 
   private async applyLateFeesToOverdue(scope: BranchScope) {
@@ -730,12 +1130,198 @@ export class FeesService {
     }
   }
 
+  private async nextDocumentNumber(branchId: string, prefix: 'INV' | 'RCP'): Promise<string> {
+    const year = new Date().getFullYear();
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { code: true },
+    });
+    const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+    const count =
+      prefix === 'INV'
+        ? await this.prisma.feeInvoice.count({ where: { branchId } })
+        : await this.prisma.feePayment.count({ where: { branchId } });
+    return `${prefix}-${code}-${year}-${String(count + 1).padStart(5, '0')}`;
+  }
+
+  async getInvoicePrintData(id: string, scope: BranchScope) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: {
+        student: {
+          select: {
+            id: true,
+            fullName: true,
+            rollNumber: true,
+            admissionNumber: true,
+            photographUrl: true,
+            phone: true,
+            program: { select: { name: true } },
+            batch: { select: { name: true } },
+            branch: { select: { name: true, code: true } },
+          },
+        },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const [feeType, status, settings, template] = await Promise.all([
+      this.prisma.feeType.findUnique({ where: { id: invoice.feeTypeId } }),
+      this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } }),
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'fee_invoice',
+          isActive: true,
+          OR: [{ branchId: invoice.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+    ]);
+
+    return {
+      invoice: {
+        id: invoice.id,
+        invoiceNo: invoice.invoiceNo,
+        amount: Number(invoice.amount),
+        discount: Number(invoice.discount),
+        fine: Number(invoice.fine),
+        netAmount: Number(invoice.netAmount),
+        dueDate: invoice.dueDate?.toISOString() ?? null,
+        paidAt: invoice.paidAt?.toISOString() ?? null,
+        remarks: invoice.remarks,
+        status: status ? { code: status.code, label: status.label } : null,
+        feeType: feeType ? { name: feeType.name, code: feeType.code } : null,
+      },
+      student: {
+        id: invoice.student.id,
+        fullName: invoice.student.fullName,
+        rollNumber: invoice.student.rollNumber,
+        admissionNumber: invoice.student.admissionNumber,
+        photographUrl: invoice.student.photographUrl,
+        phone: invoice.student.phone,
+        program: invoice.student.program?.name ?? null,
+        batch: invoice.student.batch?.name ?? null,
+        branch: invoice.student.branch,
+      },
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+        phone: settings?.phone ?? null,
+        email: settings?.email ?? null,
+      },
+      template: this.serializePrintTemplate(template, 'fee_invoice'),
+    };
+  }
+
+  async getPaymentPrintData(id: string, scope: BranchScope) {
+    const payment = await this.prisma.feePayment.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: {
+        invoice: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                fullName: true,
+                rollNumber: true,
+                admissionNumber: true,
+                program: { select: { name: true } },
+                batch: { select: { name: true } },
+                branch: { select: { name: true, code: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+
+    const [feeType, settings, template] = await Promise.all([
+      this.prisma.feeType.findUnique({ where: { id: payment.invoice.feeTypeId } }),
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'fee_receipt',
+          isActive: true,
+          OR: [{ branchId: payment.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+    ]);
+
+    return {
+      payment: {
+        id: payment.id,
+        receiptNo: payment.receiptNo,
+        amount: Number(payment.amount),
+        method: payment.method,
+        status: payment.status,
+        paidAt: payment.paidAt?.toISOString() ?? null,
+      },
+      invoice: {
+        id: payment.invoice.id,
+        invoiceNo: payment.invoice.invoiceNo,
+        netAmount: Number(payment.invoice.netAmount),
+        feeType: feeType ? { name: feeType.name, code: feeType.code } : null,
+      },
+      student: {
+        id: payment.invoice.student.id,
+        fullName: payment.invoice.student.fullName,
+        rollNumber: payment.invoice.student.rollNumber,
+        admissionNumber: payment.invoice.student.admissionNumber,
+        program: payment.invoice.student.program?.name ?? null,
+        batch: payment.invoice.student.batch?.name ?? null,
+        branch: payment.invoice.student.branch,
+      },
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+        phone: settings?.phone ?? null,
+        email: settings?.email ?? null,
+      },
+      template: this.serializePrintTemplate(template, 'fee_receipt'),
+    };
+  }
+
+  private serializePrintTemplate(
+    template: {
+      id: string;
+      paperSize: string;
+      fields: unknown;
+      headerText: string | null;
+      footerText: string | null;
+      extraNote: string | null;
+      name: string;
+    } | null,
+    type: 'fee_invoice' | 'fee_receipt',
+  ) {
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS[type];
+    const stored =
+      template?.fields && typeof template.fields === 'object' && !Array.isArray(template.fields)
+        ? (template.fields as Record<string, boolean>)
+        : {};
+    return {
+      id: template?.id ?? null,
+      type,
+      name: template?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES[type],
+      paperSize: template?.paperSize ?? (type === 'fee_receipt' ? 'thermal80' : 'a4'),
+      fields: { ...defaults, ...stored },
+      headerText: template?.headerText ?? null,
+      footerText: template?.footerText ?? null,
+      extraNote: template?.extraNote ?? null,
+    };
+  }
+
   private toResponse(
     invoice: {
       id: string;
       branchId: string;
       studentId: string;
       feeTypeId: string;
+      invoiceNo?: string | null;
       amount: { toString(): string };
       discount: { toString(): string };
       fine: { toString(): string };
@@ -757,6 +1343,7 @@ export class FeesService {
       student: invoice.student,
       feeTypeId: invoice.feeTypeId,
       feeType: feeTypeMap.get(invoice.feeTypeId) ?? null,
+      invoiceNo: invoice.invoiceNo ?? null,
       amount: Number(invoice.amount),
       discount: Number(invoice.discount),
       fine: Number(invoice.fine),

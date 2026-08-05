@@ -44,6 +44,27 @@ export class BranchesService {
     return this.findAllSimple(scope);
   }
 
+  /** Id/name catalog for scope chrome and selects (no branches.read required). */
+  async listOptions(scope: BranchScope) {
+    const cacheKey = `branches:options:${scopeCacheKey(scope)}`;
+    const cached = this.ttlCache.get<{
+      data: Array<{ id: string; name: string; code: string; isActive: boolean }>;
+    }>(cacheKey);
+    if (cached) return cached;
+
+    const branches = await this.prisma.branch.findMany({
+      where: {
+        deletedAt: null,
+        ...(prismaBranchIdFilter(scope)),
+      },
+      select: { id: true, name: true, code: true, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+    const result = { data: branches };
+    this.ttlCache.set(cacheKey, result, BRANCHES_CACHE_TTL_MS);
+    return result;
+  }
+
   private async findAllSimple(scope: BranchScope) {
     const cacheKey = `branches:list:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<{ data: Branch[] }>(cacheKey);

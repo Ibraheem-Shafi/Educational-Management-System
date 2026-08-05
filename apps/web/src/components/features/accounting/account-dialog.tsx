@@ -14,7 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
-import { queryKeys } from '@/lib/query-keys';
+import { queryRoots } from '@/lib/query-keys';
 import {
   Dialog,
   DialogContent,
@@ -38,11 +38,14 @@ export function AccountDialog({
   onOpenChange,
   branchId,
   account,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   branchId: string;
   account: AccountingAccount | null;
+  /** Called after a successful create/update so the list can reset filters/page. */
+  onSaved?: (account?: AccountingAccount) => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -70,17 +73,23 @@ export function AccountDialog({
   const mutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       if (isEdit) {
-        return apiClient(`/accounting/accounts/${account!.id}`, {
+        return apiClient<AccountingAccount>(`/accounting/accounts/${account!.id}`, {
           method: 'PATCH',
           token,
           body: payload,
         });
       }
-      return apiClient('/accounting/accounts', { method: 'POST', token, body: payload });
+      return apiClient<AccountingAccount>('/accounting/accounts', {
+        method: 'POST',
+        token,
+        body: payload,
+      });
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       toast.success(isEdit ? 'Account updated' : 'Account created');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingAccounts(branchId) });
+      // Root prefix matches every paginated/filtered accounts query.
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingAccounts });
+      onSaved?.(saved);
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -177,7 +186,8 @@ export function AccountDialog({
             type="submit"
             disabled={mutation.isPending}
             className={cn(
-              'w-full rounded-lg bg-primary-base px-4 py-2.5 text-sm font-medium text-neutral-0',
+              'w-full rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2.5 text-sm font-medium text-white',
+              'hover:opacity-90 disabled:pointer-events-none disabled:opacity-60',
               mutation.isPending && 'opacity-60',
             )}
           >

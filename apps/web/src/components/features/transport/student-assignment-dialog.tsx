@@ -55,7 +55,7 @@ export function StudentAssignmentDialog({
     queryKey: queryKeys.students({ branchId, limit: 100 }),
     queryFn: () =>
       apiClient<{ data: { id: string; fullName: string }[] }>(
-        `/students?branchId=${branchId}&limit=100`,
+        `/students/options?branchId=${branchId}&limit=100`,
         { token },
       ),
     enabled: !!token && open,

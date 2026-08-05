@@ -65,6 +65,12 @@ export const ROUTE_PERMISSIONS: Array<{ path: string; permission: Permission | n
   { path: '/print/certificates', permission: PERMISSIONS.CERTIFICATES_READ },
   { path: '/print/id-cards', permission: PERMISSIONS.CERTIFICATES_READ },
   { path: '/print/salary-slips', permission: PERMISSIONS.PAYROLL_READ },
+  { path: '/print/fee-invoices', permission: PERMISSIONS.FEES_READ },
+  { path: '/print/fee-receipts', permission: PERMISSIONS.FEES_READ },
+  { path: '/print/roll-slips', permission: PERMISSIONS.STUDENTS_READ },
+  { path: '/print/attendance-sheets', permission: PERMISSIONS.ATTENDANCE_READ },
+  { path: '/print/rosters', permission: PERMISSIONS.STUDENTS_READ },
+  { path: '/print/accounting-vouchers', permission: PERMISSIONS.ACCOUNTING_READ },
   { path: '/dashboard', permission: null },
 ];
 

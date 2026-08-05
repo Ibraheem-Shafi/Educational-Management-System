@@ -19,6 +19,7 @@ import { seedBiometric } from './steps/14-biometric';
 import { seedHrAndLeave } from './steps/15-hr-leave';
 import { seedAccounting } from './steps/16-accounting';
 import { seedAiOperations } from './steps/17-ai-operations';
+import { seedPrintTemplates } from './steps/18-print-templates';
 import { DEMO_SEED_VERSION, type RunDemoSeedOptions } from './types';
 
 async function getDemoSeedVersion(prisma: PrismaClient): Promise<string | null> {
@@ -109,6 +110,8 @@ export async function runDemoSeed(
   await seedAccounting(prisma, ctx);
   console.log('  → AI operations');
   await seedAiOperations(prisma, ctx);
+  console.log('  → print templates');
+  await seedPrintTemplates(prisma);
 
   await setDemoSeedVersion(prisma, config.version, config.institution);
 

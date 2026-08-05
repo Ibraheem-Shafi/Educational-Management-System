@@ -7,6 +7,7 @@ import { Printer } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
+import { printQueryUiState } from '@/components/print/print-shell';
 
 interface ReportCardRecord {
   id: string;
@@ -33,7 +34,7 @@ interface ReportCardResponse {
 
 export default function ReportCardPrintPage() {
   const { studentId } = useParams<{ studentId: string }>();
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const token = session?.access_token;
   const searchParams = useSearchParams();
   const assessmentId = searchParams.get('assessmentId');
@@ -43,7 +44,7 @@ export default function ReportCardPrintPage() {
     ...(assessmentId ? { assessmentId } : {}),
   }).toString();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isPending, error } = useQuery({
     queryKey: ['report-card', studentId, assessmentId],
     queryFn: () => apiClient<ReportCardResponse>(`/report-cards?${queryString}`, { token }),
     enabled: !!token && !!studentId,
@@ -53,11 +54,21 @@ export default function ReportCardPrintPage() {
     window.print();
   }, []);
 
-  if (isLoading) {
+  const { loading, error: showError } = printQueryUiState({
+    authLoading,
+    hasToken: !!token,
+    ready: !!studentId,
+    isLoading,
+    isPending,
+    error,
+    data,
+  });
+
+  if (loading) {
     return <p className="p-8 text-sm text-[var(--text-sub-500)]">Loading report card…</p>;
   }
 
-  if (error || !data) {
+  if (showError || !data) {
     return <p className="p-8 text-sm text-red-600">Unable to load report card.</p>;
   }
 

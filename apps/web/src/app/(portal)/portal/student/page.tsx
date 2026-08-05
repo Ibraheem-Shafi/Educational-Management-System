@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { LayoutDashboard } from 'lucide-react';
-import { formatCurrency } from '@eims/shared';
+import { currencyStat } from '@eims/shared';
 import type { LearningResourceResponse, PortalStudentStatsResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -95,7 +95,7 @@ export default function StudentPortalHomePage() {
             },
             {
               label: 'Outstanding fees',
-              value: formatCurrency(stats?.outstandingFees.total ?? 0),
+              ...currencyStat(stats?.outstandingFees.total ?? 0),
               changePercent: stats?.outstandingFees.changePercent,
             },
             {

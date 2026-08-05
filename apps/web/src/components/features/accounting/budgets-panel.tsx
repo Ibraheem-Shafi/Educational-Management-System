@@ -8,7 +8,7 @@ import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { queryKeys } from '@/lib/query-keys';
+import { queryKeys, queryRoots } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
@@ -62,7 +62,7 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
     mutationFn: (id: string) => apiClient(`/accounting/budgets/${id}`, { method: 'DELETE', token }),
     onSuccess: async () => {
       toast.success('Budget removed');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingBudgets(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingBudgets });
     },
     onError: () => toast.error('Unable to remove budget'),
   });

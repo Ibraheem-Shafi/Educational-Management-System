@@ -21,6 +21,7 @@ import { PortalParentPageShell } from '@/components/portal/portal-parent-page-sh
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { Button } from '@/components/ui/button';
+import { DateField } from '@/components/ui/date-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import {
   dataTableClass,
@@ -104,6 +105,7 @@ function ParentLeaveContent({
       setToDate('');
       setReason('');
       await queryClient.invalidateQueries({ queryKey: queryKeys.portalParentLeave(childId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.leaveRequests });
       setPage(1);
     },
     onError: (err: Error) => {
@@ -144,12 +146,11 @@ function ParentLeaveContent({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               <span className="text-[var(--text-sub-500)]">From</span>
-              <input
-                type="date"
+              <DateField
                 className={fieldClassName('fromDate', 'mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2')}
                 value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
+                onValueChange={(next) => {
+                  setFromDate(next);
                   clearField('fromDate');
                 }}
               />
@@ -157,12 +158,12 @@ function ParentLeaveContent({
             </label>
             <label className="text-sm">
               <span className="text-[var(--text-sub-500)]">To</span>
-              <input
-                type="date"
+              <DateField
                 className={fieldClassName('toDate', 'mt-1 w-full rounded-lg border border-stroke-soft-200 px-3 py-2')}
                 value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value);
+                min={fromDate || undefined}
+                onValueChange={(next) => {
+                  setToDate(next);
                   clearField('toDate');
                 }}
               />

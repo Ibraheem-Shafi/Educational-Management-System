@@ -38,6 +38,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { SmsModule } from './common/sms/sms.module';
 import { EmailModule } from './common/email/email.module';
 import { DeviceTokensModule } from './modules/device-tokens/device-tokens.module';
+import { PrintTemplatesModule } from './modules/print-templates/print-templates.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { DeviceTokensModule } from './modules/device-tokens/device-tokens.module
     BiometricModule,
     PayrollModule,
     DeviceTokensModule,
+    PrintTemplatesModule,
   ],
 })
 export class AppModule {}

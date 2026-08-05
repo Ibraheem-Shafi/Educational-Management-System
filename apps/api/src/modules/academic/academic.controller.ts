@@ -22,7 +22,7 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createProgramSchema,
@@ -56,6 +56,7 @@ import type {
   ListAcademicSessionsQuery,
   SetBatchSubjectsInput,
 } from '@eims/shared';
+import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util';
 
 @ApiTags('programs')
 @ApiBearerAuth()
@@ -63,6 +64,17 @@ import type {
 @UseGuards(AuthGuard, BranchGuard, PermissionsGuard)
 export class ProgramsController {
   constructor(private readonly programsService: ProgramsService) {}
+
+  /** Lightweight catalog for staff dropdowns — no academic.read required. */
+  @Get('options')
+  listOptions(
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+    @Query('branchId') branchId?: string,
+  ) {
+    assertStaffCatalogAccess(user);
+    return this.programsService.listOptions(scope, { branchId });
+  }
 
   @Get()
   @Permissions('academic.read')
@@ -110,6 +122,18 @@ export class BatchesController {
     private readonly batchesService: BatchesService,
     private readonly batchSubjectsService: BatchSubjectsService,
   ) {}
+
+  /** Lightweight catalog for staff dropdowns — no academic.read required. */
+  @Get('options')
+  listOptions(
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+    @Query('branchId') branchId?: string,
+    @Query('programId') programId?: string,
+  ) {
+    assertStaffCatalogAccess(user);
+    return this.batchesService.listOptions(scope, { branchId, programId });
+  }
 
   @Get()
   @Permissions('academic.read')
@@ -171,6 +195,21 @@ export class BatchesController {
 @UseGuards(AuthGuard, BranchGuard, PermissionsGuard)
 export class SubjectsController {
   constructor(private readonly subjectsService: SubjectsService) {}
+
+  /** Lightweight catalog for staff dropdowns — no academic.read required. */
+  @Get('options')
+  listOptions(
+    @CurrentUser() user: AuthUser,
+    @Query('q') q?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    assertStaffCatalogAccess(user);
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    return this.subjectsService.listOptions({
+      q,
+      ...(Number.isFinite(limit) ? { limit } : {}),
+    });
+  }
 
   @Get()
   @Permissions('academic.read')

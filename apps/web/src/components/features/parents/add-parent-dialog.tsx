@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createParentSchema } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { normalizePakistanPhone } from '@/lib/form-validation';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useStudentsOptions } from '@/hooks/use-students-options';
 import {
   Dialog,
   DialogContent,
@@ -18,15 +18,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-
-interface Student {
-  id: string;
-  fullName: string;
-}
 
 const emptyForm = {
   fullName: '',
@@ -39,29 +35,34 @@ const emptyForm = {
 export function AddParentDialog({
   open,
   onOpenChange,
+  branchId = '',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  branchId?: string;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [pickedBranchId, setPickedBranchId] = useState('');
+  const effectiveBranchId = branchId || pickedBranchId;
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(createParentSchema);
 
-  const { data: students } = useQuery({
-    queryKey: ['students-parents'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && open,
-  });
+  const { data: students } = useStudentsOptions(token, effectiveBranchId, open);
 
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setPickedBranchId('');
       clearAll();
     }
   }, [open, clearAll]);
+
+  useEffect(() => {
+    setForm((prev) => (prev.studentId ? { ...prev, studentId: '' } : prev));
+  }, [effectiveBranchId]);
 
   const createMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -163,11 +164,23 @@ export function AddParentDialog({
               </div>
             </div>
 
+            {!branchId && (
+              <BranchSelectField
+                value={pickedBranchId}
+                onValueChange={setPickedBranchId}
+                label="Branch (for student link)"
+                required={false}
+              />
+            )}
+
             <div>
               <FormFieldLabel>Link to student (optional)</FormFieldLabel>
               <SelectDropdown
                 aria-label="Link to student"
-                placeholder="No student"
+                placeholder={
+                  effectiveBranchId ? 'No student' : 'Select branch to link a student'
+                }
+                disabled={!effectiveBranchId}
                 value={form.studentId}
                 onValueChange={(value) => {
                   setForm((prev) => ({ ...prev, studentId: value }));

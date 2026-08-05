@@ -12,7 +12,7 @@ import {
   Calendar,
   BookOpen,
 } from 'lucide-react';
-import { formatCurrency } from '@eims/shared';
+import { currencyStat, formatCurrency } from '@eims/shared';
 import type { LearningResourceResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -123,7 +123,7 @@ export default function ParentChildOverviewPage() {
       <MainStatsSection
         stats={[
           { label: 'Attendance (present)', value: `${rates.present}%` },
-          { label: 'Outstanding fees', value: formatCurrency(child.fees.outstanding) },
+          { label: 'Outstanding fees', ...currencyStat(child.fees.outstanding) },
           { label: 'Average grade', value: `${avgGrade}%` },
           { label: 'Weekly classes', value: String(child.timetable?.length ?? 0) },
         ]}

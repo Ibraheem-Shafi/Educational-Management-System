@@ -66,6 +66,15 @@ export class AttendanceController {
     return this.attendanceService.getSheet(query, scope);
   }
 
+  @Get('sheet/print-data')
+  @Permissions('attendance.read')
+  getSheetPrintData(
+    @Query(createZodPipe(attendanceSheetQuerySchema)) query: AttendanceSheetQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.attendanceService.getSheetPrintData(query, scope);
+  }
+
   @Get('grid')
   @Permissions('attendance.read')
   getGrid(

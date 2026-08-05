@@ -21,6 +21,9 @@ This document describes the functional capabilities of the proposed Educational 
 ## 2. Student information system
 
 - Complete student profiles with photographs and contact information.
+- Admission number and roll number (assign, search, and bulk-generate per batch).
+- Printable roll number slips with configurable fields and paper size.
+- Printable student roster by batch.
 - Guardian and sibling relationships.
 - CNIC/B-Form and institution-specific information.
 - Branch, program, class/batch, section, subject, and session assignments.
@@ -48,6 +51,7 @@ This document describes the functional capabilities of the proposed Educational 
 - Daily and bulk attendance marking.
 - Mobile-ready attendance workflow.
 - Batch/class and date-based attendance sheets.
+- Printable attendance sheets (browser print / Save as PDF).
 - Attendance history, summaries, and reports.
 - Parent and student attendance visibility.
 - AI-assisted attendance register image scanning with human confirmation.
@@ -82,6 +86,9 @@ This document describes the functional capabilities of the proposed Educational 
 
 - Configurable fee types and fee structures.
 - Student invoices and payment records.
+- Human-readable invoice and receipt numbers.
+- Printable fee invoice / challan (voucher) and payment receipts (browser print / Save as PDF).
+- Configurable print templates (paper size and visible fields) for fee documents.
 - Discounts, concessions, scholarships, and late fines.
 - Due dates, outstanding balances, and defaulter reports.
 - Payment receipts and collection summaries.
@@ -125,6 +132,7 @@ This document describes the functional capabilities of the proposed Educational 
 - Configurable chart of accounts.
 - Cash, bank, income, expense, asset, liability, and equity accounts.
 - Journal, receipt, payment, and adjustment vouchers.
+- Printable accounting vouchers.
 - General ledger and account statements.
 - Trial balance.
 - Income and expense statement.

@@ -17,6 +17,7 @@ import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadAttendanceRegister } from '@/lib/upload-attendance-register';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
+import { DateField } from '@/components/ui/date-field';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
@@ -100,7 +101,7 @@ export default function AiAttendancePage() {
     queryKey: ['batches', effectiveBranchId],
     queryFn: () =>
       apiClient<{ data: { id: string; name: string }[] }>(
-        `/batches?branchId=${effectiveBranchId}`,
+        `/batches/options?branchId=${effectiveBranchId}`,
         { token },
       ),
     enabled: !!token && !!effectiveBranchId,
@@ -209,6 +210,8 @@ export default function AiAttendancePage() {
     onSuccess: () => {
       toast.success('Attendance confirmed');
       queryClient.invalidateQueries({ queryKey: queryKeys.aiAttendanceSessions() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.attendanceStats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardTodayAttendance });
       setActiveSessionId(null);
     },
     onError: (err: Error) => {
@@ -294,11 +297,10 @@ export default function AiAttendancePage() {
               <FormFieldError message={uploadErrors.batchId} />
             </div>
             <div>
-              <Input
-                type="date"
+              <DateField
                 value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
+                onValueChange={(next) => {
+                  setDate(next);
                   clearUploadField('date');
                 }}
                 className={uploadFieldClassName('date', '')}

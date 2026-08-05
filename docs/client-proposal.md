@@ -41,6 +41,8 @@ Nexium Technologies proposes a complete, white-label Educational Institution Man
 | 19 | White-label configuration |
 | 20 | Future AI Academic Suite (roadmap upgrade) |
 
+**Security & access control:** The platform uses role-based access (Super Admin, Branch Admin, Teacher, Accountant, Receptionist, Parent, Student), campus/branch data isolation, admin multi-factor authentication, and an audit trail for important actions. Each user has an individual login; parents and students only see their linked or own records. A plain-language summary is available in [client-security-rbac-brief.md](client-security-rbac-brief.md); module detail remains in [feature-details.md](feature-details.md) §18.
+
 ## 3. Delivery and what's included
 
 **Delivery period: 15 days** from kickoff, advance payment, branding, content, data, approvals, and any required third-party access. Client-side delays may extend the date.

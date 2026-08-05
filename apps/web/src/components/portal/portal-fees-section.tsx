@@ -2,7 +2,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { formatCurrency, PERMISSIONS } from '@eims/shared';
+import { currencyStat, formatCurrency, PERMISSIONS } from '@eims/shared';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { StatusBadge } from '@/components/layout/status-badge';
@@ -71,7 +71,7 @@ export function PortalFeesSection({
     <div className="space-y-4">
       <MainStatsSection
         stats={[
-          { label: 'Outstanding', value: formatCurrency(outstanding) },
+          { label: 'Outstanding', ...currencyStat(outstanding) },
           { label: 'Invoices on page', value: String(invoices.length) },
         ]}
       />
@@ -84,14 +84,14 @@ export function PortalFeesSection({
                 <th className={dataTableThClass}>Fee type</th>
                 <th className={dataTableThClass}>Amount</th>
                 <th className={dataTableThClass}>Status</th>
-                {canCheckout && <th className={dataTableThClass} />}
+                <th className={dataTableThClass} />
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
               {invoices.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={canCheckout ? 4 : 3}
+                    colSpan={4}
                     className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]"
                   >
                     No invoices
@@ -115,20 +115,25 @@ export function PortalFeesSection({
                           '—'
                         )}
                       </td>
-                      {canCheckout && (
-                        <td className={cn(dataTableTdClass, 'text-right')}>
-                          {canPay ? (
-                            <button
-                              type="button"
-                              disabled={checkoutMutation.isPending}
-                              onClick={() => checkoutMutation.mutate(inv.id)}
-                              className="rounded-lg bg-[var(--primary-base,#2563EB)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                            >
-                              Pay online
-                            </button>
-                          ) : null}
-                        </td>
-                      )}
+                      <td className={cn(dataTableTdClass, 'space-x-2 text-right')}>
+                        <button
+                          type="button"
+                          onClick={() => window.open(`/print/fee-invoices/${inv.id}`, '_blank')}
+                          className="rounded-lg border border-stroke-soft-200 px-3 py-1.5 text-xs font-medium"
+                        >
+                          Print
+                        </button>
+                        {canPay ? (
+                          <button
+                            type="button"
+                            disabled={checkoutMutation.isPending}
+                            onClick={() => checkoutMutation.mutate(inv.id)}
+                            className="rounded-lg bg-[var(--primary-base,#2563EB)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                          >
+                            Pay online
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   );
                 })

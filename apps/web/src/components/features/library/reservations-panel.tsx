@@ -91,6 +91,8 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
     onSuccess: async () => {
       toast.success('Reservation fulfilled');
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryReservations(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryLoans(branchId) });
     },
     onError: () => toast.error('Unable to update reservation'),
   });

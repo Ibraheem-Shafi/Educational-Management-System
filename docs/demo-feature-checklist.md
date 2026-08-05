@@ -3,6 +3,8 @@
 Client-demo walkthrough list. Mark each item done as you test. Order: **Super Admin → Branch Admin → Teacher → Accountant → Receptionist → Parent → Student**.
 
 **Credentials & seed:** [demo-seed.md](demo-seed.md) (password for all: `Nexium@2026!`)  
+**Security / RBAC leave-behind:** [client-security-rbac-brief.md](client-security-rbac-brief.md)  
+**Security / RBAC live demo (10–15 min):** [rise-shine-security-demo-script.md](rise-shine-security-demo-script.md)  
 **Deep E2E regression:** [e2e-test-cases.md](e2e-test-cases.md) · [e2e-testing-guide.md](e2e-testing-guide.md)
 
 ### How to use
@@ -109,7 +111,15 @@ Client-demo walkthrough list. Mark each item done as you test. Order: **Super Ad
 - [ ] Invoices list
 - [ ] Generate invoice
 - [ ] Record payment / collect fee
+- [ ] Print fee voucher / challan
+- [ ] Print payment receipt (after collection)
 - [ ] Revenue trend / stats
+
+### Settings — Print templates
+
+- [ ] Open Settings → Print templates
+- [ ] Change paper size and field toggles for fee invoice / roll slip
+- [ ] Save template
 
 ### Accounting (`/dashboard/accounting`)
 
@@ -117,11 +127,20 @@ Client-demo walkthrough list. Mark each item done as you test. Order: **Super Ad
 - [ ] Create / edit account
 - [ ] Vouchers list + create
 - [ ] Post / unpost voucher
+- [ ] Print voucher
 - [ ] Budgets
 - [ ] Trial balance
 - [ ] Income / expense report
 - [ ] Account statement
 - [ ] Budget vs actual
+
+### Students — roll numbers
+
+- [ ] Set roll / admission on admit or edit
+- [ ] Search by roll / admission
+- [ ] Generate roll numbers for a batch (Attendance page)
+- [ ] Print roll slip from student detail
+- [ ] Print roster / attendance sheet from Attendance
 
 ### Timetable (`/dashboard/timetable`)
 
@@ -561,6 +580,8 @@ Repeat the Super Admin checks for these modules, confirming create/edit where th
 ## Negative access (quick client trust checks)
 
 Use after the positive demos above. Expect denied UI, redirect, or API error — not another role’s data.
+
+For a timed client follow-up (Rise and Shine or similar), use the scripted walkthrough: [rise-shine-security-demo-script.md](rise-shine-security-demo-script.md).
 
 | Actor | Action | Expected |
 |-------|--------|----------|

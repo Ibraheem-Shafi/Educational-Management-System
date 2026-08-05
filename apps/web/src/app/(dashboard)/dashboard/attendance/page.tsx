@@ -138,6 +138,8 @@ export default function AttendancePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: gridQueryKey });
+      queryClient.invalidateQueries({ queryKey: queryKeys.attendanceStats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardTodayAttendance });
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update attendance'),
   });
@@ -209,6 +211,50 @@ export default function AttendancePage() {
               className="min-w-[180px]"
             />
           )}
+
+          {mode === 'student' && batchId ? (
+            <>
+              <button
+                type="button"
+                className="rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                onClick={() => {
+                  const qs = new URLSearchParams({
+                    batchId,
+                    date: selectedDate,
+                    ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+                  });
+                  window.open(`/print/attendance-sheets?${qs.toString()}`, '_blank');
+                }}
+              >
+                Print sheet
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                onClick={() => window.open(`/print/rosters?batchId=${batchId}`, '_blank')}
+              >
+                Print roster
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
+                onClick={() => {
+                  apiClient('/students/generate-roll-numbers', {
+                    method: 'POST',
+                    token,
+                    body: JSON.stringify({ batchId, startFrom: 1, padLength: 3 }),
+                  })
+                    .then((res: { updated?: number }) => {
+                      toast.success(`Generated roll numbers for ${res.updated ?? 0} students`);
+                      void queryClient.invalidateQueries({ queryKey: gridQueryKey });
+                    })
+                    .catch((err: Error) => toast.error(err.message));
+                }}
+              >
+                Generate roll #s
+              </button>
+            </>
+          ) : null}
 
           <PageBranchScopeControl />
         </div>

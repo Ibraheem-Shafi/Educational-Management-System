@@ -4,11 +4,11 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { PaginatedResponse } from '@eims/types';
-import { PERMISSIONS, voucherStatuses, voucherTypes } from '@eims/shared';
+import { PERMISSIONS, voucherStatuses } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
-import { queryKeys } from '@/lib/query-keys';
+import { queryKeys, queryRoots } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
@@ -83,7 +83,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
       apiClient(`/accounting/vouchers/${id}/post`, { method: 'POST', token }),
     onSuccess: async () => {
       toast.success('Voucher posted');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingVouchers(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingVouchers });
     },
     onError: () => toast.error('Unable to post voucher'),
   });
@@ -93,7 +93,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
       apiClient(`/accounting/vouchers/${id}/unpost`, { method: 'POST', token }),
     onSuccess: async () => {
       toast.success('Voucher unposted');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingVouchers(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingVouchers });
     },
     onError: () => toast.error('Unable to unpost voucher'),
   });
@@ -102,7 +102,7 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
     mutationFn: (id: string) => apiClient(`/accounting/vouchers/${id}`, { method: 'DELETE', token }),
     onSuccess: async () => {
       toast.success('Voucher deleted');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountingVouchers(branchId) });
+      await queryClient.invalidateQueries({ queryKey: queryRoots.accountingVouchers });
     },
     onError: () => toast.error('Unable to delete voucher'),
   });
@@ -158,17 +158,18 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                     <th className={dataTableThClass}>No</th>
                     <th className={dataTableThClass}>Date</th>
                     <th className={dataTableThClass}>Type</th>
+                    <th className={dataTableThClass}>Fee type</th>
                     <th className={dataTableThClass}>Status</th>
                     <th className={dataTableThClass}>Amount</th>
-                    {canManage ? <th className={dataTableThClass} /> : null}
+                    <th className={dataTableThClass} />
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <DataTableSkeletonRows columns={canManage ? 6 : 5} rows={limit} />
+                    <DataTableSkeletonRows columns={7} rows={limit} />
                   ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={canManage ? 6 : 5} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
+                    <td colSpan={7} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
                       No vouchers found.
                     </td>
                   </tr>
@@ -181,28 +182,36 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                         <td className={dataTableTdClass}>{row.voucherNo}</td>
                         <td className={dataTableTdClass}>{row.voucherDate}</td>
                         <td className={dataTableTdClass}>{formatLabel(row.voucherType)}</td>
+                        <td className={dataTableTdClass}>{row.feeType?.name ?? '—'}</td>
                         <td className={dataTableTdClass}>
                           <StatusBadge code={row.status} label={formatLabel(row.status)} />
                         </td>
                         <td className={dataTableTdClass}>PKR {formatMoney(total)}</td>
-                        {canManage ? (
                           <td className={`${dataTableTdClass} text-right`}>
                             <RowActionsMenu
                               items={[
-                                { label: 'View', onClick: () => setViewVoucher(row) },
-                                ...(row.status === 'draft'
-                                  ? [{ label: 'Post', onClick: () => post.mutate(row.id) }]
-                                  : []),
-                                ...(row.status === 'draft' && isManual
-                                  ? [{ label: 'Delete', onClick: () => remove.mutate(row.id) }]
-                                  : []),
-                                ...(row.status === 'posted' && isManual
-                                  ? [{ label: 'Unpost', onClick: () => unpost.mutate(row.id) }]
-                                  : []),
+                                {
+                                  label: 'Print',
+                                  onClick: () =>
+                                    window.open(`/print/accounting-vouchers/${row.id}`, '_blank'),
+                                },
+                                ...(canManage
+                                  ? [
+                                      { label: 'View', onClick: () => setViewVoucher(row) },
+                                      ...(row.status === 'draft'
+                                        ? [{ label: 'Post', onClick: () => post.mutate(row.id) }]
+                                        : []),
+                                      ...(row.status === 'draft' && isManual
+                                        ? [{ label: 'Delete', onClick: () => remove.mutate(row.id) }]
+                                        : []),
+                                      ...(row.status === 'posted' && isManual
+                                        ? [{ label: 'Unpost', onClick: () => unpost.mutate(row.id) }]
+                                        : []),
+                                    ]
+                                  : [{ label: 'View', onClick: () => setViewVoucher(row) }]),
                               ]}
                             />
                           </td>
-                        ) : null}
                       </tr>
                     );
                   })

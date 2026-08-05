@@ -114,6 +114,12 @@ export class AccountingController {
     return this.accountingService.findVoucher(id, scope);
   }
 
+  @Get('vouchers/:id/print-data')
+  @Permissions('accounting.read')
+  getVoucherPrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.accountingService.getVoucherPrintData(id, scope);
+  }
+
   @Post('vouchers')
   @Permissions('accounting.manage')
   createVoucher(

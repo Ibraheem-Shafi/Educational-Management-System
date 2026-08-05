@@ -35,6 +35,8 @@ export const createStudentSchema = z.object({
   programId: z.string().optional(),
   batchId: z.string().optional(),
   statusId: requiredId('Status'),
+  admissionNumber: optionalString(50).nullable().optional(),
+  rollNumber: optionalString(50).nullable().optional(),
   subjectIds: z.array(z.string()).optional(),
   customFields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   guardians: z.array(admissionGuardianSchema).max(3).optional(),
@@ -47,7 +49,7 @@ export const listStudentsQuerySchema = z
     search: z.string().optional(),
     batchId: z.string().optional(),
     statusId: z.string().optional(),
-    sortBy: z.enum(['fullName', 'createdAt']).default('createdAt'),
+    sortBy: z.enum(['fullName', 'createdAt', 'rollNumber', 'admissionNumber']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
   })
   .merge(paginationQuerySchema);

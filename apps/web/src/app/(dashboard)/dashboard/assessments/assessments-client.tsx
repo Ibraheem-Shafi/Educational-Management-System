@@ -201,6 +201,7 @@ export default function AssessmentsPage() {
     onSuccess: () => {
       toast.success('Submitted for review');
       queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessmentsStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -210,6 +211,7 @@ export default function AssessmentsPage() {
     onSuccess: () => {
       toast.success('Assessment published');
       queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessmentsStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -219,6 +221,7 @@ export default function AssessmentsPage() {
     onSuccess: () => {
       toast.success('Assessment unpublished');
       queryClient.invalidateQueries({ queryKey: queryKeys.assessments() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessmentsStats });
     },
     onError: (err: Error) => toast.error(err.message),
   });

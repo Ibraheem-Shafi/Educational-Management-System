@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
     queryKey: queryKeys.batches(effectiveBranchId),
     queryFn: () =>
       apiClient<{ data: { id: string; name: string }[] }>(
-        `/batches?branchId=${effectiveBranchId}`,
+        `/batches/options?branchId=${effectiveBranchId}`,
         { token },
       ),
     enabled: !!token && !!effectiveBranchId,

@@ -5,11 +5,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Award, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { issueCertificateSchema } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
+import { useStudentsOptions } from '@/hooks/use-students-options';
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,6 @@ import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
-
-interface Student {
-  id: string;
-  fullName: string;
-}
 
 interface Template {
   id: string;
@@ -57,11 +52,7 @@ export function IssueCertificateDialog({
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(issueCertificateSchema);
 
-  const { data: students } = useQuery({
-    queryKey: ['students-certificates'],
-    queryFn: () => apiClient<PaginatedResponse<Student>>('/students?limit=100', { token }),
-    enabled: !!token && open,
-  });
+  const { data: students } = useStudentsOptions(token, branchId, open);
 
   const { data: templates } = useQuery({
     queryKey: ['certificate-templates', branchId],
@@ -147,7 +138,8 @@ export function IssueCertificateDialog({
             <FormFieldLabel required>Student</FormFieldLabel>
             <SelectDropdown
               aria-label="Student"
-              placeholder="Select student"
+              placeholder={branchId ? 'Select student' : 'Select branch first'}
+              disabled={!branchId}
               value={form.studentId}
               onValueChange={(value) => {
                 setForm((f) => ({ ...f, studentId: value }));

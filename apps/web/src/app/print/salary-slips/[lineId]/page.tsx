@@ -7,6 +7,7 @@ import { formatCurrency } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { printQueryUiState } from '@/components/print/print-shell';
 
 interface PrintData {
   line: {
@@ -52,10 +53,10 @@ const MONTH_NAMES = [
 
 export default function PrintSalarySlipPage() {
   const { lineId } = useParams<{ lineId: string }>();
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const token = session?.access_token;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isPending, error } = useQuery({
     queryKey: queryKeys.payrollLinePrint(lineId),
     queryFn: () => apiClient<PrintData>(`/payroll/lines/${lineId}/print-data`, { token }),
     enabled: !!token && !!lineId,
@@ -68,13 +69,23 @@ export default function PrintSalarySlipPage() {
     }
   }, [data]);
 
-  if (isLoading) {
+  const { loading, error: showError } = printQueryUiState({
+    authLoading,
+    hasToken: !!token,
+    ready: !!lineId,
+    isLoading,
+    isPending,
+    error,
+    data,
+  });
+
+  if (loading) {
     return (
       <p className="p-8 text-center text-sm text-[var(--text-sub-500)]">Preparing salary slip…</p>
     );
   }
 
-  if (error || !data) {
+  if (showError || !data) {
     return <p className="p-8 text-center text-sm text-red-600">Unable to load salary slip</p>;
   }
 

@@ -14,6 +14,7 @@ import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { useBatches } from '@/hooks/use-batches';
+import { useSubjectsOptions } from '@/hooks/use-subjects-options';
 import { queryKeys } from '@/lib/query-keys';
 import {
   PageHeader,
@@ -48,11 +49,6 @@ const TYPE_OPTIONS = [
   { value: 'online_class', label: 'Online class' },
 ];
 
-interface Subject {
-  id: string;
-  name: string;
-}
-
 function fmt(value: number) {
   return value.toLocaleString('en-US');
 }
@@ -81,11 +77,7 @@ export default function LearningPage() {
 
   const { data: batches } = useBatches(token, singleBranchId ?? '', undefined, !!singleBranchId);
 
-  const { data: subjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => apiClient<{ data: Subject[] }>('/subjects', { token }),
-    enabled: !!token,
-  });
+  const { data: subjects } = useSubjectsOptions(token);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);

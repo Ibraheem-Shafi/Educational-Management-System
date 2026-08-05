@@ -212,7 +212,7 @@ export class AttendanceService {
           deletedAt: null,
         },
         orderBy: { fullName: 'asc' },
-        select: { id: true, fullName: true },
+        select: { id: true, fullName: true, rollNumber: true, admissionNumber: true },
       }),
     ]);
     if (!batch) throw new NotFoundException('Batch not found');
@@ -258,6 +258,8 @@ export class AttendanceService {
         return {
           studentId: student.id,
           fullName: student.fullName,
+          rollNumber: student.rollNumber,
+          admissionNumber: student.admissionNumber,
           attendance: record
             ? {
                 id: record.id,
@@ -273,6 +275,42 @@ export class AttendanceService {
         total: students.length,
         marked: records.length,
         unmarked: students.length - records.length,
+      },
+    };
+  }
+
+  async getSheetPrintData(query: AttendanceSheetQuery, scope: BranchScope) {
+    const sheet = await this.getSheet(query, scope);
+    const [settings, template] = await Promise.all([
+      this.prisma.institutionSettings.findFirst(),
+      this.prisma.printDocumentTemplate.findFirst({
+        where: {
+          type: 'attendance_sheet',
+          isActive: true,
+          OR: [{ branchId: sheet.branchId }, { branchId: null }],
+        },
+        orderBy: { branchId: 'desc' },
+      }),
+    ]);
+    const { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } = await import('@eims/shared');
+    const defaults = DEFAULT_PRINT_TEMPLATE_FIELDS.attendance_sheet;
+    const stored =
+      template?.fields && typeof template.fields === 'object' && !Array.isArray(template.fields)
+        ? (template.fields as Record<string, boolean>)
+        : {};
+    return {
+      ...sheet,
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+      },
+      template: {
+        paperSize: template?.paperSize ?? 'a4',
+        fields: { ...defaults, ...stored },
+        headerText: template?.headerText ?? null,
+        footerText: template?.footerText ?? null,
+        name: template?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.attendance_sheet,
       },
     };
   }

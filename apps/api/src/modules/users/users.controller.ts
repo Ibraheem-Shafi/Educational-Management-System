@@ -21,6 +21,7 @@ import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { listUsersQuerySchema, createInvitationSchema, updateUserSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
+import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -64,6 +65,26 @@ export class UsersController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.usersService.createInvitation(body, user);
+  }
+
+  /** Lightweight catalog for staff dropdowns — no users.manage required. */
+  @Get('options')
+  listOptions(
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+    @Query('branchId') branchId?: string,
+    @Query('q') q?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('role') role?: string,
+  ) {
+    assertStaffCatalogAccess(user);
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    return this.usersService.listOptions(scope, {
+      branchId,
+      q,
+      role,
+      ...(Number.isFinite(limit) ? { limit } : {}),
+    });
   }
 
   @Get(':id')

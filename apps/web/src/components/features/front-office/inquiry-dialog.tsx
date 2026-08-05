@@ -23,6 +23,7 @@ import {
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { DateField } from '@/components/ui/date-field';
 import { cn } from '@/lib/utils';
 import type { AdmissionInquiry } from './types';
 import { formatLabel } from './types';
@@ -234,11 +235,11 @@ export function InquiryDialog({
               </div>
               <div>
                 <FormFieldLabel>Follow-up at</FormFieldLabel>
-                <input
+                <DateField
                   type="datetime-local"
                   className={fieldClassName('followUpAt', modalFieldClassName)}
                   value={form.followUpAt}
-                  onChange={(e) => updateForm('followUpAt', e.target.value)}
+                  onValueChange={(next) => updateForm('followUpAt', next)}
                 />
                 <FormFieldError message={errors.followUpAt} />
               </div>

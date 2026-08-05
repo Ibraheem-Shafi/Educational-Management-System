@@ -53,6 +53,7 @@ function RunActions({
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.payrollRuns(branchId) });
     await queryClient.invalidateQueries({ queryKey: queryKeys.payrollRun(run.id) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.payrollHistory(branchId) });
     onRefresh();
   };
 

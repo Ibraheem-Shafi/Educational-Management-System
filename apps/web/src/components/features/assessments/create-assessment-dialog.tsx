@@ -163,6 +163,7 @@ export function CreateAssessmentDialog({
     onSuccess: () => {
       toast.success('Assessment updated');
       queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessmentsStats });
       onOpenChange(false);
     },
     onError: (err: Error) => {

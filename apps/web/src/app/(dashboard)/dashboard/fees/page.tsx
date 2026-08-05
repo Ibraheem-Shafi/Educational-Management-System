@@ -1,16 +1,15 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Receipt } from 'lucide-react';
-import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
-import { formatCurrency, PERMISSIONS } from '@eims/shared';
+import { currencyStat, formatCurrency, formatCurrencyCompact, PERMISSIONS } from '@eims/shared';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -23,7 +22,12 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { Tabs } from '@/components/ui/tabs';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
-import { RecordPaymentDialog } from '@/components/features/fees/record-payment-dialog';
+import { GenerateInvoicesDialog } from '@/components/features/fees/generate-invoices-dialog';
+import {
+  RecordPaymentDialog,
+  type PayInvoiceTarget,
+  type PaymentDialogMode,
+} from '@/components/features/fees/record-payment-dialog';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -41,25 +45,41 @@ interface Invoice {
   student?: { fullName: string };
   feeType?: { name: string };
   netAmount: number;
+  paidAmount?: number;
+  remainingAmount?: number;
   dueDate: string | null;
   status?: { label: string; code: string };
   paidAt: string | null;
+  latestPaymentId?: string | null;
 }
-
-type PayTarget = { id: string; netAmount: number; student?: { fullName: string } };
 
 function formatCount(value: number): string {
   return value.toLocaleString('en-US');
+}
+
+function toPayTarget(invoice: {
+  id: string;
+  netAmount: number;
+  remainingAmount?: number;
+  student?: { fullName: string };
+}): PayInvoiceTarget {
+  return {
+    id: invoice.id,
+    netAmount: invoice.netAmount,
+    remainingAmount: invoice.remainingAmount ?? invoice.netAmount,
+    student: invoice.student,
+  };
 }
 
 export default function FeesPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
-  const queryClient = useQueryClient();
   const canCollect = can(PERMISSIONS.FEES_COLLECT);
   const [createOpen, setCreateOpen] = useState(false);
-  const [payInvoice, setPayInvoice] = useState<PayTarget | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<PayInvoiceTarget | null>(null);
+  const [payMode, setPayMode] = useState<PaymentDialogMode>('partial');
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
   const [defaulterPage, setDefaulterPage] = useState(1);
@@ -104,6 +124,7 @@ export default function FeesPage() {
           id: string;
           student: { fullName: string };
           netAmount: number;
+          remainingAmount?: number;
           dueDate: string | null;
         }>;
         total: number;
@@ -118,19 +139,10 @@ export default function FeesPage() {
     enabled: !!token && tab === 'defaulters',
   });
 
-  const payMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiClient(`/fee-invoices/${id}/pay`, { method: 'PATCH', token, body: '{}' }),
-    onSuccess: () => {
-      toast.success('Payment recorded');
-      queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
-      queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  const openRecordPayment = (invoice: PayTarget) => setPayInvoice(invoice);
+  const openRecordPayment = (invoice: PayInvoiceTarget, mode: PaymentDialogMode = 'partial') => {
+    setPayMode(mode);
+    setPayInvoice(invoice);
+  };
 
   const handleLimitChange = useCallback((next: number) => {
     setInvoiceLimit(next);
@@ -150,14 +162,23 @@ export default function FeesPage() {
         description="Invoices and payment collection"
         actions={
           canCollect ? (
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className={pageHeaderActionClassName}
-            >
-              <PageHeaderActionIcon />
-              New invoice
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGenerateOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                Generate invoices
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                <PageHeaderActionIcon />
+                New invoice
+              </button>
+            </div>
           ) : undefined
         }
       />
@@ -168,10 +189,22 @@ export default function FeesPage() {
         branchId={singleBranchId ?? ''}
       />
 
+      <GenerateInvoicesDialog
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        branchId={singleBranchId ?? ''}
+      />
+
       <RecordPaymentDialog
         open={!!payInvoice}
-        onOpenChange={(open) => !open && setPayInvoice(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPayInvoice(null);
+            setPayMode('partial');
+          }
+        }}
         invoice={payInvoice}
+        mode={payMode}
       />
 
       <MainStatsSection
@@ -179,12 +212,12 @@ export default function FeesPage() {
         stats={[
           {
             label: 'Outstanding',
-            value: formatCurrency(stats?.outstandingAmount.total ?? 0),
+            ...currencyStat(stats?.outstandingAmount.total ?? 0),
             changePercent: stats?.outstandingAmount.changePercent,
           },
           {
             label: 'Collected (30d)',
-            value: formatCurrency(stats?.collectedLast30Days.total ?? 0),
+            ...currencyStat(stats?.collectedLast30Days.total ?? 0),
             changePercent: stats?.collectedLast30Days.changePercent,
           },
           {
@@ -206,7 +239,7 @@ export default function FeesPage() {
         data={trend?.points ?? []}
         changePercent={trend?.changePercent}
         isLoading={trendLoading}
-        valueFormatter={(v) => formatCurrency(v)}
+        valueFormatter={(v) => formatCurrencyCompact(v)}
         gradientId="feesRevenueGradient"
       />
 
@@ -279,20 +312,35 @@ export default function FeesPage() {
                         )}
                       </td>
                       <td className={cn(dataTableTdClass, 'text-right')}>
-                        {canCollect && !inv.paidAt ? (
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Record payment',
-                                onClick: () => openRecordPayment(inv),
-                              },
-                              {
-                                label: 'Pay in full',
-                                onClick: () => payMutation.mutate(inv.id),
-                              },
-                            ]}
-                          />
-                        ) : null}
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: 'Print voucher',
+                              onClick: () => window.open(`/print/fee-invoices/${inv.id}`, '_blank'),
+                            },
+                            ...(inv.latestPaymentId
+                              ? [
+                                  {
+                                    label: 'Print receipt',
+                                    onClick: () =>
+                                      window.open(`/print/fee-receipts/${inv.latestPaymentId}`, '_blank'),
+                                  },
+                                ]
+                              : []),
+                            ...(canCollect && !inv.paidAt
+                              ? [
+                                  {
+                                    label: 'Record payment',
+                                    onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
+                                  },
+                                  {
+                                    label: 'Pay in full',
+                                    onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -354,7 +402,7 @@ export default function FeesPage() {
                         {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
                       </td>
                       <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                        {formatCurrency(inv.netAmount)}
+                        {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
                       </td>
                       <td className={cn(dataTableTdClass, 'text-right')}>
                         {canCollect ? (
@@ -362,11 +410,11 @@ export default function FeesPage() {
                             items={[
                               {
                                 label: 'Record payment',
-                                onClick: () => openRecordPayment(inv),
+                                onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
                               },
                               {
                                 label: 'Pay in full',
-                                onClick: () => payMutation.mutate(inv.id),
+                                onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
                               },
                             ]}
                           />
@@ -377,7 +425,6 @@ export default function FeesPage() {
               </tbody>
             </table>
           </div>
-
           {defaulters?.meta && (
             <PaginationBar
               page={defaulterPage}

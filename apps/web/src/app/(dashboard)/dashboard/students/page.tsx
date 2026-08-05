@@ -37,6 +37,8 @@ interface StudentRow {
   gender: string | null;
   cnicOrBForm: string | null;
   photographUrl: string | null;
+  rollNumber?: string | null;
+  admissionNumber?: string | null;
   batch?: { name: string };
   program?: { name: string };
   branch?: { name: string };
@@ -53,8 +55,10 @@ interface LookupStatus {
   label: string;
 }
 
-function formatStudentId(id: string): string {
-  return `STD-${id.slice(-6).toUpperCase()}`;
+function formatStudentId(student: Pick<StudentRow, 'id' | 'rollNumber' | 'admissionNumber'>): string {
+  if (student.rollNumber) return `Roll ${student.rollNumber}`;
+  if (student.admissionNumber) return student.admissionNumber;
+  return `STD-${student.id.slice(-6).toUpperCase()}`;
 }
 
 function formatGender(gender: string | null): string {
@@ -106,9 +110,6 @@ export default function StudentsPage() {
   const { can } = usePermissions();
   const token = session?.access_token;
   const canCreate = can(PERMISSIONS.STUDENTS_CREATE);
-  // Batch filter requires reading academic data; teachers lack it, so hide the
-  // filter (and skip the request) rather than surfacing a 403.
-  const canReadBatches = can(PERMISSIONS.ACADEMIC_READ);
   const [search, setSearch] = useState('');
   const [batchId, setBatchId] = useState('');
   const [statusId, setStatusId] = useState('');
@@ -129,10 +130,10 @@ export default function StudentsPage() {
   if (statusId) queryParams.set('statusId', statusId);
 
   const { data: batches } = useQuery({
-    queryKey: ['batches', scopeKey],
+    queryKey: ['batches-options', scopeKey],
     queryFn: () =>
-      apiClient<{ data: Batch[] }>(withBranchScope('/batches', effectiveScope), { token }),
-    enabled: !!token && canReadBatches,
+      apiClient<{ data: Batch[] }>(withBranchScope('/batches/options', effectiveScope), { token }),
+    enabled: !!token,
   });
 
   const { data: statuses } = useQuery({
@@ -206,21 +207,19 @@ export default function StudentsPage() {
 
       <FilterBar className="items-center">
         <SearchInput value={search} onValueChange={handleSearchChange} />
-        {canReadBatches && (
-          <SelectDropdown
-            aria-label="Filter by batch"
-            placeholder="All batches"
-            value={batchId}
-            onValueChange={(next) => {
-              setBatchId(next);
-              setPage(1);
-            }}
-            options={[
-              { value: '', label: 'All batches' },
-              ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
-            ]}
-          />
-        )}
+        <SelectDropdown
+          aria-label="Filter by batch"
+          placeholder="All batches"
+          value={batchId}
+          onValueChange={(next) => {
+            setBatchId(next);
+            setPage(1);
+          }}
+          options={[
+            { value: '', label: 'All batches' },
+            ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+          ]}
+        />
         <SelectDropdown
           aria-label="Filter by status"
           placeholder="All statuses"
@@ -305,7 +304,7 @@ export default function StudentsPage() {
                     className="transition-colors hover:bg-[var(--neutral-50)]/50"
                   >
                     <td className={cn(tdClass, 'whitespace-nowrap')}>
-                      {formatStudentId(student.id)}
+                      {formatStudentId(student)}
                     </td>
                     <td className={tdClass}>
                       <Link

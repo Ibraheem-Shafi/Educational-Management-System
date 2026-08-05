@@ -69,12 +69,67 @@ export const listFeeStructuresQuerySchema = z
 
 export type ListFeeStructuresQuery = z.infer<typeof listFeeStructuresQuerySchema>;
 
-export const generateBulkInvoicesSchema = z.object({
+export const bulkInvoiceLineSchema = z
+  .object({
+    studentId: requiredId('Student'),
+    amount: z.coerce.number({ required_error: MSG.required('Amount') }),
+    include: z.boolean().optional(),
+  })
+  .superRefine((line, ctx) => {
+    if (line.include === false) return;
+    if (!(line.amount > 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.positiveNumber('Amount'),
+        path: ['amount'],
+      });
+    }
+  });
+
+export type BulkInvoiceLineInput = z.infer<typeof bulkInvoiceLineSchema>;
+
+/**
+ * Bulk invoice preview/generate scope:
+ * - With `batchId`: students in that batch only
+ * - Without `batchId`: all non-deleted students in the branch
+ * Amounts resolve per student from FeeStructure (batch → program → branch default).
+ */
+export const previewBulkInvoicesSchema = z.object({
   branchId: requiredId('Branch'),
-  batchId: requiredId('Batch'),
-  feeStructureIds: z.array(requiredId('Fee structure')).optional(),
-  dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+  /** Omit or leave empty for entire-branch scope. */
+  batchId: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    requiredId('Batch').optional(),
+  ),
+  feeTypeId: requiredId('Fee type'),
+  feeStructureId: requiredId('Fee structure').optional(),
+  defaultAmount: requiredPositiveNumber('Default amount').optional(),
 });
+
+export type PreviewBulkInvoicesInput = z.infer<typeof previewBulkInvoicesSchema>;
+
+export const generateBulkInvoicesSchema = z
+  .object({
+    branchId: requiredId('Branch'),
+    /** Omit or leave empty for entire-branch scope. */
+    batchId: z.preprocess(
+      (v) => (v === '' || v === null || v === undefined ? undefined : v),
+      requiredId('Batch').optional(),
+    ),
+    feeTypeId: requiredId('Fee type').optional(),
+    feeStructureIds: z.array(requiredId('Fee structure')).optional(),
+    dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    lines: z.array(bulkInvoiceLineSchema).min(1).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.lines?.length && !data.feeTypeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.select('fee type'),
+        path: ['feeTypeId'],
+      });
+    }
+  });
 
 export type GenerateBulkInvoicesInput = z.infer<typeof generateBulkInvoicesSchema>;
 

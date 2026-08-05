@@ -196,4 +196,7 @@ Both **MAIN** and **LAHORE** receive representative operational data.
 - [17-clone-and-rebrand.md](17-clone-and-rebrand.md) — new institution from templates
 - [templates/institution-seed.example.json](templates/institution-seed.example.json) — foundation JSON schema
 - [demo-feature-checklist.md](demo-feature-checklist.md) — client walkthrough checklist
+- [client-security-rbac-brief.md](client-security-rbac-brief.md) — client leave-behind on security & RBAC
+- [client-security-technical-note.md](client-security-technical-note.md) — technical note (JWT, sessions, API guards)
+- [rise-shine-security-demo-script.md](rise-shine-security-demo-script.md) — 10–15 min security/RBAC follow-up demo
 - [progress/README.md](../progress/README.md) — go-live checklist summary

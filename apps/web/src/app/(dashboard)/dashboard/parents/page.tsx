@@ -98,7 +98,7 @@ export default function ParentsPage() {
     setPage(1);
   }, []);
 
-  const { effectiveScope, scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+  const { effectiveScope, scopeKey, singleBranchId, appendToSearchParams } = useEffectiveBranchScope();
 
   const queryParams = new URLSearchParams({ page: String(page), limit: String(limit) });
   appendToSearchParams(queryParams);
@@ -141,7 +141,11 @@ export default function ParentsPage() {
         }
       />
 
-      <AddParentDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddParentDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        branchId={singleBranchId ?? ''}
+      />
 
       <MainStatsSection
         isLoading={statsLoading}
