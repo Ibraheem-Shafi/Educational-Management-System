@@ -239,12 +239,12 @@ export default function AttendancePage() {
                 type="button"
                 className="rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-2 text-sm"
                 onClick={() => {
-                  apiClient('/students/generate-roll-numbers', {
+                  apiClient<{ updated?: number }>('/students/generate-roll-numbers', {
                     method: 'POST',
                     token,
                     body: JSON.stringify({ batchId, startFrom: 1, padLength: 3 }),
                   })
-                    .then((res: { updated?: number }) => {
+                    .then((res) => {
                       toast.success(`Generated roll numbers for ${res.updated ?? 0} students`);
                       void queryClient.invalidateQueries({ queryKey: gridQueryKey });
                     })
