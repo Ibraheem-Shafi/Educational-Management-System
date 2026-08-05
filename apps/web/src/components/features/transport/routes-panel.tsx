@@ -30,7 +30,7 @@ import { PaginationBar } from '@/components/layout/pagination-bar';
 import { cn } from '@/lib/utils';
 import { RouteDialog } from './route-dialog';
 import type { TransportRoute } from './types';
-import { formatLabel, statusBadgeCode } from './types';
+import { statusBadgeCode } from './types';
 
 export function RoutesPanel({ branchId }: { branchId: string }) {
   const { session } = useAuth();

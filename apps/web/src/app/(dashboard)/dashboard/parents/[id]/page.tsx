@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Link2, Mail, Phone, Unlink, Users } from 'lucide-react';
@@ -11,7 +11,6 @@ import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
-import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader, pageHeaderActionClassName } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';

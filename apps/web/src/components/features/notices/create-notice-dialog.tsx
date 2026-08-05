@@ -75,7 +75,7 @@ export function CreateNoticeDialog({
   const isEdit = Boolean(notice);
   const createFormErrors = useFormErrors(createNoticeSchema);
   const updateFormErrors = useFormErrors(updateNoticeSchema);
-  const { errors, clearField, validate, applyApiErrors, fieldClassName, setFieldError, clearAll } =
+  const { errors, clearField, validate, fieldClassName, setFieldError, clearAll } =
     isEdit ? updateFormErrors : createFormErrors;
 
   useEffect(() => {
