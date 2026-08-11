@@ -11,10 +11,18 @@ import {
   portalSectionQuerySchema,
   portalCalendarQuerySchema,
   createLeaveRequestSchema,
+  leaveAttachmentMetaSchema,
+  prepareLeaveAttachmentUploadSchema,
   paginationQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { AcceptInvitationInput, CreateLeaveRequestInput, UpdateProfileInput } from '@eims/shared';
+import type {
+  AcceptInvitationInput,
+  CreateLeaveRequestInput,
+  LeaveAttachmentMetaInput,
+  PrepareLeaveAttachmentUploadInput,
+  UpdateProfileInput,
+} from '@eims/shared';
 import { z } from 'zod';
 
 const portalLearningQuerySchema = z.object({
@@ -330,5 +338,28 @@ export class PortalController {
     @Body(createZodPipe(createLeaveRequestSchema)) body: CreateLeaveRequestInput,
   ) {
     return this.portalService.createParentLeaveRequest(user, body);
+  }
+
+  @Post('parent/leave/:id/attachment/upload-url')
+  parentLeavePrepareAttachment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(createZodPipe(prepareLeaveAttachmentUploadSchema)) body: PrepareLeaveAttachmentUploadInput,
+  ) {
+    return this.portalService.prepareParentLeaveAttachmentUpload(user, id, body);
+  }
+
+  @Post('parent/leave/:id/attachment')
+  parentLeaveSetAttachment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(createZodPipe(leaveAttachmentMetaSchema)) body: LeaveAttachmentMetaInput,
+  ) {
+    return this.portalService.setParentLeaveAttachment(user, id, body);
+  }
+
+  @Get('parent/leave/:id/attachment/signed-url')
+  parentLeaveAttachmentSignedUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.portalService.getParentLeaveAttachmentSignedUrl(user, id);
   }
 }

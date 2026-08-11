@@ -64,6 +64,7 @@ export const listFeeStructuresQuerySchema = z
     branchId: z.string().optional(),
     batchId: z.string().optional(),
     programId: z.string().optional(),
+    includeInactive: z.coerce.boolean().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -146,3 +147,9 @@ export const updateFeeTypeSchema = createFeeTypeSchema.partial().extend({
 });
 
 export type UpdateFeeTypeInput = z.infer<typeof updateFeeTypeSchema>;
+
+export const listFeeTypesQuerySchema = z.object({
+  includeInactive: z.coerce.boolean().optional(),
+});
+
+export type ListFeeTypesQuery = z.infer<typeof listFeeTypesQuerySchema>;

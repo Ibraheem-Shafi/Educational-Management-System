@@ -159,11 +159,12 @@ function StudentLearningContent() {
                           {item.description}
                         </p>
                       )}
-                      {item.type === 'online_class' && (
+                      {(item.type === 'online_class' || item.meetingUrl) && (
                         <OnlineClassSessionMeta
                           startsAt={item.startsAt}
                           endsAt={item.endsAt}
                           meetingUrl={item.meetingUrl}
+                          isLiveClass={item.type === 'online_class'}
                           variant="inline"
                         />
                       )}

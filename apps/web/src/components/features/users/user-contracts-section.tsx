@@ -232,7 +232,7 @@ export function UserContractsSection({
             <DialogTitle>Add employment contract</DialogTitle>
             <DialogDescription className="mt-1">Record a new contract for this staff member</DialogDescription>
           </div>
-          <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
+          <form className="space-y-4 px-5 py-4" noValidate onSubmit={handleSubmit}>
             <div>
               <FormFieldLabel required>Start date</FormFieldLabel>
               <input
@@ -251,6 +251,7 @@ export function UserContractsSection({
               <input
                 type="date"
                 value={form.endDate}
+                min={form.startDate || undefined}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, endDate: e.target.value }));
                   clearField('endDate');

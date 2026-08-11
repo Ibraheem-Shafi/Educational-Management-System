@@ -3,9 +3,11 @@ import { selectedBranchScope } from '@eims/shared';
 import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
@@ -25,13 +27,15 @@ import type {
   UpdateLearningResourceInput,
   ListLearningQuery,
   AddLearningAttachmentInput,
+  PrepareLearningAttachmentUploadInput,
 } from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
 const LEARNING_BUCKET = 'learning-content';
 
 @Injectable()
-export class LearningService {
+export class LearningService implements OnModuleInit {
+  private readonly logger = new Logger(LearningService.name);
   private supabaseAdmin;
 
   constructor(
@@ -45,6 +49,33 @@ export class LearningService {
     if (url && key) {
       this.supabaseAdmin = createClient(url, key);
     }
+  }
+
+  /** Ensure the storage bucket exists so client uploads don't fail with "Bucket not found". */
+  async onModuleInit(): Promise<void> {
+    await this.ensureLearningBucket();
+  }
+
+  private async ensureLearningBucket(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(LEARNING_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(LEARNING_BUCKET, { public: false });
+        this.logger.log(`Created storage bucket "${LEARNING_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${LEARNING_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private safeStorageFileName(name: string): string {
+    const base = name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '');
+    return (base || 'file').slice(0, 120);
   }
 
   private canPublishAnyScope(user: AuthUser): boolean {
@@ -343,7 +374,109 @@ export class LearningService {
       },
     });
 
+    await this.audit.log({
+      userId: user.id,
+      action: 'learning.attachment_added',
+      entityType: 'LearningAttachment',
+      entityId: attachment.id,
+      newValue: attachment,
+    });
+
     return attachment;
+  }
+
+  /**
+   * Issue a short-lived signed upload URL (service role) so the browser can put
+   * the file without needing INSERT policies on the private learning bucket.
+   */
+  async prepareAttachmentUpload(
+    id: string,
+    input: PrepareLearningAttachmentUploadInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const existing = await this.prisma.learningResource.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!existing) throw new NotFoundException('Learning resource not found');
+    await this.assertTeacherCanPublish(user, existing.batchId, existing.subjectId);
+
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
+    await this.ensureLearningBucket();
+
+    const path = `${existing.branchId}/${existing.id}/${Date.now()}-${this.safeStorageFileName(input.fileName)}`;
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(LEARNING_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare file upload');
+    }
+
+    return {
+      bucket: LEARNING_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
+  }
+
+  async removeAttachment(
+    resourceId: string,
+    attachmentId: string,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const attachment = await this.prisma.learningAttachment.findFirst({
+      where: {
+        id: attachmentId,
+        resourceId,
+        resource: { deletedAt: null, ...prismaBranchFilter(scope) },
+      },
+      include: { resource: true },
+    });
+    if (!attachment) throw new NotFoundException('Attachment not found');
+
+    if (!this.canPublishAnyScope(user) && attachment.resource.createdById !== user.id) {
+      throw new ForbiddenException('You can only modify resources you created');
+    }
+    await this.assertTeacherCanPublish(
+      user,
+      attachment.resource.batchId,
+      attachment.resource.subjectId,
+    );
+
+    await this.prisma.learningAttachment.delete({ where: { id: attachmentId } });
+
+    if (this.supabaseAdmin) {
+      const objectKey = attachment.storagePath.replace(/^learning-content\//, '');
+      const { error } = await this.supabaseAdmin.storage
+        .from(LEARNING_BUCKET)
+        .remove([objectKey]);
+      if (error) {
+        this.logger.warn(
+          `Could not remove storage object "${objectKey}": ${error.message}`,
+        );
+      }
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'learning.attachment_removed',
+      entityType: 'LearningAttachment',
+      entityId: attachmentId,
+      previousValue: {
+        fileName: attachment.fileName,
+        storagePath: attachment.storagePath,
+      },
+    });
+
+    return { deleted: true };
   }
 
   async getAttachmentSignedUrl(
@@ -364,16 +497,22 @@ export class LearningService {
       return { url: attachment.storagePath, signed: false };
     }
 
+    const objectKey = attachment.storagePath.replace(/^learning-content\//, '');
+
     const { data, error } = await this.supabaseAdmin.storage
       .from(LEARNING_BUCKET)
-      .createSignedUrl(attachment.storagePath, 3600);
+      .createSignedUrl(objectKey, 3600);
 
     if (error) {
-      // Fallback to student-documents if learning bucket missing
+      // Fallback for older rows that may have been stored under student-documents
       const fallback = await this.supabaseAdmin.storage
         .from('student-documents')
-        .createSignedUrl(attachment.storagePath, 3600);
-      if (fallback.error) throw new NotFoundException(error.message);
+        .createSignedUrl(objectKey, 3600);
+      if (fallback.error) {
+        throw new NotFoundException(
+          'This file is no longer available in storage. It may not have been uploaded in this environment.',
+        );
+      }
       return { url: fallback.data.signedUrl, signed: true };
     }
 

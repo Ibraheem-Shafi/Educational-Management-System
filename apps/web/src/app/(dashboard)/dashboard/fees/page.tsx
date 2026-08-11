@@ -23,6 +23,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
 import { GenerateInvoicesDialog } from '@/components/features/fees/generate-invoices-dialog';
+import { FeeTypesPanel } from '@/components/features/fees/fee-types-panel';
+import { FeeStructuresPanel } from '@/components/features/fees/fee-structures-panel';
 import {
   RecordPaymentDialog,
   type PayInvoiceTarget,
@@ -84,7 +86,7 @@ export default function FeesPage() {
   const [invoiceLimit, setInvoiceLimit] = useState(8);
   const [defaulterPage, setDefaulterPage] = useState(1);
   const [defaulterLimit, setDefaulterLimit] = useState(8);
-  const [tab, setTab] = useState<'fees' | 'defaulters'>('fees');
+  const [tab, setTab] = useState<'invoices' | 'defaulters' | 'fee-types' | 'structures'>('invoices');
 
   const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
@@ -161,7 +163,7 @@ export default function FeesPage() {
         title="Fees"
         description="Invoices and payment collection"
         actions={
-          canCollect ? (
+          canCollect && tab === 'invoices' ? (
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -247,16 +249,20 @@ export default function FeesPage() {
         <Tabs
           aria-label="Fees sections"
           tabs={[
-            { id: 'fees', label: 'Fees' },
+            { id: 'invoices', label: 'Invoices' },
             { id: 'defaulters', label: 'Fee Defaulter' },
+            { id: 'fee-types', label: 'Fee types' },
+            { id: 'structures', label: 'Structures' },
           ]}
           value={tab}
-          onValueChange={(id) => setTab(id as 'fees' | 'defaulters')}
+          onValueChange={(id) =>
+            setTab(id as 'invoices' | 'defaulters' | 'fee-types' | 'structures')
+          }
         />
         <PageBranchScopeControl />
       </div>
 
-      {tab === 'fees' && (
+      {tab === 'invoices' && (
         <div className="bg-white">
           <div className={dataTableWrapperClass}>
             <table className={dataTableClass}>
@@ -358,6 +364,17 @@ export default function FeesPage() {
             />
           )}
         </div>
+      )}
+
+      {tab === 'fee-types' && <FeeTypesPanel canManage={canCollect} />}
+
+      {tab === 'structures' && (
+        <FeeStructuresPanel
+          canManage={canCollect}
+          branchId={singleBranchId ?? ''}
+          scopeKey={scopeKey}
+          effectiveScope={effectiveScope}
+        />
       )}
 
       {tab === 'defaulters' && (

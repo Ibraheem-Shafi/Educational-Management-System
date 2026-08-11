@@ -94,12 +94,14 @@ export default function ParentDetailPage() {
     mutationFn: (studentId: string) =>
       apiClient(`/parents/${id}/students/${studentId}`, { method: 'DELETE', token }),
     onMutate: () => ({ toastId: toast.loading('Unlinking student…') }),
-    onSuccess: (_data, _studentId, ctx) => {
+    onSuccess: async (_data, _studentId, ctx) => {
       toast.dismiss(ctx?.toastId);
       toast.success('Student unlinked');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      queryClient.invalidateQueries({ queryKey: ['parents', id, 'students'] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.parents() }),
+        queryClient.invalidateQueries({ queryKey: ['parents', id, 'students'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats }),
+      ]);
       setUnlinkTarget(null);
     },
     onError: (err: Error, _studentId, ctx) => {

@@ -1,15 +1,21 @@
-import { createClient } from '@/lib/supabase/client';
+import { assertAllowedImage } from '@/lib/image-upload';
+import { uploadViaSignedUrl } from '@/lib/upload-via-signed-url';
 
+const ATTENDANCE_BUCKET = 'attendance-registers';
+
+/** Upload an attendance register image via service-role signed upload URL. */
 export async function uploadAttendanceRegister(
   file: File,
-  sessionKey: string,
+  branchId: string,
+  accessToken: string,
 ): Promise<string> {
-  const supabase = createClient();
-  const ext = file.name.split('.').pop() ?? 'jpg';
-  const path = `${sessionKey}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from('attendance-registers').upload(path, file, {
-    upsert: false,
-  });
-  if (error) throw new Error(error.message);
-  return path;
+  assertAllowedImage(file);
+  const uploaded = await uploadViaSignedUrl(
+    file,
+    '/ai-attendance/register-upload-url',
+    accessToken,
+    { branchId },
+    ATTENDANCE_BUCKET,
+  );
+  return uploaded.path;
 }

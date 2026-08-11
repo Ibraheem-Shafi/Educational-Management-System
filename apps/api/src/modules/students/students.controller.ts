@@ -7,9 +7,9 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createStudentSchema, listStudentsQuerySchema, updateStudentSchema, setStudentSubjectsSchema, generateRollNumbersSchema } from '@eims/shared';
+import { createStudentSchema, listStudentsQuerySchema, updateStudentSchema, setStudentSubjectsSchema, generateRollNumbersSchema, prepareStudentPhotoUploadSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput, SetStudentSubjectsInput, GenerateRollNumbersInput } from '@eims/shared';
+import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput, SetStudentSubjectsInput, GenerateRollNumbersInput, PrepareStudentPhotoUploadInput } from '@eims/shared';
 import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util';
 
 @ApiTags('students')
@@ -95,6 +95,16 @@ export class StudentsController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.studentsService.setSubjects(id, body.subjectIds, user, scope);
+  }
+
+  @Post(':id/photo/upload-url')
+  preparePhotoUpload(
+    @Param('id') id: string,
+    @Body(createZodPipe(prepareStudentPhotoUploadSchema)) body: PrepareStudentPhotoUploadInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.studentsService.preparePhotoUpload(id, body, user, scope);
   }
 
   @Get(':id')

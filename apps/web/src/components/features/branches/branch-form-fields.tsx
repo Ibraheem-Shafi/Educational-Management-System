@@ -2,10 +2,10 @@
 
 import {
   FormFieldLabel,
-  InvitePhoneField,
   modalFieldClassName,
 } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import type { BranchFormValues } from '@/lib/branch-form';
 import { slugifyBranchCode } from '@/lib/branch-form';
 import { cn } from '@/lib/utils';
@@ -104,17 +104,13 @@ export function BranchFormFields({
 
       <div>
         <FormFieldLabel required>Phone Number</FormFieldLabel>
-        <InvitePhoneField
-          countryCode={form.phoneCountryCode}
-          onCountryCodeChange={(code) => {
-            onChange('phoneCountryCode', code);
-            clearField?.('phone');
-          }}
+        <PakistanPhoneInput
           value={form.phone}
           onChange={(value) => {
             onChange('phone', value);
             clearField?.('phone');
           }}
+          className={errors.phone ? 'border-red-500' : undefined}
         />
         <FormFieldError message={errors.phone} />
       </div>

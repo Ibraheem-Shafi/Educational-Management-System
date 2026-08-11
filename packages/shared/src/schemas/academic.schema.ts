@@ -5,6 +5,7 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
 export const programBatchInputSchema = z.object({
@@ -94,16 +95,26 @@ export const listSubjectsQuerySchema = z
 
 export type ListSubjectsQuery = z.infer<typeof listSubjectsQuerySchema>;
 
-export const createAcademicSessionSchema = z.object({
+const academicSessionFieldsSchema = z.object({
   name: requiredString('Session name', 2, 100),
   startDate: z.string().datetime({ message: MSG.invalidDate }),
   endDate: z.string().datetime({ message: MSG.invalidDate }),
   isCurrent: z.boolean().optional(),
 });
 
+export const createAcademicSessionSchema = refineEndAfterStart(
+  academicSessionFieldsSchema,
+  'startDate',
+  'endDate',
+);
+
 export type CreateAcademicSessionInput = z.infer<typeof createAcademicSessionSchema>;
 
-export const updateAcademicSessionSchema = createAcademicSessionSchema.partial();
+export const updateAcademicSessionSchema = refineEndAfterStart(
+  academicSessionFieldsSchema.partial(),
+  'startDate',
+  'endDate',
+);
 
 export type UpdateAcademicSessionInput = z.infer<typeof updateAcademicSessionSchema>;
 

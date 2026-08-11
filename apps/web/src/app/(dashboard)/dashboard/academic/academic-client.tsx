@@ -452,6 +452,7 @@ export default function AcademicPage() {
                                 type="date"
                                 className={sessionFieldClassName('endDate', '')}
                                 value={editSessionEnd}
+                                min={editSessionStart || undefined}
                                 onChange={(e) => {
                                   setEditSessionEnd(e.target.value);
                                   clearSessionField('endDate');

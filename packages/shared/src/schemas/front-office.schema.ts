@@ -5,6 +5,7 @@ import {
   optionalPhone,
   optionalString,
   requiredId,
+  requiredPhone,
   requiredString,
 } from '../validation/messages';
 import { paginationQuerySchema } from './common.schema';
@@ -34,7 +35,7 @@ export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export const publicInquirySchema = z.object({
   branchId: requiredId('Branch'),
   fullName: requiredString('Full name'),
-  phone: requiredString('Phone', 5, 30),
+  phone: requiredPhone(),
   email: z.union([z.string().email(MSG.email), z.literal('')]).optional(),
   programInterest: optionalString(200),
   notes: optionalString(1000),

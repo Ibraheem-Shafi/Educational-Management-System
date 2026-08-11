@@ -30,6 +30,7 @@ import {
   previewBulkInvoicesSchema,
   createFeeTypeSchema,
   updateFeeTypeSchema,
+  listFeeTypesQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -41,6 +42,7 @@ import type {
   CreateFeeStructureInput,
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
+  ListFeeTypesQuery,
   GenerateBulkInvoicesInput,
   PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
@@ -68,8 +70,8 @@ export class FeesController {
 
   @Get('fee-types')
   @Permissions('fees.read')
-  listTypes() {
-    return this.feesService.listTypes();
+  listTypes(@Query(createZodPipe(listFeeTypesQuerySchema)) query: ListFeeTypesQuery) {
+    return this.feesService.listTypes(query.includeInactive === true);
   }
 
   @Post('fee-types')

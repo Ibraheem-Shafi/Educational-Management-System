@@ -91,6 +91,7 @@ export function CreateSessionDialog({
 
         <form
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             const payload = {
@@ -136,6 +137,7 @@ export function CreateSessionDialog({
                 type="date"
                 className={fieldClassName('endDate', modalFieldClassName)}
                 value={endDate}
+                min={startDate || undefined}
                 onChange={(e) => {
                   setEndDate(e.target.value);
                   clearField('endDate');

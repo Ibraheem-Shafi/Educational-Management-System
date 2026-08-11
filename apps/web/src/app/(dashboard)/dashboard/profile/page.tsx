@@ -15,6 +15,7 @@ import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { UserAvatar } from '@/components/layout/user-avatar';
@@ -169,14 +170,13 @@ export default function ProfilePage() {
             <FormFieldError message={errors.fullName} />
           </div>
           <div>
-            <Input
+            <PakistanPhoneInput
               value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
+              onChange={(value) => {
+                setPhone(value);
                 clearField('phone');
               }}
-              placeholder="Phone"
-              className={fieldClassName('phone', '')}
+              className={errors.phone ? 'border-red-500' : undefined}
             />
             <FormFieldError message={errors.phone} />
           </div>

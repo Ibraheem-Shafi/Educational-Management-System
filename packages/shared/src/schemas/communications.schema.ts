@@ -3,6 +3,7 @@ import {
   MSG,
   optionalString,
   requiredId,
+  requiredPhone,
   requiredString,
 } from '../validation/messages';
 
@@ -18,7 +19,7 @@ export type ListCommunicationLogsQuery = z.infer<typeof listCommunicationLogsQue
 
 export const sendMessageSchema = z.object({
   channel: z.enum(['sms', 'whatsapp'], { errorMap: () => ({ message: MSG.select('channel') }) }),
-  recipient: requiredString('Recipient', 5, 30),
+  recipient: requiredPhone(),
   body: requiredString('Message', 1, 1600),
   subject: optionalString(200),
 });

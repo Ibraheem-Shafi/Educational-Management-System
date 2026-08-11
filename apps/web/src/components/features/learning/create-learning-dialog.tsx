@@ -4,11 +4,18 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, X } from 'lucide-react';
-import { LEARNING_AUDIENCES, LEARNING_RESOURCE_TYPES, LEARNING_VISIBILITY_SCOPES, createLearningResourceSchema, updateLearningResourceSchema } from '@eims/shared';
-import type { LearningResourceResponse } from '@eims/types';
+import {
+  LEARNING_AUDIENCES,
+  LEARNING_RESOURCE_TYPES,
+  LEARNING_VISIBILITY_SCOPES,
+  createLearningResourceSchema,
+  updateLearningResourceSchema,
+} from '@eims/shared';
+import type { LearningAttachmentResponse, LearningResourceResponse } from '@eims/types';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { uploadLearningContent } from '@/lib/upload-learning-content';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
 import { useSubjectsOptions } from '@/hooks/use-subjects-options';
@@ -18,6 +25,7 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { LearningAttachmentsField } from '@/components/features/learning/learning-attachments-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -39,14 +47,11 @@ const emptyForm = {
   description: '',
   body: '',
   isPublished: false,
-  fileName: '',
-  storagePath: '',
 };
 
 type FormState = typeof emptyForm;
 
 function toForm(resource: LearningResourceResponse): FormState {
-  const firstAttachment = resource.attachments?.[0];
   return {
     title: resource.title ?? '',
     type: resource.type,
@@ -58,8 +63,6 @@ function toForm(resource: LearningResourceResponse): FormState {
     description: resource.description ?? '',
     body: resource.body ?? '',
     isPublished: resource.isPublished,
-    fileName: firstAttachment?.fileName ?? '',
-    storagePath: firstAttachment?.storagePath ?? '',
   };
 }
 
@@ -79,11 +82,19 @@ export function CreateLearningDialog({
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pickedBranchId, setPickedBranchId] = useState('');
+  const [existingAttachments, setExistingAttachments] = useState<LearningAttachmentResponse[]>([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<Set<string>>(() => new Set());
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const effectiveBranchId = (resource ? resource.branchId : branchId) || pickedBranchId;
 
   useEffect(() => {
     if (!open) return;
     setForm(resource ? toForm(resource) : emptyForm);
+    setExistingAttachments(resource?.attachments ?? []);
+    setRemovedAttachmentIds(new Set());
+    setPendingFiles([]);
+    setDownloadingId(null);
   }, [open, resource]);
 
   useEffect(() => {
@@ -128,6 +139,29 @@ export function CreateLearningDialog({
     subjectId: form.subjectId || null,
   });
 
+  const downloadAttachment = async (attachmentId: string, fileName: string) => {
+    if (!token || !resource) return;
+    setDownloadingId(attachmentId);
+    try {
+      const res = await apiClient<{ url: string }>(
+        `/learning/${resource.id}/attachments/${attachmentId}/signed-url`,
+        { token },
+      );
+      const anchor = document.createElement('a');
+      anchor.href = res.url;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch {
+      toast.error('Unable to download attachment');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const upsertMutation = useMutation({
     mutationFn: async (payload: ReturnType<typeof buildPayload>) => {
       const method = resource ? 'PATCH' : 'POST';
@@ -137,13 +171,24 @@ export function CreateLearningDialog({
         token,
         body: JSON.stringify(payload),
       });
-      if (form.fileName.trim() && form.storagePath.trim()) {
+
+      for (const attachmentId of removedAttachmentIds) {
+        await apiClient(`/learning/${saved.id}/attachments/${attachmentId}`, {
+          method: 'DELETE',
+          token,
+        });
+      }
+
+      for (const file of pendingFiles) {
+        const uploaded = await uploadLearningContent(file, saved.id, token!);
         await apiClient(`/learning/${saved.id}/attachments`, {
           method: 'POST',
           token,
           body: JSON.stringify({
-            fileName: form.fileName.trim(),
-            storagePath: form.storagePath.trim(),
+            fileName: uploaded.fileName,
+            storagePath: uploaded.path,
+            mimeType: uploaded.mimeType,
+            sizeBytes: uploaded.sizeBytes,
           }),
         });
       }
@@ -350,26 +395,21 @@ export function CreateLearningDialog({
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <FormFieldLabel>Attachment filename</FormFieldLabel>
-                <input
-                  className={modalFieldClassName}
-                  placeholder="Optional"
-                  value={form.fileName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, fileName: e.target.value }))}
-                />
-              </div>
-              <div>
-                <FormFieldLabel>Attachment storage path</FormFieldLabel>
-                <input
-                  className={modalFieldClassName}
-                  placeholder="storage://..."
-                  value={form.storagePath}
-                  onChange={(e) => setForm((prev) => ({ ...prev, storagePath: e.target.value }))}
-                />
-              </div>
-            </div>
+            <LearningAttachmentsField
+              existing={existingAttachments}
+              removedIds={removedAttachmentIds}
+              pendingFiles={pendingFiles}
+              disabled={upsertMutation.isPending}
+              downloadingId={downloadingId}
+              onAddFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+              onRemovePending={(index) =>
+                setPendingFiles((prev) => prev.filter((_, i) => i !== index))
+              }
+              onRemoveExisting={(id) =>
+                setRemovedAttachmentIds((prev) => new Set(prev).add(id))
+              }
+              onDownloadExisting={resource ? downloadAttachment : undefined}
+            />
 
             <label className="flex items-center gap-2 text-sm text-text-main-900">
               <input

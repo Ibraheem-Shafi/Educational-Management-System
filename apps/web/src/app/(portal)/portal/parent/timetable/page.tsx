@@ -10,6 +10,7 @@ import { buildPortalQuery } from '@/lib/portal-api';
 import { PageHeader } from '@/components/layout/page-header';
 import { PortalTimetableSection } from '@/components/portal/portal-timetable-section';
 import { PortalParentPageShell } from '@/components/portal/portal-parent-page-shell';
+import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 
 export default function ParentTimetablePage() {
   return (
@@ -26,7 +27,7 @@ function ParentTimetableContent({ childId }: { childId: string }) {
   const { session } = useAuth();
   const token = session?.access_token;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.portalParentTimetable(childId),
     queryFn: () =>
       apiClient<PortalTimetableResponse>(
@@ -36,8 +37,14 @@ function ParentTimetableContent({ childId }: { childId: string }) {
     enabled: !!token && !!childId,
   });
 
-  if (isLoading && !data) return <p className="text-sm text-[var(--text-sub-500)]">Loading…</p>;
-  if (error) return <p className="text-red-600">Unable to load timetable.</p>;
+  if (isLoading && !data) return <PortalPageSkeleton />;
 
-  return <PortalTimetableSection slots={data?.slots ?? []} todaySlots={data?.todaySlots ?? []} />;
+  return (
+    <PortalTimetableSection
+      slots={data?.slots ?? []}
+      todaySlots={data?.todaySlots ?? []}
+      isError={isError}
+      onRetry={() => void refetch()}
+    />
+  );
 }

@@ -1,7 +1,13 @@
 import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
 import { selectedBranchScope } from '@eims/shared';
 import type { BranchScope } from '@eims/shared';
-import { Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
@@ -9,7 +15,11 @@ import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, DocumentsStatsResponse } from '@eims/types';
-import type { CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
+import type {
+  CreateDocumentInput,
+  ListDocumentsQuery,
+  PrepareDocumentUploadInput,
+} from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
 const DOCUMENTS_BUCKET = 'student-documents';
@@ -34,6 +44,10 @@ export class DocumentsService implements OnModuleInit {
 
   /** Ensure the storage bucket exists so client uploads don't fail with "Bucket not found". */
   async onModuleInit(): Promise<void> {
+    await this.ensureDocumentsBucket();
+  }
+
+  private async ensureDocumentsBucket(): Promise<void> {
     if (!this.supabaseAdmin) return;
     try {
       const { data } = await this.supabaseAdmin.storage.getBucket(DOCUMENTS_BUCKET);
@@ -48,6 +62,57 @@ export class DocumentsService implements OnModuleInit {
         }`,
       );
     }
+  }
+
+  private safeStorageFileName(name: string): string {
+    const base = name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '');
+    return (base || 'file').slice(0, 120);
+  }
+
+  /**
+   * Issue a short-lived signed upload URL (service role) so the browser can put
+   * the file without needing INSERT policies on the private documents bucket.
+   */
+  async prepareUpload(input: PrepareDocumentUploadInput, _user: AuthUser) {
+    if (input.studentId) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
+      });
+      if (!student) throw new NotFoundException('Student not found');
+    } else if (input.userId) {
+      const employee = await this.prisma.user.findFirst({
+        where: { id: input.userId, branchId: input.branchId, deletedAt: null },
+      });
+      if (!employee) throw new NotFoundException('User not found');
+    }
+
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
+    await this.ensureDocumentsBucket();
+
+    const entitySegment = input.studentId
+      ? input.studentId
+      : `employees/${input.userId}`;
+    const path = `${input.branchId}/${entitySegment}/${Date.now()}-${this.safeStorageFileName(input.fileName)}`;
+
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare file upload');
+    }
+
+    return {
+      bucket: DOCUMENTS_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
   }
 
   async getStats(scope: BranchScope): Promise<DocumentsStatsResponse> {

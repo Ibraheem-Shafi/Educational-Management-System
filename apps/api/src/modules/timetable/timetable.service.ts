@@ -8,6 +8,7 @@ import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, TimetableStatsResponse } from '@eims/types';
 import type {
   CreateTimetableSlotInput,
+  CreateTimetableSlotsBulkInput,
   ListTimetableQuery,
   UpdateTimetableSlotInput,
 } from '@eims/shared';
@@ -39,6 +40,17 @@ function roomSearchWhere(roomQuery: string) {
 }
 
 const STATS_CACHE_TTL_MS = 45_000;
+
+type SlotConflictInput = {
+  branchId: string;
+  batchId: string;
+  subjectId: string;
+  teacherId?: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  room?: string | null;
+};
 
 @Injectable()
 export class TimetableService {
@@ -103,8 +115,21 @@ export class TimetableService {
   }
 
   async create(input: CreateTimetableSlotInput, user: AuthUser) {
-    await this.assertNoConflicts(input);
-    const slot = await this.prisma.timetableSlot.create({ data: input });
+    const normalized = this.normalizeSlotInput(input);
+    await this.assertEntitiesValid(normalized, { teacherStrict: true });
+    await this.assertNoConflicts(normalized);
+    const slot = await this.prisma.timetableSlot.create({
+      data: {
+        branchId: normalized.branchId,
+        batchId: normalized.batchId,
+        subjectId: normalized.subjectId,
+        teacherId: normalized.teacherId,
+        dayOfWeek: normalized.dayOfWeek,
+        startTime: normalized.startTime,
+        endTime: normalized.endTime,
+        room: normalized.room,
+      },
+    });
     await this.audit.log({
       userId: user.id,
       action: 'timetable_slot.created',
@@ -112,8 +137,85 @@ export class TimetableService {
       entityId: slot.id,
       newValue: slot,
     });
+    this.ttlCache.deleteByPrefix('timetable:stats:');
     const [enriched] = await this.enrichSlots([slot]);
     return enriched;
+  }
+
+  /**
+   * Create the same class on multiple weekdays. Conflicts skip that day only
+   * (partial success) so schedule building is not all-or-nothing.
+   */
+  async createBulk(input: CreateTimetableSlotsBulkInput, user: AuthUser) {
+    const base: Omit<SlotConflictInput, 'dayOfWeek'> = {
+      branchId: input.branchId,
+      batchId: input.batchId,
+      subjectId: input.subjectId,
+      teacherId: input.teacherId ?? null,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      room: input.room ?? null,
+    };
+
+    // Validate shared entities once using an arbitrary day.
+    await this.assertEntitiesValid({ ...base, dayOfWeek: input.daysOfWeek[0] }, { teacherStrict: true });
+
+    const created: Awaited<ReturnType<TimetableService['enrichSlots']>> = [];
+    const skipped: Array<{ dayOfWeek: number; reason: string }> = [];
+
+    const sortedDays = [...input.daysOfWeek].sort((a, b) => a - b);
+
+    for (const dayOfWeek of sortedDays) {
+      const payload: SlotConflictInput = { ...base, dayOfWeek };
+      try {
+        await this.assertNoConflicts(payload);
+        const slot = await this.prisma.timetableSlot.create({
+          data: {
+            branchId: payload.branchId,
+            batchId: payload.batchId,
+            subjectId: payload.subjectId,
+            teacherId: payload.teacherId ?? null,
+            dayOfWeek: payload.dayOfWeek,
+            startTime: payload.startTime,
+            endTime: payload.endTime,
+            room: payload.room ?? null,
+          },
+        });
+        await this.audit.log({
+          userId: user.id,
+          action: 'timetable_slot.created',
+          entityType: 'TimetableSlot',
+          entityId: slot.id,
+          newValue: slot,
+        });
+        const [enriched] = await this.enrichSlots([slot]);
+        created.push(enriched);
+      } catch (err) {
+        const reason =
+          err instanceof BadRequestException
+            ? (typeof err.getResponse() === 'string'
+                ? (err.getResponse() as string)
+                : ((err.getResponse() as { message?: string | string[] }).message ??
+                    err.message))
+            : err instanceof Error
+              ? err.message
+              : 'Could not create slot';
+        const message = Array.isArray(reason) ? reason[0] : String(reason);
+        skipped.push({ dayOfWeek, reason: message });
+      }
+    }
+
+    if (created.length > 0) {
+      this.ttlCache.deleteByPrefix('timetable:stats:');
+    }
+
+    if (created.length === 0 && skipped.length > 0) {
+      throw new BadRequestException(
+        skipped.map((s) => `Day ${s.dayOfWeek}: ${s.reason}`).join('; '),
+      );
+    }
+
+    return { created, skipped };
   }
 
   async update(id: string, input: UpdateTimetableSlotInput, user: AuthUser, scope: BranchScope) {
@@ -122,7 +224,7 @@ export class TimetableService {
     });
     if (!existing) throw new NotFoundException('Timetable slot not found');
 
-    const merged = {
+    const merged: SlotConflictInput = {
       branchId: existing.branchId,
       batchId: input.batchId ?? existing.batchId,
       subjectId: input.subjectId ?? existing.subjectId,
@@ -133,14 +235,25 @@ export class TimetableService {
       room: input.room !== undefined ? input.room : existing.room,
     };
 
+    // Teacher is optional: only hard-fail when the client is setting teacherId.
+    // Stale/deleted teachers on existing slots are cleared so day-moves still work.
+    const teacherStrict = input.teacherId !== undefined;
+    await this.assertEntitiesValid(merged, { teacherStrict });
     await this.assertNoConflicts(merged, id);
+
+    const clearStaleTeacher =
+      !teacherStrict && existing.teacherId != null && merged.teacherId == null;
 
     const slot = await this.prisma.timetableSlot.update({
       where: { id },
       data: {
         ...(input.batchId !== undefined ? { batchId: input.batchId } : {}),
         ...(input.subjectId !== undefined ? { subjectId: input.subjectId } : {}),
-        ...(input.teacherId !== undefined ? { teacherId: input.teacherId } : {}),
+        ...(input.teacherId !== undefined
+          ? { teacherId: input.teacherId }
+          : clearStaleTeacher
+            ? { teacherId: null }
+            : {}),
         ...(input.dayOfWeek !== undefined ? { dayOfWeek: input.dayOfWeek } : {}),
         ...(input.startTime !== undefined ? { startTime: input.startTime } : {}),
         ...(input.endTime !== undefined ? { endTime: input.endTime } : {}),
@@ -157,6 +270,7 @@ export class TimetableService {
       newValue: slot,
     });
 
+    this.ttlCache.deleteByPrefix('timetable:stats:');
     const [enriched] = await this.enrichSlots([slot]);
     return enriched;
   }
@@ -180,6 +294,7 @@ export class TimetableService {
       previousValue: existing,
     });
 
+    this.ttlCache.deleteByPrefix('timetable:stats:');
     return { deleted: true };
   }
 
@@ -194,6 +309,13 @@ export class TimetableService {
         if (a.dayOfWeek !== b.dayOfWeek) continue;
         if (!timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) continue;
 
+        if (a.batchId === b.batchId) {
+          conflicts.push({
+            slotId: a.id,
+            type: 'batch',
+            message: `Batch conflict with slot ${b.startTime}–${b.endTime}`,
+          });
+        }
         if (a.teacherId && a.teacherId === b.teacherId) {
           conflicts.push({
             slotId: a.id,
@@ -201,7 +323,7 @@ export class TimetableService {
             message: `Teacher conflict with slot ${b.startTime}–${b.endTime}`,
           });
         }
-        if (a.room && b.room && a.room === b.room) {
+        if (a.room && b.room && a.room.toLowerCase() === b.room.toLowerCase()) {
           conflicts.push({
             slotId: a.id,
             type: 'room',
@@ -214,18 +336,92 @@ export class TimetableService {
     return { conflicts };
   }
 
-  private async assertNoConflicts(
-    input: {
-      branchId: string;
-      batchId: string;
-      teacherId?: string | null;
-      dayOfWeek: number;
-      startTime: string;
-      endTime: string;
-      room?: string | null;
-    },
-    excludeId?: string,
+  private normalizeSlotInput(input: CreateTimetableSlotInput): SlotConflictInput {
+    return {
+      branchId: input.branchId,
+      batchId: input.batchId,
+      subjectId: input.subjectId,
+      teacherId: input.teacherId ?? null,
+      dayOfWeek: input.dayOfWeek,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      room: input.room ?? null,
+    };
+  }
+
+  private async assertEntitiesValid(
+    input: SlotConflictInput,
+    options: { teacherStrict: boolean },
   ) {
+    const batch = await this.prisma.batch.findFirst({
+      where: { id: input.batchId, deletedAt: null },
+      select: { id: true, branchId: true, isActive: true },
+    });
+    if (!batch || !batch.isActive) {
+      throw new BadRequestException('Batch not found or inactive');
+    }
+    if (batch.branchId !== input.branchId) {
+      throw new BadRequestException('Batch does not belong to this branch');
+    }
+
+    const subject = await this.prisma.subject.findFirst({
+      where: { id: input.subjectId, deletedAt: null },
+      select: { id: true, isActive: true },
+    });
+    if (!subject || !subject.isActive) {
+      throw new BadRequestException('Subject not found or inactive');
+    }
+
+    const linkedCount = await this.prisma.batchSubject.count({
+      where: { batchId: input.batchId },
+    });
+    if (linkedCount > 0) {
+      const link = await this.prisma.batchSubject.findFirst({
+        where: { batchId: input.batchId, subjectId: input.subjectId },
+      });
+      if (!link) {
+        throw new BadRequestException('Subject is not assigned to this batch');
+      }
+    }
+
+    if (!input.teacherId) return;
+
+    const teacher = await this.prisma.user.findFirst({
+      where: { id: input.teacherId, deletedAt: null },
+      select: {
+        id: true,
+        isActive: true,
+        branchId: true,
+        userRoles: { select: { role: { select: { code: true } } } },
+      },
+    });
+
+    const roleCodes = teacher?.userRoles.map((ur) => ur.role.code) ?? [];
+    const validTeacher =
+      !!teacher &&
+      teacher.isActive &&
+      (!teacher.branchId || teacher.branchId === input.branchId) &&
+      (roleCodes.includes('teacher') ||
+        roleCodes.includes('branch_admin') ||
+        roleCodes.includes('super_admin'));
+
+    if (validTeacher) return;
+
+    if (options.teacherStrict) {
+      if (!teacher || !teacher.isActive) {
+        throw new BadRequestException('Teacher not found or inactive');
+      }
+      if (teacher.branchId && teacher.branchId !== input.branchId) {
+        throw new BadRequestException('Teacher does not belong to this branch');
+      }
+      throw new BadRequestException('Selected user is not a teacher');
+    }
+
+    // Optional teacher on an existing slot — drop stale reference so moves/edits proceed.
+    input.teacherId = null;
+  }
+
+  private async assertNoConflicts(input: SlotConflictInput, excludeId?: string) {
     const peers = await this.prisma.timetableSlot.findMany({
       where: {
         branchId: input.branchId,
@@ -238,10 +434,17 @@ export class TimetableService {
     for (const peer of peers) {
       if (!timesOverlap(input.startTime, input.endTime, peer.startTime, peer.endTime)) continue;
 
+      if (peer.batchId === input.batchId) {
+        throw new BadRequestException('This batch already has a class at this time');
+      }
       if (input.teacherId && peer.teacherId === input.teacherId) {
         throw new BadRequestException('Teacher already has a class at this time');
       }
-      if (input.room && peer.room && peer.room === input.room) {
+      if (
+        input.room &&
+        peer.room &&
+        peer.room.toLowerCase() === input.room.toLowerCase()
+      ) {
         throw new BadRequestException(`Room "${input.room}" is already booked at this time`);
       }
     }

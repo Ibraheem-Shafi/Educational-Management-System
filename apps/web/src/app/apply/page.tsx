@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { publicInquirySchema } from '@eims/shared';
+import { publicInquirySchema, normalizePakistanPhone } from '@eims/shared';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { cn } from '@/lib/utils';
 
@@ -115,7 +116,7 @@ export default function PublicApplyPage() {
                 const payload = {
                   branchId: form.branchId,
                   fullName: form.fullName.trim(),
-                  phone: form.phone.trim(),
+                  phone: normalizePakistanPhone(form.phone.trim()),
                   email: form.email.trim(),
                   programInterest: form.programInterest.trim() || undefined,
                   notes: form.notes.trim() || undefined,
@@ -155,10 +156,10 @@ export default function PublicApplyPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Phone</label>
-                <input
-                  className={fieldClassName('phone', fieldClass)}
+                <PakistanPhoneInput
                   value={form.phone}
-                  onChange={(e) => updateField('phone', e.target.value)}
+                  onChange={(value) => updateField('phone', value)}
+                  className={errors.phone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.phone} />
               </div>

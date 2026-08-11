@@ -15,6 +15,7 @@ import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadAttendanceRegister } from '@/lib/upload-attendance-register';
+import { ACCEPT_IMAGE_NO_GIF } from '@/lib/image-upload';
 import { queryKeys } from '@/lib/query-keys';
 import { Input } from '@/components/ui/input';
 import { DateField } from '@/components/ui/date-field';
@@ -157,7 +158,7 @@ export default function AiAttendancePage() {
       file: File;
       payload: { branchId: string; batchId: string; date: string; imagePath: string };
     }) => {
-      const path = await uploadAttendanceRegister(file, `${effectiveBranchId}-${Date.now()}`);
+      const path = await uploadAttendanceRegister(file, effectiveBranchId, token!);
       const created = await apiClient<OcrSession>('/ai-attendance/sessions', {
         method: 'POST',
         token,
@@ -309,10 +310,11 @@ export default function AiAttendancePage() {
             </div>
             <Input
               type="file"
-              accept="image/*"
+              accept={ACCEPT_IMAGE_NO_GIF}
               className="sm:col-span-2"
               onChange={(e) => {
                 const file = e.target.files?.[0];
+                e.target.value = '';
                 if (file) handleUpload(file);
               }}
             />

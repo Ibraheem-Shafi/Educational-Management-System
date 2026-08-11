@@ -94,10 +94,13 @@ export function GenerateInvoicesDialog({
 
   const { data: batchesData } = useBatches(token, effectiveBranchId, undefined, open && !!effectiveBranchId);
   const { data: feeTypesData } = useQuery({
-    queryKey: ['fee-types'],
+    queryKey: queryKeys.feeTypes(),
     queryFn: () => apiClient<{ data: FeeType[] }>('/fee-types', { token }),
     enabled: !!token && open,
   });
+
+  const feeTypesList = feeTypesData?.data ?? [];
+  const hasNoFeeTypes = !!feeTypesData && feeTypesList.length === 0;
 
   const previewEnabled =
     open &&
@@ -373,13 +376,18 @@ export function GenerateInvoicesDialog({
                   }}
                   options={[
                     { value: '', label: 'Select fee type' },
-                    ...((feeTypesData?.data ?? []).map((f) => ({
+                    ...feeTypesList.map((f) => ({
                       value: f.id,
                       label: f.name,
-                    })) as Array<{ value: string; label: string }>),
+                    })),
                   ]}
                   className="w-full"
                 />
+                {hasNoFeeTypes && (
+                  <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                    No fee types yet. Add types like Exam or Digitization on the Fee types tab first.
+                  </p>
+                )}
               </div>
             </div>
 

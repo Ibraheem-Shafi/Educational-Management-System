@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Mail, Phone } from 'lucide-react';
@@ -14,40 +14,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { ContactIcon } from '@/components/layout/contact-icon';
 import { cn } from '@/lib/utils';
 
 function formatStudentCount(value: number): string {
   return value.toLocaleString('en-US');
-}
-
-function ContactIconButton({
-  href,
-  label,
-  children,
-}: {
-  href?: string | null;
-  label: string;
-  children: ReactNode;
-}) {
-  const className = cn(
-    'flex h-8 w-8 items-center justify-center rounded-full border border-stroke-soft-200 bg-white',
-    'text-text-sub-500 transition-colors',
-    href ? 'hover:bg-neutral-50 hover:text-text-main-900' : 'cursor-default opacity-40',
-  );
-
-  if (!href) {
-    return (
-      <span className={className} aria-hidden>
-        {children}
-      </span>
-    );
-  }
-
-  return (
-    <a href={href} className={className} aria-label={label}>
-      {children}
-    </a>
-  );
 }
 
 function AttendanceCell({ rate }: { rate: number }) {
@@ -189,18 +160,12 @@ export function BranchPerformanceCard({
                   <td className="px-5 py-4 text-sm text-text-sub-500">{branch.addressLabel}</td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
-                      <ContactIconButton
-                        href={branch.email ? `mailto:${branch.email}` : null}
-                        label={`Email ${branch.name}`}
-                      >
+                      <ContactIcon kind="email" value={branch.email}>
                         <Mail className="h-4 w-4" strokeWidth={1.75} />
-                      </ContactIconButton>
-                      <ContactIconButton
-                        href={branch.phone ? `tel:${branch.phone}` : null}
-                        label={`Call ${branch.name}`}
-                      >
+                      </ContactIcon>
+                      <ContactIcon kind="phone" value={branch.phone}>
                         <Phone className="h-4 w-4" strokeWidth={1.75} />
-                      </ContactIconButton>
+                      </ContactIcon>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm text-text-main-900">

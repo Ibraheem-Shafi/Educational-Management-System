@@ -96,7 +96,7 @@ export default function PrintCertificatePage() {
     year: 'numeric',
   });
   const certType = data.template.type;
-  const heading = headingForType(certType);
+  const heading = data.issue.title?.trim() || headingForType(certType);
 
   return (
     <>

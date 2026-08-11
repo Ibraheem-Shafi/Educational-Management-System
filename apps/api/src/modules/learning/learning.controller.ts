@@ -24,6 +24,7 @@ import {
   updateLearningResourceSchema,
   listLearningQuerySchema,
   addLearningAttachmentSchema,
+  prepareLearningAttachmentUploadSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -31,6 +32,7 @@ import type {
   UpdateLearningResourceInput,
   ListLearningQuery,
   AddLearningAttachmentInput,
+  PrepareLearningAttachmentUploadInput,
 } from '@eims/shared';
 
 @ApiTags('learning')
@@ -92,6 +94,18 @@ export class LearningController {
     return this.learningService.remove(id, user, scope);
   }
 
+  @Post(':id/attachments/upload-url')
+  @Permissions('learning.publish')
+  prepareAttachmentUpload(
+    @Param('id') id: string,
+    @Body(createZodPipe(prepareLearningAttachmentUploadSchema))
+    body: PrepareLearningAttachmentUploadInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.learningService.prepareAttachmentUpload(id, body, user, scope);
+  }
+
   @Post(':id/attachments')
   @HttpCode(HttpStatus.CREATED)
   @Permissions('learning.publish')
@@ -102,6 +116,17 @@ export class LearningController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.learningService.addAttachment(id, body, user, scope);
+  }
+
+  @Delete(':id/attachments/:attachmentId')
+  @Permissions('learning.publish')
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.learningService.removeAttachment(id, attachmentId, user, scope);
   }
 
   @Get(':id/attachments/:attachmentId/signed-url')

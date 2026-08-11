@@ -3,6 +3,7 @@ export * from './constants/auth';
 export * from './constants/permissions';
 export * from './branch-scope';
 export * from './validation/messages';
+export * from './validation/date-range';
 export * from './validation/parse';
 export * from './validation/fields';
 export * from './schemas/common.schema';

@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, X } from 'lucide-react';
+import { CalendarDays, Paperclip, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createEmployeeLeaveRequestSchema } from '@eims/shared';
+import type { LeaveRequestResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { uploadLeaveAttachment } from '@/lib/upload-leave-attachment';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { FormFieldError } from '@/components/forms/form-field-error';
@@ -33,9 +35,11 @@ export function RequestLeaveDialog({
   const { session } = useAuth();
   const token = session?.access_token;
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [reason, setReason] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
     useFormErrors(createEmployeeLeaveRequestSchema);
 
@@ -44,13 +48,33 @@ export function RequestLeaveDialog({
       setFromDate('');
       setToDate('');
       setReason('');
+      setFile(null);
       clearAll();
     }
   }, [open, clearAll]);
 
   const createLeave = useMutation({
-    mutationFn: (body: { fromDate: string; toDate: string; reason: string }) =>
-      apiClient('/leave-requests', { method: 'POST', token, body }),
+    mutationFn: async (body: { fromDate: string; toDate: string; reason: string }) => {
+      const created = await apiClient<LeaveRequestResponse>('/leave-requests', {
+        method: 'POST',
+        token,
+        body,
+      });
+      if (file && token) {
+        const uploaded = await uploadLeaveAttachment(file, created.id, token);
+        await apiClient(`/leave-requests/${created.id}/attachment`, {
+          method: 'POST',
+          token,
+          body: JSON.stringify({
+            fileName: uploaded.fileName,
+            storagePath: uploaded.path,
+            mimeType: uploaded.mimeType,
+            sizeBytes: uploaded.sizeBytes,
+          }),
+        });
+      }
+      return created;
+    },
     onSuccess: async () => {
       toast.success('Leave request submitted');
       await queryClient.invalidateQueries({ queryKey: queryKeys.leaveRequests });
@@ -88,6 +112,7 @@ export function RequestLeaveDialog({
 
         <form
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             const payload = {
@@ -137,16 +162,65 @@ export function RequestLeaveDialog({
               </FormFieldLabel>
               <textarea
                 id="leave-reason"
-                className={cn(fieldClassName('reason', modalFieldClassName), 'min-h-[96px] resize-y py-2')}
+                className={cn(fieldClassName('reason', modalFieldClassName), 'min-h-[120px] resize-y py-2')}
                 value={reason}
                 onChange={(e) => {
                   setReason(e.target.value);
                   clearField('reason');
                 }}
-                rows={3}
-                placeholder="Brief reason for leave"
+                rows={5}
+                maxLength={2000}
+                placeholder="Explain why you need leave (medical, travel, personal, etc.)"
               />
-              <FormFieldError message={errors.reason} />
+              <div className="mt-1 flex justify-between gap-2">
+                <FormFieldError message={errors.reason} />
+                <p className="text-xs text-[var(--text-sub-500)]">{reason.length}/2000</p>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <FormFieldLabel>Supporting document (optional)</FormFieldLabel>
+                <button
+                  type="button"
+                  disabled={createLeave.isPending}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-stroke-soft-200 px-2.5 py-1 text-sm text-[var(--text-sub-500)] hover:bg-neutral-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  {file ? 'Change file' : 'Attach file'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
+                  onChange={(e) => {
+                    setFile(e.target.files?.[0] ?? null);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              {file ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-stroke-soft-200 bg-neutral-50 px-3 py-2 text-sm">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Paperclip className="h-4 w-4 shrink-0 text-[var(--text-sub-500)]" />
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFile(null)}
+                    className="rounded-md p-1 text-[var(--text-sub-500)] hover:bg-white"
+                    aria-label="Remove file"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--text-sub-500)]">
+                  PDF, Word, or image — e.g. medical certificate
+                </p>
+              )}
             </div>
           </div>
 

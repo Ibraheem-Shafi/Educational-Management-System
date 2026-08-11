@@ -144,9 +144,9 @@ export class FeesService {
     return result;
   }
 
-  async listTypes() {
+  async listTypes(includeInactive = false) {
     const types = await this.prisma.feeType.findMany({
-      where: { isActive: true },
+      where: includeInactive ? undefined : { isActive: true },
       orderBy: { name: 'asc' },
     });
     return { data: types };
@@ -505,7 +505,7 @@ export class FeesService {
         ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
         ...(query.programId ? { programId: query.programId } : {}),
-        isActive: true,
+        ...(query.includeInactive ? {} : { isActive: true }),
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -994,9 +994,12 @@ export class FeesService {
     const existing = await this.prisma.feeType.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Fee type not found');
 
+    // Code is immutable after create to keep invoice/report references stable.
+    const { code: _code, ...safeInput } = input;
+
     const updated = await this.prisma.feeType.update({
       where: { id },
-      data: input,
+      data: safeInput,
     });
     await this.audit.log({
       userId: user.id,

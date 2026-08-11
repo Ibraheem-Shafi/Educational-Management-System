@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LeaveRequestResponse, PaginatedResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
@@ -22,6 +22,7 @@ import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { RequestLeaveDialog } from '@/components/features/leave-requests/request-leave-dialog';
+import { LeaveRequestDetailDialog } from '@/components/features/leave-requests/leave-request-detail-dialog';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -45,6 +46,7 @@ export default function LeaveRequestsPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [detailRequest, setDetailRequest] = useState<LeaveRequestResponse | null>(null);
 
   const tabs = useMemo(() => {
     const items: Array<{ id: Tab; label: string }> = [];
@@ -176,7 +178,27 @@ export default function LeaveRequestsPage() {
                     <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
                       {row.fromDate} – {row.toDate}
                     </td>
-                    <td className={dataTableTdClass}>{row.reason}</td>
+                    <td className={cn(dataTableTdClass, 'max-w-[220px]')}>
+                      <button
+                        type="button"
+                        onClick={() => setDetailRequest(row)}
+                        className="block w-full text-left"
+                      >
+                        <span className="line-clamp-2 text-sm text-[var(--text-main-900)]">
+                          {row.reason}
+                        </span>
+                        <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--institution-primary)]">
+                          {row.attachmentFileName ? (
+                            <>
+                              <Paperclip className="h-3 w-3" />
+                              View reason & file
+                            </>
+                          ) : (
+                            'View full reason'
+                          )}
+                        </span>
+                      </button>
+                    </td>
                     <td className={dataTableTdClass}>
                       <StatusBadge label={row.status} code={row.status} />
                     </td>
@@ -185,6 +207,10 @@ export default function LeaveRequestsPage() {
                         <PermissionGate permission={PERMISSIONS.LEAVE_MANAGE} fallback="—">
                           <RowActionsMenu
                             items={[
+                              {
+                                label: 'View details',
+                                onClick: () => setDetailRequest(row),
+                              },
                               {
                                 label: 'Approve',
                                 onClick: () =>
@@ -199,7 +225,13 @@ export default function LeaveRequestsPage() {
                           />
                         </PermissionGate>
                       ) : (
-                        '—'
+                        <button
+                          type="button"
+                          onClick={() => setDetailRequest(row)}
+                          className="text-sm text-[var(--institution-primary)] hover:underline"
+                        >
+                          View
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -233,6 +265,15 @@ export default function LeaveRequestsPage() {
           }}
         />
       </PermissionGate>
+
+      <LeaveRequestDetailDialog
+        open={!!detailRequest}
+        onOpenChange={(next) => {
+          if (!next) setDetailRequest(null);
+        }}
+        request={detailRequest}
+        personLabel={detailRequest ? personLabel(detailRequest) : ''}
+      />
     </div>
   );
 }

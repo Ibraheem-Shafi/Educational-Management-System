@@ -5,9 +5,13 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CurrentUser, Permissions, Public } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { updateInstitutionSettingsSchema, createLookupStatusSchema, updateLookupStatusSchema } from '@eims/shared';
+import { updateInstitutionSettingsSchema, createLookupStatusSchema, updateLookupStatusSchema, prepareInstitutionAssetUploadSchema } from '@eims/shared';
 import type { AuthUser, UpdateInstitutionSettingsRequest } from '@eims/types';
-import type { CreateLookupStatusInput, UpdateLookupStatusInput } from '@eims/shared';
+import type {
+  CreateLookupStatusInput,
+  UpdateLookupStatusInput,
+  PrepareInstitutionAssetUploadInput,
+} from '@eims/shared';
 
 @ApiTags('settings')
 @Controller('settings')
@@ -37,6 +41,17 @@ export class SettingsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.settingsService.updateInstitutionSettings(body, user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @Post('institution-assets/upload-url')
+  @Permissions('settings.manage')
+  prepareInstitutionAssetUpload(
+    @Body(createZodPipe(prepareInstitutionAssetUploadSchema))
+    body: PrepareInstitutionAssetUploadInput,
+  ) {
+    return this.settingsService.prepareInstitutionAssetUpload(body);
   }
 
   @ApiBearerAuth()

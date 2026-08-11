@@ -29,7 +29,7 @@ export const LEARNING_AUDIENCES = ['students', 'parents', 'all'] as const;
 
 export const learningAttachmentSchema = z.object({
   fileName: requiredString('File name', 1, 255),
-  storagePath: requiredId('Storage path'),
+  storagePath: requiredString('Storage path', 1, 500),
   mimeType: z.string().optional(),
   sizeBytes: z.number().int().positive().optional(),
 });
@@ -100,6 +100,7 @@ function refineOnlineClass(
   data: {
     type: (typeof LEARNING_RESOURCE_TYPES)[number];
     startsAt?: string | null;
+    endsAt?: string | null;
     meetingUrl?: string | null;
   },
   ctx: z.RefinementCtx,
@@ -121,9 +122,24 @@ function refineOnlineClass(
   }
 }
 
+function refineStartsEnds(
+  data: { startsAt?: string | null; endsAt?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  if (!data.startsAt || !data.endsAt) return;
+  if (!(String(data.endsAt) > String(data.startsAt))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: MSG.endAfterStart,
+      path: ['endsAt'],
+    });
+  }
+}
+
 export const createLearningResourceSchema = learningResourceBaseSchema
   .superRefine(refineLearningScope)
-  .superRefine(refineOnlineClass);
+  .superRefine(refineOnlineClass)
+  .superRefine(refineStartsEnds);
 
 export type CreateLearningResourceInput = z.infer<typeof createLearningResourceSchema>;
 
@@ -147,11 +163,13 @@ export const updateLearningResourceSchema = learningResourceBaseSchema
         {
           type: 'online_class',
           startsAt: data.startsAt,
+          endsAt: data.endsAt,
           meetingUrl: data.meetingUrl,
         },
         ctx,
       );
     }
+    refineStartsEnds(data, ctx);
   });
 
 export type UpdateLearningResourceInput = z.infer<typeof updateLearningResourceSchema>;
@@ -174,3 +192,11 @@ export type ListLearningQuery = z.infer<typeof listLearningQuerySchema>;
 export const addLearningAttachmentSchema = learningAttachmentSchema;
 
 export type AddLearningAttachmentInput = z.infer<typeof addLearningAttachmentSchema>;
+
+export const prepareLearningAttachmentUploadSchema = z.object({
+  fileName: requiredString('File name', 1, 255),
+});
+
+export type PrepareLearningAttachmentUploadInput = z.infer<
+  typeof prepareLearningAttachmentUploadSchema
+>;

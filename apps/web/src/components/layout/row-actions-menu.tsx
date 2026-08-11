@@ -21,6 +21,7 @@ import {
   Trash2,
   Undo2,
   Unlink,
+  UserCheck,
   UserX,
   CheckCircle,
   Download,
@@ -65,6 +66,7 @@ export function getDefaultActionIcon(label: string): ReactNode | null {
     'publish now': renderActionIcon(Send),
     unpublish: renderActionIcon(EyeOff),
     deactivate: renderActionIcon(UserX, true),
+    reactivate: renderActionIcon(UserCheck),
     revoke: renderActionIcon(ShieldOff, true),
     unlink: renderActionIcon(Unlink, true),
     'record payment': renderActionIcon(CreditCard),
@@ -96,6 +98,7 @@ export function getDefaultActionIcon(label: string): ReactNode | null {
   }
   if (key.includes('unlink')) return renderActionIcon(Unlink, true);
   if (key.includes('revoke')) return renderActionIcon(ShieldOff, true);
+  if (key.includes('reactivate')) return renderActionIcon(UserCheck);
   if (key.includes('deactivate')) return renderActionIcon(UserX, true);
   if (key.includes('unpublish')) return renderActionIcon(EyeOff);
   if (key.includes('publish')) return renderActionIcon(Send);

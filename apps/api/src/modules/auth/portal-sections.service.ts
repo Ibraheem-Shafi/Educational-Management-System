@@ -4,8 +4,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
 import { FeesService } from '../fees/fees.service';
 import { LearningService } from '../learning/learning.service';
@@ -16,9 +20,13 @@ import { ATTENDANCE_ENTITY_STUDENT, selectedBranchScope } from '@eims/shared';
 import type {
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
+  LeaveAttachmentMetaInput,
   PortalSectionQuery,
+  PrepareLeaveAttachmentUploadInput,
 } from '@eims/shared';
 import { paginatedResult } from '../../common/utils/pagination.util';
+
+const LEAVE_BUCKET = 'leave-attachments';
 
 function parseDateOnly(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -52,14 +60,50 @@ function attendanceSummary(records: Array<{ status?: { label: string } | null }>
 }
 
 @Injectable()
-export class PortalSectionsService {
+export class PortalSectionsService implements OnModuleInit {
+  private readonly logger = new Logger(PortalSectionsService.name);
+  private supabaseAdmin;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly feesService: FeesService,
     private readonly learningService: LearningService,
     private readonly documentsService: DocumentsService,
     private readonly aiInsightsService: AiInsightsService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    const url = this.config.get<string>('SUPABASE_URL');
+    const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+    if (url && key) {
+      this.supabaseAdmin = createClient(url, key);
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.ensureLeaveBucket();
+  }
+
+  private async ensureLeaveBucket(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(LEAVE_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(LEAVE_BUCKET, { public: false });
+        this.logger.log(`Created storage bucket "${LEAVE_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${LEAVE_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private safeStorageFileName(name: string): string {
+    const base = name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '');
+    return (base || 'file').slice(0, 120);
+  }
 
   async getStudentAttendance(
     student: { id: string; branchId: string },
@@ -594,20 +638,7 @@ export class PortalSectionsService {
     ]);
 
     return paginatedResult(
-      requests.map((r) => ({
-        id: r.id,
-        kind: r.kind,
-        studentId: r.studentId,
-        studentName: r.student?.fullName ?? null,
-        employeeId: null,
-        employeeName: null,
-        parentId: r.parentId,
-        fromDate: r.fromDate.toISOString().slice(0, 10),
-        toDate: r.toDate.toISOString().slice(0, 10),
-        reason: r.reason,
-        status: r.status,
-        createdAt: r.createdAt.toISOString(),
-      })),
+      requests.map((r) => this.toLeaveRequestResponse(r)),
       total,
       page,
       limit,
@@ -627,9 +658,6 @@ export class PortalSectionsService {
 
     const fromDate = new Date(input.fromDate);
     const toDate = new Date(input.toDate);
-    if (toDate < fromDate) {
-      throw new BadRequestException('End date must be on or after start date');
-    }
 
     const request = await this.prisma.leaveRequest.create({
       data: {
@@ -644,20 +672,7 @@ export class PortalSectionsService {
       include: { student: { select: { fullName: true } } },
     });
 
-    return {
-      id: request.id,
-      kind: request.kind,
-      studentId: request.studentId,
-      studentName: request.student?.fullName ?? null,
-      employeeId: null,
-      employeeName: null,
-      parentId: request.parentId,
-      fromDate: request.fromDate.toISOString().slice(0, 10),
-      toDate: request.toDate.toISOString().slice(0, 10),
-      reason: request.reason,
-      status: request.status,
-      createdAt: request.createdAt.toISOString(),
-    };
+    return this.toLeaveRequestResponse(request);
   }
 
   async listStaffLeaveRequests(
@@ -708,9 +723,6 @@ export class PortalSectionsService {
   async createEmployeeLeaveRequest(userId: string, input: CreateEmployeeLeaveRequestInput) {
     const fromDate = new Date(input.fromDate);
     const toDate = new Date(input.toDate);
-    if (toDate < fromDate) {
-      throw new BadRequestException('End date must be on or after start date');
-    }
 
     const request = await this.prisma.leaveRequest.create({
       data: {
@@ -724,20 +736,7 @@ export class PortalSectionsService {
       include: { user: { select: { fullName: true } } },
     });
 
-    return {
-      id: request.id,
-      kind: request.kind,
-      studentId: null,
-      studentName: null,
-      employeeId: request.userId,
-      employeeName: request.user?.fullName ?? null,
-      parentId: null,
-      fromDate: request.fromDate.toISOString().slice(0, 10),
-      toDate: request.toDate.toISOString().slice(0, 10),
-      reason: request.reason,
-      status: request.status,
-      createdAt: request.createdAt.toISOString(),
-    };
+    return this.toLeaveRequestResponse(request);
   }
 
   async listMyEmployeeLeaveRequests(userId: string, page = 1, limit = 8): Promise<PaginatedResponse<Record<string, unknown>>> {
@@ -781,20 +780,7 @@ export class PortalSectionsService {
         user: { select: { fullName: true } },
       },
     });
-    return {
-      id: updated.id,
-      kind: updated.kind,
-      studentId: updated.studentId,
-      studentName: updated.student?.fullName ?? null,
-      employeeId: updated.userId,
-      employeeName: updated.user?.fullName ?? null,
-      parentId: updated.parentId,
-      fromDate: updated.fromDate.toISOString().slice(0, 10),
-      toDate: updated.toDate.toISOString().slice(0, 10),
-      reason: updated.reason,
-      status: updated.status,
-      createdAt: updated.createdAt.toISOString(),
-    };
+    return this.toLeaveRequestResponse(updated);
   }
 
   private toLeaveRequestResponse(r: {
@@ -808,6 +794,10 @@ export class PortalSectionsService {
     reason: string;
     status: string;
     createdAt: Date;
+    attachmentFileName?: string | null;
+    attachmentStoragePath?: string | null;
+    attachmentMimeType?: string | null;
+    attachmentSizeBytes?: number | null;
     student?: { fullName: string } | null;
     user?: { fullName: string } | null;
   }) {
@@ -824,7 +814,108 @@ export class PortalSectionsService {
       reason: r.reason,
       status: r.status,
       createdAt: r.createdAt.toISOString(),
+      attachmentFileName: r.attachmentFileName ?? null,
+      attachmentStoragePath: r.attachmentStoragePath ?? null,
+      attachmentMimeType: r.attachmentMimeType ?? null,
+      attachmentSizeBytes: r.attachmentSizeBytes ?? null,
     };
+  }
+
+  private async getLeaveRequestForAccess(
+    id: string,
+    access: { userId?: string; parentEmail?: string; staff?: boolean },
+  ) {
+    const request = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    if (!request) throw new NotFoundException('Leave request not found');
+
+    if (access.staff) return request;
+
+    if (access.userId && request.kind === 'employee' && request.userId === access.userId) {
+      return request;
+    }
+
+    if (access.parentEmail && request.kind === 'student') {
+      const parent = await this.prisma.parent.findFirst({
+        where: { email: access.parentEmail, deletedAt: null },
+      });
+      if (parent && request.parentId === parent.id) return request;
+    }
+
+    throw new ForbiddenException('You cannot access this leave request');
+  }
+
+  async prepareLeaveAttachmentUpload(
+    id: string,
+    input: PrepareLeaveAttachmentUploadInput,
+    access: { userId?: string; parentEmail?: string; staff?: boolean },
+  ) {
+    const request = await this.getLeaveRequestForAccess(id, access);
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+    await this.ensureLeaveBucket();
+
+    const path = `${request.kind}/${request.id}/${Date.now()}-${this.safeStorageFileName(input.fileName)}`;
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(LEAVE_BUCKET)
+      .createSignedUploadUrl(path);
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare file upload');
+    }
+    return {
+      bucket: LEAVE_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
+  }
+
+  async setLeaveAttachment(
+    id: string,
+    input: LeaveAttachmentMetaInput,
+    access: { userId?: string; parentEmail?: string; staff?: boolean },
+  ) {
+    await this.getLeaveRequestForAccess(id, access);
+    const updated = await this.prisma.leaveRequest.update({
+      where: { id },
+      data: {
+        attachmentFileName: input.fileName,
+        attachmentStoragePath: input.storagePath,
+        attachmentMimeType: input.mimeType ?? null,
+        attachmentSizeBytes: input.sizeBytes ?? null,
+      },
+      include: {
+        student: { select: { fullName: true } },
+        user: { select: { fullName: true } },
+      },
+    });
+    return this.toLeaveRequestResponse(updated);
+  }
+
+  async getLeaveAttachmentSignedUrl(
+    id: string,
+    access: { userId?: string; parentEmail?: string; staff?: boolean },
+  ) {
+    const request = await this.getLeaveRequestForAccess(id, access);
+    if (!request.attachmentStoragePath || !request.attachmentFileName) {
+      throw new NotFoundException('No attachment on this leave request');
+    }
+    if (!this.supabaseAdmin) {
+      return { url: request.attachmentStoragePath, signed: false, fileName: request.attachmentFileName };
+    }
+
+    const objectKey = request.attachmentStoragePath.replace(/^leave-attachments\//, '');
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(LEAVE_BUCKET)
+      .createSignedUrl(objectKey, 3600);
+    if (error || !data) {
+      throw new NotFoundException(
+        'This file is no longer available in storage. It may not have been uploaded in this environment.',
+      );
+    }
+    return { url: data.signedUrl, signed: true, fileName: request.attachmentFileName };
   }
 
   private async fetchTimetableSlots(batchId: string, branchId: string) {

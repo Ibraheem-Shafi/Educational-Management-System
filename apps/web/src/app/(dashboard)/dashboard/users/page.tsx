@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,6 +27,7 @@ import { UserAvatar } from '@/components/layout/user-avatar';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { ContactIcon } from '@/components/layout/contact-icon';
 import { InviteUserDialog } from '@/components/features/users/invite-user-dialog';
 import { EditUserDialog } from '@/components/features/users/edit-user-dialog';
 import {
@@ -59,40 +60,6 @@ function staffStatusLabel(status: StaffListRow['status']): string {
 function staffStatusCode(status: StaffListRow['status']): string {
   if (status === 'invited') return 'pending';
   return status;
-}
-
-function ContactIcon({
-  href,
-  label,
-  children,
-  disabled,
-}: {
-  href?: string;
-  label: string;
-  children: ReactNode;
-  disabled?: boolean;
-}) {
-  const className = cn(
-    'flex h-8 w-8 items-center justify-center rounded-full border-[0.8px] border-[var(--stroke-soft-200,#E2E4E9)] p-2',
-    'text-[var(--text-sub-500,#525866)] transition-colors',
-    disabled
-      ? 'cursor-not-allowed opacity-40'
-      : 'hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)]',
-  );
-
-  if (disabled || !href) {
-    return (
-      <span className={className} aria-label={label} title={label}>
-        {children}
-      </span>
-    );
-  }
-
-  return (
-    <a href={href} className={className} aria-label={label} title={label} onClick={(e) => e.stopPropagation()}>
-      {children}
-    </a>
-  );
 }
 
 function formatGender(gender: string | null): string {
@@ -161,10 +128,12 @@ export default function UsersPage() {
     enabled: !!token,
   });
 
-  const invalidateUserQueries = () => {
-    queryClient.invalidateQueries({ queryKey: ['users'] });
-    queryClient.invalidateQueries({ queryKey: queryKeys.usersStats });
-    queryClient.invalidateQueries({ queryKey: ['invitations'] });
+  const invalidateUserQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['users'] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.usersStats }),
+      queryClient.invalidateQueries({ queryKey: ['invitations'] }),
+    ]);
   };
 
   const deactivateMutation = useMutation({
@@ -174,12 +143,36 @@ export default function UsersPage() {
         token,
         body: JSON.stringify({ isActive: false }),
       }),
-    onSuccess: () => {
+    onMutate: () => ({ toastId: toast.loading('Deactivating user…') }),
+    onSuccess: async (_data, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
       toast.success('User deactivated');
       setDeactivateTarget(null);
-      invalidateUserQueries();
+      await invalidateUserQueries();
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.error(err.message);
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/users/${id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ isActive: true }),
+      }),
+    onMutate: () => ({ toastId: toast.loading('Reactivating user…') }),
+    onSuccess: async (_data, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.success('User reactivated');
+      await invalidateUserQueries();
+    },
+    onError: (err: Error, _id, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.error(err.message);
+    },
   });
 
   return (
@@ -372,17 +365,10 @@ export default function UsersPage() {
                     </td>
                     <td className={tdClass}>
                       <div className="flex items-center gap-2">
-                        <ContactIcon
-                          href={`mailto:${staff.email}`}
-                          label={staff.email}
-                        >
+                        <ContactIcon kind="email" value={staff.email}>
                           <Mail className="h-4 w-4" strokeWidth={1.2} />
                         </ContactIcon>
-                        <ContactIcon
-                          href={staff.phone ? `tel:${staff.phone}` : undefined}
-                          label={staff.phone ?? 'No phone'}
-                          disabled={!staff.phone}
-                        >
+                        <ContactIcon kind="phone" value={staff.phone}>
                           <Phone className="h-4 w-4" strokeWidth={1.2} />
                         </ContactIcon>
                       </div>
@@ -426,6 +412,14 @@ export default function UsersPage() {
                                         staffCode: staff.staffCode,
                                       });
                                     },
+                                  },
+                                ]
+                              : []),
+                            ...(canManage && staff.status === 'inactive'
+                              ? [
+                                  {
+                                    label: 'Reactivate',
+                                    onClick: () => reactivateMutation.mutate(staff.id),
                                   },
                                 ]
                               : []),

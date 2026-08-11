@@ -68,10 +68,14 @@ export function LinkStudentDialog({
         token,
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Student linked');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.parents() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats }),
+        queryClient.invalidateQueries({ queryKey: ['parents', 'detail', parentId] }),
+        queryClient.invalidateQueries({ queryKey: ['parents', parentId, 'students'] }),
+      ]);
       onOpenChange(false);
     },
     onError: (err: Error) => {

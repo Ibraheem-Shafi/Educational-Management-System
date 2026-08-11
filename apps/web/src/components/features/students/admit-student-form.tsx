@@ -21,6 +21,7 @@ import { useFormErrors } from '@/hooks/use-form-errors';
 import { useBatches } from '@/hooks/use-batches';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { uploadStudentPhoto } from '@/lib/upload-photo';
+import { ACCEPT_IMAGE_NO_GIF, assertAllowedImage } from '@/lib/image-upload';
 import { uploadStudentDocument } from '@/lib/upload-document';
 import { DynamicFormFields } from '@/components/forms/dynamic-form-fields';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
@@ -29,6 +30,8 @@ import {
   FormFieldLabel,
   modalFieldClassName,
 } from '@/components/features/users/invite-form-fields';
+import { CnicInput } from '@/components/ui/cnic-input';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import {
   AdmitFieldGrid,
   AdmitStudentSection,
@@ -298,7 +301,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
       if (isEditing) created = { id: studentId! };
       if (photoFile) {
         try {
-          const url = await uploadStudentPhoto(photoFile, created.id);
+          const url = await uploadStudentPhoto(photoFile, created.id, token!);
           await apiClient(`/students/${created.id}`, {
             method: 'PATCH',
             token,
@@ -313,7 +316,12 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         try {
           const uploaded: Record<string, string> = {};
           for (const [code, file] of fileEntries) {
-            const { path } = await uploadStudentDocument(file, created.id);
+            const { path } = await uploadStudentDocument(
+              file,
+              created.id,
+              effectiveBranchId,
+              token!,
+            );
             uploaded[code] = path;
           }
           await apiClient(`/students/${created.id}`, {
@@ -619,7 +627,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   Upload student photo
                 </p>
                 <p className="text-xs leading-4 text-[var(--text-sub-500,#525866)]">
-                  Min 400x400px, PNG or JPEG
+                  Min 400x400px. Images only (GIF not allowed)
                 </p>
                 <label
                   className={cn(
@@ -631,9 +639,23 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   Upload
                   <input
                     type="file"
-                    accept="image/*"
+                    accept={ACCEPT_IMAGE_NO_GIF}
                     className="sr-only"
-                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      e.target.value = '';
+                      if (!file) {
+                        setPhotoFile(null);
+                        return;
+                      }
+                      try {
+                        assertAllowedImage(file);
+                        setPhotoFile(file);
+                      } catch (err) {
+                        setPhotoFile(null);
+                        toast.error(err instanceof Error ? err.message : 'Invalid image');
+                      }
+                    }}
                   />
                 </label>
               </div>
@@ -729,12 +751,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </div>
               <div>
                 <FormFieldLabel>CNIC / B-Form</FormFieldLabel>
-                <input
+                <CnicInput
                   className={fieldClassName('cnicOrBForm', modalFieldClassName)}
-                  placeholder="XXXXX-XXXXXXX-X"
                   value={cnicOrBForm}
-                  onChange={(e) => {
-                    setCnicOrBForm(e.target.value);
+                  onChange={(value) => {
+                    setCnicOrBForm(value);
                     clearField('cnicOrBForm');
                   }}
                 />
@@ -770,14 +791,13 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
             <AdmitFieldGrid>
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
-                <input
-                  className={fieldClassName('phone', modalFieldClassName)}
-                  placeholder="03XX-XXXXXXX"
+                <PakistanPhoneInput
                   value={phone}
-                  onChange={(e) => {
-                    setPhone(e.target.value);
+                  onChange={(value) => {
+                    setPhone(value);
                     clearField('phone');
                   }}
+                  className={errors.phone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.phone} />
               </div>
@@ -908,11 +928,10 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </div>
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
-                <input
-                  className={fieldClassName('guardianPhone', modalFieldClassName)}
-                  placeholder="03XX-XXXXXXX"
+                <PakistanPhoneInput
                   value={guardian.phone}
-                  onChange={(e) => updateGuardian('phone', e.target.value)}
+                  onChange={(value) => updateGuardian('phone', value)}
+                  className={errors.guardianPhone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.guardianPhone} />
               </div>
@@ -929,11 +948,10 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </div>
               <div>
                 <FormFieldLabel>CNIC</FormFieldLabel>
-                <input
+                <CnicInput
                   className={fieldClassName('guardianCnic', modalFieldClassName)}
-                  placeholder="XXXXX-XXXXXXX-X"
                   value={guardian.cnic}
-                  onChange={(e) => updateGuardian('cnic', e.target.value)}
+                  onChange={(value) => updateGuardian('cnic', value)}
                 />
                 <FormFieldError message={errors.guardianCnic} />
               </div>
@@ -970,14 +988,13 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </div>
               <div>
                 <FormFieldLabel>Mobile Number</FormFieldLabel>
-                <input
-                  className={fieldClassName('emergencyPhone', modalFieldClassName)}
-                  placeholder="03XX-XXXXXXX"
+                <PakistanPhoneInput
                   value={emergency.phone}
-                  onChange={(e) => {
-                    setEmergency((prev) => ({ ...prev, phone: e.target.value }));
+                  onChange={(value) => {
+                    setEmergency((prev) => ({ ...prev, phone: value }));
                     clearField('emergencyPhone');
                   }}
+                  className={errors.emergencyPhone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.emergencyPhone} />
               </div>

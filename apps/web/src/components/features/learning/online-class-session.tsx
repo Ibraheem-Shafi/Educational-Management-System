@@ -4,6 +4,8 @@ interface OnlineClassSessionProps {
   startsAt: string | null;
   endsAt: string | null;
   meetingUrl: string | null;
+  /** When false, treat meetingUrl as a recording / video link (Watch) instead of Join. */
+  isLiveClass?: boolean;
   variant?: 'detail' | 'inline';
 }
 
@@ -11,8 +13,11 @@ export function OnlineClassSessionMeta({
   startsAt,
   endsAt,
   meetingUrl,
+  isLiveClass = true,
   variant = 'detail',
 }: OnlineClassSessionProps) {
+  const linkLabel = isLiveClass ? 'Join meeting' : 'Watch video';
+
   if (variant === 'inline') {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-sub-500)]">
@@ -25,7 +30,7 @@ export function OnlineClassSessionMeta({
             rel="noopener noreferrer"
             className="font-medium text-[var(--institution-primary)] hover:underline"
           >
-            Join meeting
+            {linkLabel}
           </a>
         )}
       </div>
@@ -51,7 +56,7 @@ export function OnlineClassSessionMeta({
           rel="noopener noreferrer"
           className="inline-flex items-center rounded-lg bg-[var(--institution-primary)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
         >
-          Join meeting
+          {linkLabel}
         </a>
       )}
     </div>

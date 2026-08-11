@@ -1,11 +1,10 @@
-import { PHONE_COUNTRY_OPTIONS } from '@/components/features/users/invite-form-fields';
+import { normalizePakistanPhone } from '@eims/shared';
 
 export interface BranchFormValues {
   name: string;
   code: string;
   address: string;
   email: string;
-  phoneCountryCode: string;
   phone: string;
 }
 
@@ -14,7 +13,6 @@ export const emptyBranchForm: BranchFormValues = {
   code: '',
   address: '',
   email: '',
-  phoneCountryCode: '+92',
   phone: '',
 };
 
@@ -27,38 +25,19 @@ export function slugifyBranchCode(name: string): string {
     .slice(0, 20);
 }
 
-export function parsePhoneForBranchForm(phone: string | null): {
-  phoneCountryCode: string;
-  phone: string;
-} {
-  if (!phone) {
-    return { phoneCountryCode: '+92', phone: '' };
-  }
-
-  const sorted = [...PHONE_COUNTRY_OPTIONS].sort((a, b) => b.value.length - a.value.length);
-  for (const option of sorted) {
-    if (phone.startsWith(option.value)) {
-      return {
-        phoneCountryCode: option.value,
-        phone: phone.slice(option.value.length).trim(),
-      };
-    }
-  }
-
-  return { phoneCountryCode: '+92', phone };
-}
-
 export function formatBranchPhone(phone: string | null): string {
   if (!phone) return '—';
-  const { phoneCountryCode, phone: number } = parsePhoneForBranchForm(phone);
-  if (!number) return phone;
-  return `${phoneCountryCode} ${number}`;
+  const normalized = normalizePakistanPhone(phone);
+  if (normalized.startsWith('+92') && normalized.length > 3) {
+    return `+92 ${normalized.slice(3)}`;
+  }
+  return phone;
 }
 
 export function buildBranchPhonePayload(form: BranchFormValues): string | undefined {
-  const phoneDigits = form.phone.replace(/\s/g, '');
-  if (!phoneDigits) return undefined;
-  return `${form.phoneCountryCode}${phoneDigits.replace(/^0+/, '')}`;
+  const trimmed = form.phone.trim();
+  if (!trimmed) return undefined;
+  return normalizePakistanPhone(trimmed);
 }
 
 export function formatBranchId(code: string): string {

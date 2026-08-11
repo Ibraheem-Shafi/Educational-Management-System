@@ -355,23 +355,37 @@ export class UsersService {
     effective: BranchScope,
     status?: 'active' | 'inactive',
   ) {
+    // Deactivated users stay in the directory (isActive: false). `deletedAt` is
+    // only for hard-removal; older deactivations incorrectly set deletedAt, so
+    // inactive queries include those rows too.
+    const statusFilter =
+      status === 'active'
+        ? { deletedAt: null, isActive: true }
+        : status === 'inactive'
+          ? { isActive: false }
+          : {
+              OR: [{ deletedAt: null }, { isActive: false }],
+            };
+
+    const searchFilter = query.search
+      ? {
+          OR: [
+            { fullName: { contains: query.search, mode: 'insensitive' as const } },
+            { email: { contains: query.search, mode: 'insensitive' as const } },
+            // Staff codes render as STF-<last6 of id>; strip the prefix so
+            // searching by the visible staff ID matches the underlying id.
+            { id: { contains: query.search.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
     return {
-      deletedAt: null,
-      ...prismaBranchFilter(effective),
-      ...(status === 'active' ? { isActive: true } : {}),
-      ...(status === 'inactive' ? { isActive: false } : {}),
-      ...(query.roleId ? { userRoles: { some: { roleId: query.roleId } } } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { fullName: { contains: query.search, mode: 'insensitive' as const } },
-              { email: { contains: query.search, mode: 'insensitive' as const } },
-              // Staff codes render as STF-<last6 of id>; strip the prefix so
-              // searching by the visible staff ID matches the underlying id.
-              { id: { contains: query.search.replace(/^STF-/i, ''), mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+      AND: [
+        statusFilter,
+        prismaBranchFilter(effective),
+        ...(query.roleId ? [{ userRoles: { some: { roleId: query.roleId } } }] : []),
+        ...(searchFilter ? [searchFilter] : []),
+      ],
     };
   }
 
@@ -379,8 +393,8 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
-        deletedAt: null,
         ...prismaBranchFilter(scope),
+        OR: [{ deletedAt: null }, { isActive: false }],
       },
       include: userDetailInclude,
     });
@@ -395,7 +409,11 @@ export class UsersService {
     scope: BranchScope,
   ): Promise<UserDetailResponse> {
     const existing = await this.prisma.user.findFirst({
-      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+      where: {
+        id,
+        ...prismaBranchFilter(scope),
+        OR: [{ deletedAt: null }, { isActive: false }],
+      },
       include: { userRoles: { include: { role: { select: { code: true } } } } },
     });
     if (!existing) throw new NotFoundException('User not found');
@@ -416,16 +434,22 @@ export class UsersService {
         ...(input.cnic !== undefined ? { cnic: input.cnic } : {}),
         ...(input.department !== undefined ? { department: input.department } : {}),
         ...(input.designation !== undefined ? { designation: input.designation } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.isActive === false ? { deletedAt: new Date() } : {}),
-        ...(input.isActive === true ? { deletedAt: null } : {}),
+        // Deactivate = disable login only. Do not soft-delete (deletedAt), or the
+        // user vanishes from lists/stats and cannot be reactivated.
+        ...(input.isActive === false ? { isActive: false, deletedAt: null } : {}),
+        ...(input.isActive === true ? { isActive: true, deletedAt: null } : {}),
       },
       include: userDetailInclude,
     });
 
     await this.audit.log({
       userId: actor.id,
-      action: input.isActive === false ? 'user.deactivated' : 'user.updated',
+      action:
+        input.isActive === false
+          ? 'user.deactivated'
+          : input.isActive === true
+            ? 'user.reactivated'
+            : 'user.updated',
       entityType: 'User',
       entityId: id,
       previousValue: existing,
@@ -549,17 +573,17 @@ export class UsersService {
     thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
 
     const userWhere = {
-      deletedAt: null,
+      OR: [{ deletedAt: null }, { isActive: false }],
       ...prismaBranchFilter(scope),
     };
     const userWherePrevious = {
       ...userWhere,
       createdAt: { lte: thirtyDaysAgo },
     };
-    const activeWhere = { ...userWhere, isActive: true };
-    const activeWherePrevious = { ...userWherePrevious, isActive: true };
-    const inactiveWhere = { ...userWhere, isActive: false };
-    const inactiveWherePrevious = { ...userWherePrevious, isActive: false };
+    const activeWhere = { deletedAt: null, isActive: true, ...prismaBranchFilter(scope) };
+    const activeWherePrevious = { ...activeWhere, createdAt: { lte: thirtyDaysAgo } };
+    const inactiveWhere = { isActive: false, ...prismaBranchFilter(scope) };
+    const inactiveWherePrevious = { ...inactiveWhere, createdAt: { lte: thirtyDaysAgo } };
     const invitationWhere = {
       acceptedAt: null,
       expiresAt: { gt: new Date() },

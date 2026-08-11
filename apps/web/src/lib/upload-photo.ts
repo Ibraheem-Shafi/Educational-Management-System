@@ -1,13 +1,24 @@
 import { createClient } from '@/lib/supabase/client';
+import { assertAllowedImage } from '@/lib/image-upload';
+import { uploadViaSignedUrl } from '@/lib/upload-via-signed-url';
 
-export async function uploadStudentPhoto(file: File, studentId: string): Promise<string> {
+const PHOTOS_BUCKET = 'student-photos';
+
+/** Upload a student photo via signed URL; returns a public URL for display. */
+export async function uploadStudentPhoto(
+  file: File,
+  studentId: string,
+  accessToken: string,
+): Promise<string> {
+  assertAllowedImage(file);
+  const uploaded = await uploadViaSignedUrl(
+    file,
+    `/students/${studentId}/photo/upload-url`,
+    accessToken,
+    undefined,
+    PHOTOS_BUCKET,
+  );
   const supabase = createClient();
-  const ext = file.name.split('.').pop() ?? 'jpg';
-  const path = `${studentId}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from('student-photos').upload(path, file, {
-    upsert: true,
-  });
-  if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from('student-photos').getPublicUrl(path);
+  const { data } = supabase.storage.from(uploaded.bucket || PHOTOS_BUCKET).getPublicUrl(uploaded.path);
   return data.publicUrl;
 }
