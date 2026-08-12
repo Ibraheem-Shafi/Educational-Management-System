@@ -293,8 +293,8 @@ function ProfileFooter({
     setOpen(false);
     onNavigate?.();
     await signOut();
-    router.replace('/login');
-    router.refresh();
+    // Hard navigate so auth cookies + RSC state fully reset (avoids stuck shell).
+    window.location.assign('/login');
   };
 
   return (

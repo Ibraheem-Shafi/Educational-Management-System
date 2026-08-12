@@ -18,7 +18,9 @@ export function StaffGuard({ children }: { children: React.ReactNode }) {
     if (isE2eAuthBypass()) return;
     if (loading || awaitingProfile) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      // Full navigation avoids a soft-redirect loop that leaves the dashboard
+      // shell mounted on skeletons after sign-out.
+      window.location.assign('/login');
       return;
     }
     if (user && !isStaffUser(user.roles)) {

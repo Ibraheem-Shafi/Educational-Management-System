@@ -320,8 +320,9 @@ function ProfileFooter({
     setOpen(false);
     onNavigate?.();
     await signOut();
-    router.replace('/login');
-    router.refresh();
+    // Hard navigate so middleware/RSC cannot bounce login↔dashboard and leave
+    // StaffGuard stuck on skeletons after cookies clear.
+    window.location.assign('/login');
   };
 
   return (
