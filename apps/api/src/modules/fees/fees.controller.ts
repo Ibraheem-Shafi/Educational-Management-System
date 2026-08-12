@@ -21,6 +21,7 @@ import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createFeeInvoiceSchema,
   listFeeInvoicesQuerySchema,
+  listFeeInvoicesByStudentQuerySchema,
   recordPaymentSchema,
   recordFeePaymentSchema,
   prepareFeePaymentReceiptUploadSchema,
@@ -32,12 +33,15 @@ import {
   createFeeTypeSchema,
   updateFeeTypeSchema,
   listFeeTypesQuerySchema,
+  listFeeChallansQuerySchema,
+  createFeeChallanSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
   BranchScope,
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
+  ListFeeInvoicesByStudentQuery,
   RecordPaymentInput,
   RecordFeePaymentInput,
   PrepareFeePaymentReceiptUploadInput,
@@ -49,6 +53,8 @@ import type {
   PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
   UpdateFeeTypeInput,
+  ListFeeChallansQuery,
+  CreateFeeChallanInput,
 } from '@eims/shared';
 
 @ApiTags('fees')
@@ -163,6 +169,15 @@ export class FeesController {
     return this.feesService.findAll(query, scope);
   }
 
+  @Get('fee-invoices/by-student')
+  @Permissions('fees.read')
+  findAllByStudent(
+    @Query(createZodPipe(listFeeInvoicesByStudentQuerySchema)) query: ListFeeInvoicesByStudentQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.findAllByStudent(query, scope);
+  }
+
   @Get('fee-invoices/:id')
   @Permissions('fees.read')
   getInvoice(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
@@ -231,5 +246,30 @@ export class FeesController {
   @Permissions('fees.read')
   getStudentFees(@Param('studentId') studentId: string, @BranchScopeParam() scope: BranchScope) {
     return this.feesService.getStudentFees(studentId, scope);
+  }
+
+  @Get('fee-challans')
+  @Permissions('fees.read')
+  listChallans(
+    @Query(createZodPipe(listFeeChallansQuerySchema)) query: ListFeeChallansQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.listChallans(query, scope);
+  }
+
+  @Post('fee-challans')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('fees.collect')
+  createChallan(
+    @Body(createZodPipe(createFeeChallanSchema)) body: CreateFeeChallanInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.feesService.createChallan(body, user);
+  }
+
+  @Get('fee-challans/:id/print-data')
+  @Permissions('fees.read')
+  getChallanPrintData(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.feesService.getChallanPrintData(id, scope);
   }
 }

@@ -273,7 +273,8 @@ model Student {
   studentParents    StudentParent[]
   studentSubjects   StudentSubject[]
   assessmentRecords AssessmentRecord[]
-  feeInvoices       FeeInvoice[]
+  feeInvoices          FeeInvoice[]
+  feeChallans          FeeChallan[]
   documents            Document[]
   leaveRequests        LeaveRequest[]
   certificateIssues    CertificateIssue[]
@@ -440,25 +441,30 @@ model FeeStructure {
 }
 
 model FeeInvoice {
-  id          String    @id @default(cuid())
-  branchId    String
-  studentId   String
-  feeTypeId   String
-  invoiceNo   String?
-  amount      Decimal   @db.Decimal(12, 2)
-  discount    Decimal   @default(0) @db.Decimal(12, 2)
-  fine        Decimal   @default(0) @db.Decimal(12, 2)
-  netAmount   Decimal   @db.Decimal(12, 2)
-  dueDate     DateTime?
-  paidAt      DateTime?
-  statusId    String
-  remarks     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdById String?
+  id            String    @id @default(cuid())
+  branchId      String
+  studentId     String
+  feeTypeId     String
+  invoiceNo     String?
+  /// Billing month as YYYY-MM (e.g. 2026-08). Null for one-off / legacy invoices.
+  billingPeriod String?
+  /// Bank / register voucher number (may include notes in source data).
+  voucherNo     String?
+  amount        Decimal   @db.Decimal(12, 2)
+  discount      Decimal   @default(0) @db.Decimal(12, 2)
+  fine          Decimal   @default(0) @db.Decimal(12, 2)
+  netAmount     Decimal   @db.Decimal(12, 2)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  statusId      String
+  remarks       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
 
-  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  payments FeePayment[]
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  payments     FeePayment[]
+  challanLines FeeChallanLine[]
 
   @@unique([branchId, invoiceNo])
   @@index([branchId])
@@ -466,6 +472,58 @@ model FeeInvoice {
   @@index([statusId])
   @@index([branchId, paidAt])
   @@index([branchId, dueDate])
+  @@index([branchId, createdAt])
+  @@index([branchId, studentId, billingPeriod])
+  @@index([billingPeriod])
+  @@index([studentId, feeTypeId, billingPeriod])
+}
+
+/// Multi-line fee challan for a student + billing month (bank / school / student copies).
+model FeeChallan {
+  id            String    @id @default(cuid())
+  branchId      String
+  studentId     String
+  challanNo     String?
+  /// Billing month as YYYY-MM
+  billingPeriod String
+  dueDate       DateTime?
+  /// unpaid | partial | paid
+  status        String    @default("unpaid")
+  grandTotal    Decimal   @db.Decimal(12, 2)
+  paidAmount    Decimal   @default(0) @db.Decimal(12, 2)
+  dueAmount     Decimal   @db.Decimal(12, 2)
+  sessionLabel  String?
+  meta          Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+
+  student Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lines   FeeChallanLine[]
+
+  @@unique([branchId, studentId, billingPeriod])
+  @@unique([branchId, challanNo])
+  @@index([branchId])
+  @@index([studentId])
+  @@index([billingPeriod])
+  @@index([status])
+}
+
+model FeeChallanLine {
+  id           String  @id @default(cuid())
+  challanId    String
+  /// monthly | arrears | admission | registration | annual | party | security
+  code         String
+  label        String
+  amount       Decimal @db.Decimal(12, 2)
+  sortOrder    Int     @default(0)
+  feeInvoiceId String?
+
+  challan    FeeChallan  @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  feeInvoice FeeInvoice? @relation(fields: [feeInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([challanId])
+  @@index([feeInvoiceId])
 }
 
 model AuditLog {

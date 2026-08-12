@@ -14,24 +14,27 @@
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
-    "db:push": "dotenv -e ../../apps/api/.env -- prisma db push",
-    "db:migrate": "dotenv -e ../../apps/api/.env -- prisma migrate dev",
-    "db:migrate:deploy": "dotenv -e ../../apps/api/.env -- prisma migrate deploy",
-    "db:seed": "dotenv -e ../../apps/api/.env -- tsx prisma/seed.ts",
-    "db:seed:demo": "dotenv -e ../../apps/api/.env -- tsx prisma/seed-demo-cli.ts",
-    "db:seed:auth": "dotenv -e ../../apps/api/.env -- tsx prisma/seed-auth.ts",
-    "db:seed:all": "dotenv -e ../../apps/api/.env -- tsx prisma/seed.ts && dotenv -e ../../apps/api/.env -- tsx prisma/seed-auth.ts",
-    "db:seed:verify": "dotenv -e ../../apps/api/.env -- tsx prisma/verify-demo-seed.ts",
+    "db:push": "npx dotenv-cli -e ../../apps/api/.env -- npx prisma db push",
+    "db:migrate": "npx dotenv-cli -e ../../apps/api/.env -- npx prisma migrate dev",
+    "db:migrate:deploy": "npx dotenv-cli -e ../../apps/api/.env -- npx prisma migrate deploy",
+    "db:seed": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/seed.ts",
+    "db:seed:demo": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/seed-demo-cli.ts",
+    "db:seed:auth": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/seed-auth.ts",
+    "db:seed:all": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/seed.ts && npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/seed-auth.ts",
+    "db:seed:verify": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/verify-demo-seed.ts",
+    "db:import:shahwali": "npx dotenv-cli -e ../../apps/api/.env -- npx tsx prisma/import-shahwali-fee-register.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@eims/shared": "*",
-    "@prisma/client": "^6.1.0"
+    "@prisma/client": "^6.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "dotenv-cli": "^8.0.0",
     "prisma": "^6.1.0",
     "tsx": "^4.19.2",
+    "turbo": "^2.10.9",
     "typescript": "^5.7.2"
   },
   "prisma": {
