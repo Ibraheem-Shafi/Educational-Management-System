@@ -1,0 +1,8 @@
+# Optional: HTTP-only Caddy (no Let's Encrypt) for first bring-up.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.http.yml up -d --build
+
+services:
+  caddy:
+    volumes:
+      - ./docker/Caddyfile.http:/etc/caddy/Caddyfile:ro

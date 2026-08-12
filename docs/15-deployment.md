@@ -35,12 +35,15 @@ flowchart TB
 
 ## Recommended Hosting
 
-| Component | Option A (PaaS) | Option B (VPS) |
-|-----------|-----------------|----------------|
-| Web (Next.js) | Vercel | Same VPS as API |
-| API (NestJS) | Railway or Fly.io | DigitalOcean / Hetzner VPS |
+| Component | Option A (PaaS) | Option B (VPS + Docker) |
+|-----------|-----------------|-------------------------|
+| Web (Next.js) | Vercel | Same VPS via `docker compose` |
+| API (NestJS) | Railway or Fly.io | Same VPS via `docker compose` |
+| Reverse proxy / TLS | Platform | Caddy (`nexium-eims.online` + `api.`) |
 | Database | Supabase Cloud | Supabase Cloud |
 | Storage | Supabase Storage | Supabase Storage |
+
+**Docker VPS (recommended for KVM):** see [`docker/README.md`](../docker/README.md). Copy `.env.docker.example` → `.env`, point DNS at the VPS, then `docker compose up -d --build`.
 
 **Supabase region:** Choose closest to Pakistan — `ap-south-1` (Mumbai) or `ap-southeast-1` (Singapore).
 

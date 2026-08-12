@@ -1,0 +1,16 @@
+# HTTP-only reverse proxy for bring-up before DNS / TLS is ready.
+# Use: docker compose -f docker-compose.yml -f docker-compose.http.yml up -d --build
+#
+# Point hosts file or temporary DNS at the VPS, or open ports 80 and hit by IP
+# with Host headers. Prefer docker/Caddyfile once nexium-eims.online resolves.
+
+:80 {
+	@api host api.nexium-eims.online
+	handle @api {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

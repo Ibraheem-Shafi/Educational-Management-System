@@ -1,0 +1,109 @@
+# EIMS — VPS stack (web + api + Caddy)
+# Domain: nexium-eims.online / api.nexium-eims.online
+#
+# 1. Copy .env.docker.example → .env and fill secrets
+# 2. Point DNS A records at the VPS
+# 3. docker compose up -d --build
+
+name: eims
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://nexium-eims.online}
+      WEB_URL: ${WEB_URL:-https://nexium-eims.online}
+    expose:
+      - "3001"
+    networks:
+      - eims
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.nexium-eims.online}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://nexium-eims.online}
+        INSTITUTION_NAME: ${INSTITUTION_NAME:-Nexium Academy}
+        NEXT_PUBLIC_SKIP_ADMIN_MFA: ${NEXT_PUBLIC_SKIP_ADMIN_MFA:-0}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      # Runtime fallbacks (client bundle still uses build-args above)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.nexium-eims.online}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://nexium-eims.online}
+      INSTITUTION_NAME: ${INSTITUTION_NAME:-Nexium Academy}
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - eims
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-admin@nexium-eims.online}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - eims
+
+networks:
+  eims:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

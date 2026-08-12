@@ -6,6 +6,8 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
+  // Required for the production Docker image (see docker/web.Dockerfile).
+  output: 'standalone',
   transpilePackages: ['@eims/types', '@eims/shared'],
   experimental: {
     // Avoid loading the full @eims/shared barrel on every client import (reduces HMR churn).

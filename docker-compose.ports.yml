@@ -1,0 +1,15 @@
+# Optional: expose app ports directly (skip relying on domain DNS).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ports.yml up -d --build
+# Then open http://VPS_IP:3000 and http://VPS_IP:3001/api/v1/health
+#
+# Note: rebuild web with matching NEXT_PUBLIC_* URLs (or use http://VPS_IP:3001)
+# if you test without the domain.
+
+services:
+  api:
+    ports:
+      - "3001:3001"
+  web:
+    ports:
+      - "3000:3000"
