@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Next.js web — standalone output for npm workspaces monorepo
 
-FROM node:20-bookworm-slim AS base
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \

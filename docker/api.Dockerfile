@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # NestJS API — multi-stage build for npm workspaces monorepo
 
-FROM node:20-bookworm-slim AS base
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -14,10 +14,13 @@ COPY apps/api/package.json ./apps/api/
 COPY packages/types/package.json ./packages/types/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/database/package.json ./packages/database/
+# prisma generate runs on @eims/database postinstall — schema must exist first
+COPY packages/database/prisma ./packages/database/prisma
 COPY packages/config/package.json ./packages/config/
-# Workspace stub so npm ci does not fail on missing mobile package
 COPY apps/web/package.json ./apps/web/
 COPY apps/mobile/package.json ./apps/mobile/
+ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+ENV DIRECT_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 # Install only server-side workspaces (skip Expo mobile tree)
 RUN npm ci \
   --workspace=@eims/api \
@@ -32,7 +35,6 @@ COPY packages/shared ./packages/shared
 COPY packages/database ./packages/database
 COPY packages/config ./packages/config
 COPY apps/api ./apps/api
-# Dummy DATABASE_URL so prisma generate does not fail if schema validates env
 ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 ENV DIRECT_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 RUN npm run build -w @eims/api
