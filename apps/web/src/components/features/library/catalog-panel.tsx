@@ -95,11 +95,17 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
     placeholderData: (previous) => previous,
   });
 
+  const resetListToNewest = useCallback(() => {
+    setSearch('');
+    setCategoryFilter('');
+    setPage(1);
+  }, []);
+
   const remove = useMutation({
     mutationFn: (id: string) => apiClient(`/library/books/${id}`, { method: 'DELETE', token }),
     onSuccess: async () => {
       toast.success('Book removed');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryBooks(branchId) });
+      await queryClient.invalidateQueries({ queryKey: ['library-books', branchId] });
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
     },
     onError: () => toast.error('Unable to remove book'),
@@ -264,6 +270,9 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
           book={editBook}
           categories={categories}
           copyStatuses={[...libraryCopyStatuses]}
+          onSaved={({ created }) => {
+            if (created) resetListToNewest();
+          }}
         />
       )}
     </>

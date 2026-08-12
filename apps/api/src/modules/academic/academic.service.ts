@@ -78,6 +78,14 @@ export class ProgramsService {
       deletedAt: null,
       ...prismaBranchFilter(effective),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
@@ -362,6 +370,14 @@ export class BatchesService {
       ...prismaBranchFilter(effective),
       ...(query.programId ? { programId: query.programId } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;

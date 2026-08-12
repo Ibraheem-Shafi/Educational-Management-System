@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bookmark, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,6 +21,54 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel } from '@/components/features/users/invite-form-fields';
 import { cn } from '@/lib/utils';
 import type { LibraryBook } from './types';
+import { formatLabel } from './types';
+
+function copySummary(book: LibraryBook): {
+  total: number;
+  available: number;
+  activeReservations: number;
+  queueSlotsLeft: number;
+  canReserve: boolean;
+  reason?: string;
+} {
+  const copies = book.copies ?? [];
+  const total = copies.length;
+  const available = copies.filter((c) => c.status === 'available').length;
+  const activeReservations = book._count?.reservations ?? 0;
+  const queueSlotsLeft = Math.max(0, total - activeReservations);
+
+  if (total === 0) {
+    return {
+      total,
+      available,
+      activeReservations,
+      queueSlotsLeft,
+      canReserve: false,
+      reason: 'No copies yet — add a copy first',
+    };
+  }
+  if (available > 0) {
+    return {
+      total,
+      available,
+      activeReservations,
+      queueSlotsLeft,
+      canReserve: false,
+      reason: 'Copy available — issue a loan instead',
+    };
+  }
+  if (queueSlotsLeft <= 0) {
+    return {
+      total,
+      available,
+      activeReservations,
+      queueSlotsLeft,
+      canReserve: false,
+      reason: 'Reservation queue is full for this title',
+    };
+  }
+  return { total, available, activeReservations, queueSlotsLeft, canReserve: true };
+}
 
 export function ReservationDialog({
   open,
@@ -42,9 +90,12 @@ export function ReservationDialog({
     useFormErrors(createLibraryReservationSchema);
 
   const { data: booksData } = useQuery({
-    queryKey: queryKeys.libraryBooks(branchId),
+    queryKey: queryKeys.libraryBooks(branchId, { limit: 100 }),
     queryFn: () =>
-      apiClient<{ data: LibraryBook[] }>(`/library/books?branchId=${branchId}`, { token }),
+      apiClient<{ data: LibraryBook[] }>(
+        `/library/books?branchId=${branchId}&limit=100`,
+        { token },
+      ),
     enabled: !!token && !!branchId && open,
   });
 
@@ -66,6 +117,29 @@ export function ReservationDialog({
     }
   }, [open, clearAll]);
 
+  const books = booksData?.data ?? [];
+  const selectedBook = useMemo(
+    () => books.find((b) => b.id === bookId) ?? null,
+    [books, bookId],
+  );
+  const selectedSummary = selectedBook ? copySummary(selectedBook) : null;
+
+  const bookOptions = useMemo(
+    () =>
+      books.map((b) => {
+        const summary = copySummary(b);
+        const copyBits =
+          summary.total === 0
+            ? 'no copies'
+            : `${summary.available}/${summary.total} available · ${summary.activeReservations} reserved`;
+        return {
+          value: b.id,
+          label: `${b.title} — ${b.author} (${copyBits})`,
+        };
+      }),
+    [books],
+  );
+
   const buildPayload = () => ({
     branchId,
     bookId,
@@ -82,7 +156,8 @@ export function ReservationDialog({
       }),
     onSuccess: async () => {
       toast.success('Reservation created');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryReservations(branchId) });
+      await queryClient.invalidateQueries({ queryKey: ['library-reservations', branchId] });
+      await queryClient.invalidateQueries({ queryKey: ['library-books', branchId] });
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
       onOpenChange(false);
     },
@@ -95,6 +170,10 @@ export function ReservationDialog({
   const handleSave = () => {
     const payload = buildPayload();
     if (!validate(payload)) return;
+    if (selectedSummary && !selectedSummary.canReserve) {
+      toast.error(selectedSummary.reason ?? 'This book cannot be reserved right now');
+      return;
+    }
     mutation.mutate(payload);
   };
 
@@ -131,13 +210,34 @@ export function ReservationDialog({
                   setBookId(value);
                   clearField('bookId');
                 }}
-                options={(booksData?.data ?? []).map((b) => ({
-                  value: b.id,
-                  label: `${b.title} — ${b.author}`,
-                }))}
+                options={bookOptions}
                 className={fieldClassName('bookId', 'w-full')}
               />
               <FormFieldError message={errors.bookId} />
+              {selectedBook && selectedSummary ? (
+                <div className="mt-2 space-y-1 text-xs text-[var(--text-sub-500)]">
+                  <p>
+                    {selectedSummary.available}/{selectedSummary.total} copies available ·{' '}
+                    {selectedSummary.activeReservations} active reservation
+                    {selectedSummary.activeReservations === 1 ? '' : 's'} ·{' '}
+                    {selectedSummary.queueSlotsLeft} queue slot
+                    {selectedSummary.queueSlotsLeft === 1 ? '' : 's'} left
+                  </p>
+                  {(selectedBook.copies ?? []).length > 0 ? (
+                    <p>
+                      Copies:{' '}
+                      {(selectedBook.copies ?? [])
+                        .map((c) => `${c.copyCode} (${formatLabel(c.status)})`)
+                        .join(', ')}
+                    </p>
+                  ) : null}
+                  {selectedSummary.reason ? (
+                    <p className="text-amber-700">{selectedSummary.reason}</p>
+                  ) : (
+                    <p className="text-emerald-700">Ready to reserve — all copies are currently out</p>
+                  )}
+                </div>
+              ) : null}
             </div>
             <div>
               <FormFieldLabel htmlFor="reserve-student">Student</FormFieldLabel>
@@ -170,11 +270,14 @@ export function ReservationDialog({
           </button>
           <button
             type="button"
-            disabled={mutation.isPending}
+            disabled={
+              mutation.isPending || (!!selectedSummary && !selectedSummary.canReserve)
+            }
             onClick={handleSave}
             className={cn(
               'rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white',
-              mutation.isPending && 'opacity-50',
+              (mutation.isPending || (!!selectedSummary && !selectedSummary.canReserve)) &&
+                'opacity-50',
             )}
           >
             {mutation.isPending ? 'Saving…' : 'Create reservation'}

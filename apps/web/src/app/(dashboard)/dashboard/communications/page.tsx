@@ -34,6 +34,7 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -153,6 +154,7 @@ export default function CommunicationsPage() {
       <SendMessageDialog open={sendOpen} onOpenChange={setSendOpen} />
       <BroadcastDialog open={broadcastOpen} onOpenChange={setBroadcastOpen} />
 
+      <ComingSoonFrame featureId="communications">
       <MainStatsSection
         isLoading={statsLoading}
         stats={[
@@ -311,6 +313,7 @@ export default function CommunicationsPage() {
           />
         )}
       </div>
+      </ComingSoonFrame>
     </div>
   );
 }

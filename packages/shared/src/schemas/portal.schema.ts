@@ -89,6 +89,10 @@ export const LEAVE_REQUEST_STATUSES = ['pending', 'approved', 'rejected'] as con
 export const listLeaveRequestsQuerySchema = z
   .object({
     kind: z.enum(['student', 'employee']).optional(),
+    status: z.enum(LEAVE_REQUEST_STATUSES).optional(),
+    search: z.string().optional(),
+    fromDate: z.string().optional(),
+    toDate: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 

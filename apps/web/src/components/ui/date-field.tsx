@@ -14,6 +14,8 @@ export type DateFieldProps = Omit<
   value: string;
   onValueChange: (value: string) => void;
   type?: DateInputType;
+  /** Visible label above the input (use for From/To ranges in filter bars). */
+  label?: string;
   /** When true (default), selecting a past calendar day asks for confirmation. */
   confirmPast?: boolean;
   confirmTitle?: string;
@@ -30,6 +32,7 @@ export function DateField({
   value,
   onValueChange,
   type = 'date',
+  label,
   confirmPast = true,
   confirmTitle = 'This is an old date',
   confirmDescription = 'You selected a date in the past. Continue only if you meant to backdate (for example, you forgot to add leave or record something earlier).',
@@ -86,17 +89,34 @@ export function DateField({
     setConfirmOpen(false);
   }
 
+  const input = (
+    <input
+      {...rest}
+      id={inputId}
+      type={type}
+      disabled={disabled}
+      aria-label={rest['aria-label'] ?? label}
+      className={cn(className)}
+      value={draft}
+      onChange={(e) => handleChange(e.target.value)}
+    />
+  );
+
   return (
     <>
-      <input
-        {...rest}
-        id={inputId}
-        type={type}
-        disabled={disabled}
-        className={cn(className)}
-        value={draft}
-        onChange={(e) => handleChange(e.target.value)}
-      />
+      {label ? (
+        <div className="flex min-w-0 flex-col gap-1">
+          <label
+            htmlFor={inputId}
+            className="text-xs font-medium leading-4 text-[var(--text-sub-500,#525866)]"
+          >
+            {label}
+          </label>
+          {input}
+        </div>
+      ) : (
+        input
+      )}
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={(open) => {

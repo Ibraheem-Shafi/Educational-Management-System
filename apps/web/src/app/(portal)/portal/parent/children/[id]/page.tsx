@@ -32,6 +32,7 @@ import { StatusBadge } from '@/components/layout/status-badge';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -187,25 +188,27 @@ export default function ParentChildOverviewPage() {
       </ContentPanel>
 
       {aiChild && (
-        <ContentPanel title="AI performance summary">
-          <div className="space-y-3 px-5 py-4">
-            <p className="text-sm text-[var(--text-sub-500)]">{aiChild.narrative}</p>
-            {aiChild.overallPercentage !== null && (
-              <p className="text-sm font-medium text-text-main-900">
-                Overall: {aiChild.overallPercentage}%
-              </p>
-            )}
-            {aiChild.recommendations.length > 0 && (
-              <ul className="space-y-1 text-sm text-[var(--text-sub-500)]">
-                {aiChild.recommendations.map((r, i) => (
-                  <li key={i}>
-                    <span className="font-medium text-text-main-900">{r.subject}:</span> {r.tip}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </ContentPanel>
+        <ComingSoonFrame featureId="portal-insights">
+          <ContentPanel title="AI performance summary">
+            <div className="space-y-3 px-5 py-4">
+              <p className="text-sm text-[var(--text-sub-500)]">{aiChild.narrative}</p>
+              {aiChild.overallPercentage !== null && (
+                <p className="text-sm font-medium text-text-main-900">
+                  Overall: {aiChild.overallPercentage}%
+                </p>
+              )}
+              {aiChild.recommendations.length > 0 && (
+                <ul className="space-y-1 text-sm text-[var(--text-sub-500)]">
+                  {aiChild.recommendations.map((r, i) => (
+                    <li key={i}>
+                      <span className="font-medium text-text-main-900">{r.subject}:</span> {r.tip}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </ContentPanel>
+        </ComingSoonFrame>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">

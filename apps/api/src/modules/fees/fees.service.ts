@@ -9,14 +9,17 @@ import {
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { AccountingPostingService } from '../accounting/accounting-posting.service';
+import { DocumentsService } from '../documents/documents.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
 import type {
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
+  ListFeeTypesQuery,
   RecordPaymentInput,
   RecordFeePaymentInput,
+  PrepareFeePaymentReceiptUploadInput,
   CreateFeeStructureInput,
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
@@ -29,6 +32,15 @@ import { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } from '@ei
 
 const STATS_CACHE_TTL_MS = 45_000;
 
+/** Parse YYYY-MM-DD (or ISO) to start/end of that calendar day in UTC. */
+function dueDayStart(dateStr: string): Date {
+  return new Date(`${dateStr.slice(0, 10)}T00:00:00.000Z`);
+}
+
+function dueDayEnd(dateStr: string): Date {
+  return new Date(`${dateStr.slice(0, 10)}T23:59:59.999Z`);
+}
+
 @Injectable()
 export class FeesService {
   constructor(
@@ -36,6 +48,7 @@ export class FeesService {
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
     private readonly accountingPosting: AccountingPostingService,
+    private readonly documents: DocumentsService,
   ) {}
 
   async getStats(scope: BranchScope): Promise<FeesStatsResponse> {
@@ -144,9 +157,26 @@ export class FeesService {
     return result;
   }
 
-  async listTypes(includeInactive = false) {
+  async listTypes(query: ListFeeTypesQuery = {}) {
+    const search = query.search?.trim();
+    const where = {
+      ...(query.isActive !== undefined
+        ? { isActive: query.isActive }
+        : query.includeInactive
+          ? {}
+          : { isActive: true }),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' as const } },
+              { code: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
     const types = await this.prisma.feeType.findMany({
-      where: includeInactive ? undefined : { isActive: true },
+      where,
       orderBy: { name: 'asc' },
     });
     return { data: types };
@@ -161,10 +191,29 @@ export class FeesService {
           : scope;
     await this.applyLateFeesToOverdue(effective);
 
+    const search = query.search?.trim();
+    const dueDate =
+      query.dueFrom || query.dueTo
+        ? {
+            ...(query.dueFrom ? { gte: dueDayStart(query.dueFrom) } : {}),
+            ...(query.dueTo ? { lte: dueDayEnd(query.dueTo) } : {}),
+          }
+        : undefined;
+
     const where = {
       ...prismaBranchFilter(effective),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.statusId ? { statusId: query.statusId } : {}),
+      ...(query.feeTypeId ? { feeTypeId: query.feeTypeId } : {}),
+      ...(dueDate ? { dueDate } : {}),
+      ...(search
+        ? {
+            OR: [
+              { invoiceNo: { contains: search, mode: 'insensitive' as const } },
+              { student: { fullName: { contains: search, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
     };
 
     const [invoices, total] = await Promise.all([
@@ -281,10 +330,34 @@ export class FeesService {
         amount: input.amount ?? remaining,
         method: input.method ?? 'other',
         paidAt: input.paidAt,
+        providerRef: input.providerRef,
+        receipt: input.receipt,
       },
       user,
       scope,
       { provider: 'manual' },
+    );
+  }
+
+  async preparePaymentReceiptUpload(
+    invoiceId: string,
+    input: PrepareFeePaymentReceiptUploadInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id: invoiceId, ...prismaBranchFilter(scope) },
+      select: { id: true, branchId: true, studentId: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    return this.documents.prepareUpload(
+      {
+        fileName: input.fileName,
+        branchId: invoice.branchId,
+        studentId: invoice.studentId,
+      },
+      user,
     );
   }
 
@@ -318,6 +391,8 @@ export class FeesService {
     const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
     const status = options?.status ?? 'succeeded';
     const receiptNo = await this.nextDocumentNumber(invoice.branchId, 'RCP');
+    const providerRef =
+      (input.providerRef?.trim() || options?.providerRef?.trim() || undefined) ?? undefined;
 
     const payment = await this.prisma.feePayment.create({
       data: {
@@ -327,10 +402,20 @@ export class FeesService {
         amount,
         method: input.method,
         provider: options?.provider ?? 'manual',
-        providerRef: options?.providerRef,
+        providerRef,
         status,
         paidAt: status === 'succeeded' ? paidAt : null,
         recordedById: user.id,
+        meta: input.receipt
+          ? {
+              receipt: {
+                storagePath: input.receipt.storagePath,
+                fileName: input.receipt.fileName,
+                mimeType: input.receipt.mimeType ?? null,
+                sizeBytes: input.receipt.sizeBytes ?? null,
+              },
+            }
+          : undefined,
       },
     });
 
@@ -500,12 +585,21 @@ export class FeesService {
         : query.branchId
           ? selectedBranchScope([query.branchId])
           : scope;
+    const search = query.search?.trim();
     const structures = await this.prisma.feeStructure.findMany({
       where: {
         ...prismaBranchFilter(effective),
         ...(query.batchId ? { batchId: query.batchId } : {}),
         ...(query.programId ? { programId: query.programId } : {}),
-        ...(query.includeInactive ? {} : { isActive: true }),
+        ...(query.feeTypeId ? { feeTypeId: query.feeTypeId } : {}),
+        ...(query.isActive !== undefined
+          ? { isActive: query.isActive }
+          : query.includeInactive
+            ? {}
+            : { isActive: true }),
+        ...(search
+          ? { feeType: { name: { contains: search, mode: 'insensitive' as const } } }
+          : {}),
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1260,6 +1354,7 @@ export class FeesService {
         receiptNo: payment.receiptNo,
         amount: Number(payment.amount),
         method: payment.method,
+        providerRef: payment.providerRef,
         status: payment.status,
         paidAt: payment.paidAt?.toISOString() ?? null,
       },

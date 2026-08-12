@@ -22,7 +22,13 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import type { PayrollRunSummary } from './types';
 import { formatLabel, formatPeriod, statusBadgeCode } from './types';
 
-export function HistoryPanel({ branchId }: { branchId: string }) {
+export function HistoryPanel({
+  branchId,
+  onViewRun,
+}: {
+  branchId: string;
+  onViewRun: (runId: string) => void;
+}) {
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
@@ -125,7 +131,7 @@ export function HistoryPanel({ branchId }: { branchId: string }) {
                       items={[
                         {
                           label: 'View',
-                          href: `/dashboard/payroll?runId=${row.id}`,
+                          onClick: () => onViewRun(row.id),
                         },
                         {
                           label: 'Export',

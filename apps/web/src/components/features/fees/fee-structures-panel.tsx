@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,6 +15,9 @@ import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { SearchInput } from '@/components/layout/search-input';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -34,6 +37,8 @@ import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { FeeTypeRow } from '@/components/features/fees/fee-types-panel';
+
+type ActiveFilter = '' | 'true' | 'false';
 
 type StructureRow = {
   id: string;
@@ -72,17 +77,48 @@ export function FeeStructuresPanel({
   const [amount, setAmount] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterFeeTypeId, setFilterFeeTypeId] = useState('');
+  const [filterProgramId, setFilterProgramId] = useState('');
+  const [filterBatchId, setFilterBatchId] = useState('');
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('true');
 
   const formBranchId = editing?.branchId || branchId || pickedBranchId;
   const createForm = useFormErrors(createFeeStructureSchema);
   const editForm = useFormErrors(updateFeeStructureSchema);
   const activeForm = editing ? editForm : createForm;
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+  }, []);
+
+  const structureListExtra: Record<string, string | undefined> = {
+    search: search.trim() || undefined,
+    feeTypeId: filterFeeTypeId || undefined,
+    programId: filterProgramId || undefined,
+    batchId: filterBatchId || undefined,
+  };
+  if (activeFilter === 'true') {
+    // Active only — default API behavior (omit includeInactive)
+  } else if (activeFilter === 'false') {
+    structureListExtra.includeInactive = 'true';
+    structureListExtra.isActive = 'false';
+  } else {
+    structureListExtra.includeInactive = 'true';
+  }
+
   const { data: structures, isLoading, error } = useQuery({
-    queryKey: queryKeys.feeStructures({ scopeKey, includeInactive: true }),
+    queryKey: queryKeys.feeStructures({
+      scopeKey,
+      search: search.trim() || undefined,
+      feeTypeId: filterFeeTypeId || undefined,
+      programId: filterProgramId || undefined,
+      batchId: filterBatchId || undefined,
+      activeFilter: activeFilter || 'all',
+    }),
     queryFn: () =>
       apiClient<{ data: StructureRow[] }>(
-        withBranchScope('/fee-structures', effectiveScope, { includeInactive: 'true' }),
+        withBranchScope('/fee-structures', effectiveScope, structureListExtra),
         { token },
       ),
     enabled: !!token,
@@ -91,7 +127,7 @@ export function FeeStructuresPanel({
   const { data: feeTypes } = useQuery({
     queryKey: queryKeys.feeTypes(),
     queryFn: () => apiClient<{ data: FeeTypeRow[] }>('/fee-types', { token }),
-    enabled: !!token && dialogOpen,
+    enabled: !!token,
   });
 
   const { data: programs } = useQuery({
@@ -101,7 +137,34 @@ export function FeeStructuresPanel({
     enabled: !!token && !!formBranchId && dialogOpen,
   });
 
+  const filterProgramsBranchId = branchId || undefined;
+  const { data: filterPrograms } = useQuery({
+    queryKey: ['programs', 'structures-filter', filterProgramsBranchId || scopeKey],
+    queryFn: async () => {
+      if (!filterProgramsBranchId) return { data: [] as ProgramOption[] };
+      return apiClient<{ data: ProgramOption[] }>(
+        `/programs/options?branchId=${filterProgramsBranchId}`,
+        { token },
+      );
+    },
+    enabled: !!token && !!filterProgramsBranchId,
+  });
+
   const { data: batches } = useBatches(token, formBranchId, programId || undefined, dialogOpen);
+  const { data: filterBatches } = useBatches(
+    token,
+    branchId,
+    filterProgramId || undefined,
+    !!branchId,
+  );
+
+  const hasStructureFilters = Boolean(
+    search.trim() ||
+      filterFeeTypeId ||
+      filterProgramId ||
+      filterBatchId ||
+      activeFilter !== 'true',
+  );
 
   const programNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -249,6 +312,75 @@ export function FeeStructuresPanel({
           </button>
         )}
       </div>
+
+      <FilterBar className="items-center">
+        <SearchInput
+          value={search}
+          onValueChange={handleSearchChange}
+          placeholder="Search fee type"
+        />
+        <SelectDropdown
+          aria-label="Filter by fee type"
+          placeholder="All fee types"
+          value={filterFeeTypeId}
+          onValueChange={setFilterFeeTypeId}
+          options={[
+            { value: '', label: 'All fee types' },
+            ...(feeTypes?.data.map((t) => ({ value: t.id, label: t.name })) ?? []),
+          ]}
+        />
+        <SelectDropdown
+          aria-label="Filter by program"
+          placeholder="All programs"
+          value={filterProgramId}
+          onValueChange={(next) => {
+            setFilterProgramId(next);
+            setFilterBatchId('');
+          }}
+          options={[
+            { value: '', label: 'All programs' },
+            ...(filterPrograms?.data ?? allPrograms?.data ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            })),
+          ]}
+        />
+        <SelectDropdown
+          aria-label="Filter by batch"
+          placeholder="All batches"
+          value={filterBatchId}
+          onValueChange={setFilterBatchId}
+          options={[
+            { value: '', label: 'All batches' },
+            ...(filterBatches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+          ]}
+        />
+        <SelectDropdown
+          aria-label="Filter by status"
+          placeholder="Active"
+          value={activeFilter}
+          onValueChange={(next) => setActiveFilter(next as ActiveFilter)}
+          options={[
+            { value: 'true', label: 'Active' },
+            { value: 'false', label: 'Inactive' },
+            { value: '', label: 'All' },
+          ]}
+        />
+        {hasStructureFilters && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('');
+              setFilterFeeTypeId('');
+              setFilterProgramId('');
+              setFilterBatchId('');
+              setActiveFilter('true');
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
 
       <div className="bg-white">
         <div className={dataTableWrapperClass}>

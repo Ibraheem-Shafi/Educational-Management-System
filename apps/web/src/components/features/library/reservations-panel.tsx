@@ -159,9 +159,21 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row) => (
+                  rows.map((row) => {
+                    const copies = row.book?.copies ?? [];
+                    const available = copies.filter((c) => c.status === 'available').length;
+                    return (
                     <tr key={row.id} className={dataTableRowHoverClass}>
-                      <td className={dataTableTdClass}>{row.book?.title ?? '—'}</td>
+                      <td className={dataTableTdClass}>
+                        <div>{row.book?.title ?? '—'}</div>
+                        {copies.length > 0 ? (
+                          <p className="mt-0.5 text-xs text-[var(--text-sub-500)]">
+                            {available}/{copies.length} available ·{' '}
+                            {row.book?._count?.reservations ?? 0} active reserved ·{' '}
+                            {copies.map((c) => c.copyCode).join(', ')}
+                          </p>
+                        ) : null}
+                      </td>
                       <td className={dataTableTdClass}>{borrowerName(row)}</td>
                       <td className={dataTableTdClass}>{formatDate(row.reservedAt)}</td>
                       <td className={dataTableTdClass}>
@@ -188,7 +200,8 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
                         </td>
                       )}
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

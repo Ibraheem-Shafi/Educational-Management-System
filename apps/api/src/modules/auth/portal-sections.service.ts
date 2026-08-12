@@ -21,6 +21,7 @@ import type {
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
   LeaveAttachmentMetaInput,
+  ListLeaveRequestsQuery,
   PortalSectionQuery,
   PrepareLeaveAttachmentUploadInput,
 } from '@eims/shared';
@@ -677,23 +678,60 @@ export class PortalSectionsService implements OnModuleInit {
 
   async listStaffLeaveRequests(
     scope: BranchScope,
-    kind?: string,
-    page = 1,
-    limit = 8,
+    query: ListLeaveRequestsQuery,
   ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const kind = query.kind;
+    const status = query.status;
+    const search = query.search?.trim();
     const branchFilter = prismaBranchFilter(scope);
-    const where = {
-      ...(kind ? { kind } : {}),
-      ...(scope.kind === 'selected'
-        ? {
-            OR: [
-              { kind: 'student', student: { ...branchFilter } },
-              { kind: 'employee', user: { ...branchFilter } },
-              { kind: 'employee', userId: { not: null }, user: { branchId: null } },
-            ],
-          }
-        : {}),
-    };
+
+    const filters: Record<string, unknown>[] = [];
+
+    if (kind) filters.push({ kind });
+    if (status) filters.push({ status });
+
+    if (search) {
+      const nameFilter = { contains: search, mode: 'insensitive' as const };
+      if (kind === 'student') {
+        filters.push({ student: { fullName: nameFilter } });
+      } else if (kind === 'employee') {
+        filters.push({ user: { fullName: nameFilter } });
+      } else {
+        filters.push({
+          OR: [
+            { student: { fullName: nameFilter } },
+            { user: { fullName: nameFilter } },
+          ],
+        });
+      }
+    }
+
+    if (query.fromDate || query.toDate) {
+      const dateFilter: { fromDate?: { lte: Date }; toDate?: { gte: Date } } = {};
+      if (query.toDate) {
+        const [y, m, d] = query.toDate.split('-').map(Number);
+        dateFilter.fromDate = { lte: new Date(Date.UTC(y, m - 1, d)) };
+      }
+      if (query.fromDate) {
+        const [y, m, d] = query.fromDate.split('-').map(Number);
+        dateFilter.toDate = { gte: new Date(Date.UTC(y, m - 1, d)) };
+      }
+      filters.push(dateFilter);
+    }
+
+    if (scope.kind === 'selected') {
+      filters.push({
+        OR: [
+          { kind: 'student', student: { ...branchFilter } },
+          { kind: 'employee', user: { ...branchFilter } },
+          { kind: 'employee', userId: { not: null }, user: { branchId: null } },
+        ],
+      });
+    }
+
+    const where = filters.length > 0 ? { AND: filters } : {};
 
     const [requests, total] = await Promise.all([
       this.prisma.leaveRequest.findMany({

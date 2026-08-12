@@ -29,6 +29,7 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PermissionGate } from '@/components/auth/permission-gate';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 
 const thClass =
@@ -259,6 +260,7 @@ export default function AiAttendancePage() {
         description="Upload a register photo, review suggestions, then confirm — never auto-submitted"
       />
 
+      <ComingSoonFrame featureId="ai-attendance">
       <MainStatsSection
         isLoading={sessionsLoading}
         stats={[
@@ -449,6 +451,7 @@ export default function AiAttendancePage() {
           />
         )}
       </ContentPanel>
+      </ComingSoonFrame>
     </div>
   );
 }

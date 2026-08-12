@@ -76,6 +76,7 @@ function LoginPageContent() {
     navigatedRef.current = true;
     toast.success('Welcome back');
     router.replace(getPostLoginPath(roles));
+    router.refresh();
   }, [router]);
 
   useEffect(() => {

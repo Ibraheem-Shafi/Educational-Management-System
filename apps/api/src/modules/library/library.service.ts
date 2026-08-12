@@ -202,7 +202,7 @@ export class LibraryService {
     const [books, total] = await Promise.all([
       this.prisma.libraryBook.findMany({
         where,
-        orderBy: { title: 'asc' },
+        orderBy: [{ createdAt: 'desc' }, { title: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
         include: {
@@ -613,7 +613,22 @@ export class LibraryService {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          book: { select: { id: true, title: true, author: true } },
+          book: {
+            select: {
+              id: true,
+              title: true,
+              author: true,
+              copies: {
+                where: { deletedAt: null },
+                select: { id: true, copyCode: true, status: true },
+              },
+              _count: {
+                select: {
+                  reservations: { where: { deletedAt: null, status: 'active' } },
+                },
+              },
+            },
+          },
           student: { select: { id: true, fullName: true } },
           user: { select: { id: true, fullName: true } },
         },
@@ -627,6 +642,12 @@ export class LibraryService {
   async createReservation(input: CreateLibraryReservationInput, user: AuthUser) {
     const book = await this.prisma.libraryBook.findFirst({
       where: { id: input.bookId, branchId: input.branchId, deletedAt: null },
+      include: {
+        copies: {
+          where: { deletedAt: null },
+          select: { id: true, copyCode: true, status: true },
+        },
+      },
     });
     if (!book) throw new NotFoundException('Book not found');
 
@@ -636,6 +657,57 @@ export class LibraryService {
       input.studentId,
       input.userId,
     );
+
+    const copies = book.copies;
+    if (copies.length === 0) {
+      throw new BadRequestException(
+        'This book has no copies. Add a copy before creating a reservation.',
+      );
+    }
+
+    const availableCopies = copies.filter((c) => c.status === 'available');
+    if (availableCopies.length > 0) {
+      const codes = availableCopies.map((c) => c.copyCode).join(', ');
+      throw new BadRequestException(
+        `Copy available (${codes}). Issue a loan instead of reserving.`,
+      );
+    }
+
+    const existingForBorrower = await this.prisma.libraryReservation.findFirst({
+      where: {
+        bookId: input.bookId,
+        branchId: input.branchId,
+        deletedAt: null,
+        status: 'active',
+        ...(input.borrowerType === 'student'
+          ? { studentId: input.studentId }
+          : { userId: input.userId }),
+      },
+    });
+    if (existingForBorrower) {
+      throw new BadRequestException(
+        'This borrower already has an active reservation for this book',
+      );
+    }
+
+    // Queue size is capped by physical copies so one title cannot be
+    // over-reserved beyond how many copies can eventually be fulfilled.
+    const activeReservationCount = await this.prisma.libraryReservation.count({
+      where: {
+        bookId: input.bookId,
+        deletedAt: null,
+        status: 'active',
+      },
+    });
+    if (activeReservationCount >= copies.length) {
+      throw new BadRequestException(
+        `Reservation queue is full for this book (${copies.length} ${
+          copies.length === 1 ? 'copy' : 'copies'
+        }, ${activeReservationCount} active reservation${
+          activeReservationCount === 1 ? '' : 's'
+        })`,
+      );
+    }
 
     const reservation = await this.prisma.libraryReservation.create({
       data: {

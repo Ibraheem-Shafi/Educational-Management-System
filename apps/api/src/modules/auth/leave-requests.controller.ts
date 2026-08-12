@@ -36,7 +36,7 @@ export class LeaveRequestsController {
     @BranchScopeParam() scope: BranchScope,
     @Query(createZodPipe(listLeaveRequestsQuerySchema)) query: ListLeaveRequestsQuery,
   ) {
-    return this.portalService.listStaffLeaveRequests(scope, query.kind, query.page, query.limit);
+    return this.portalService.listStaffLeaveRequests(scope, query);
   }
 
   @Get('mine')

@@ -38,6 +38,9 @@ export const listIssuesQuerySchema = z
     branchId: z.string().optional(),
     studentId: z.string().optional(),
     templateId: z.string().optional(),
+    search: z.string().optional(),
+    issuedFrom: z.string().optional(),
+    issuedTo: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 

@@ -6,7 +6,7 @@ import {
   requiredString,
 } from '../validation/messages';
 import { refineEndAfterStart } from '../validation/date-range';
-import { paginationQuerySchema } from './common.schema';
+import { paginationQuerySchema, queryBooleanSchema } from './common.schema';
 
 export const programBatchInputSchema = z.object({
   id: requiredId('Batch').optional(),
@@ -36,7 +36,8 @@ export type UpdateProgramInput = z.infer<typeof updateProgramSchema>;
 export const listProgramsQuerySchema = z
   .object({
     branchId: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -67,7 +68,8 @@ export const listBatchesQuerySchema = z
   .object({
     branchId: z.string().optional(),
     programId: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -89,7 +91,7 @@ export type UpdateSubjectInput = z.infer<typeof updateSubjectSchema>;
 export const listSubjectsQuerySchema = z
   .object({
     search: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
   })
   .merge(paginationQuerySchema);
 
@@ -121,7 +123,7 @@ export type UpdateAcademicSessionInput = z.infer<typeof updateAcademicSessionSch
 export const listAcademicSessionsQuerySchema = z
   .object({
     search: z.string().optional(),
-    isCurrent: z.coerce.boolean().optional(),
+    isCurrent: queryBooleanSchema,
   })
   .merge(paginationQuerySchema);
 

@@ -22,6 +22,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 import type { TransportVehicle } from './types';
 import { formatCoords, formatDateTime, formatLabel, statusBadgeCode } from './types';
@@ -76,7 +77,7 @@ export function GpsPanel({ branchId }: { branchId: string }) {
   const rows = (data?.data ?? []).filter((v) => v.gpsDeviceId);
 
   return (
-    <div className="space-y-4">
+    <ComingSoonFrame featureId="transport-gps" className="space-y-4">
       <ContentPanel title="GPS integration">
         <div className="space-y-3 px-5 py-4 text-sm text-[var(--text-sub-500)]">
           <p>
@@ -176,6 +177,6 @@ export function GpsPanel({ branchId }: { branchId: string }) {
           </>
         )}
       </ContentPanel>
-    </div>
+    </ComingSoonFrame>
   );
 }

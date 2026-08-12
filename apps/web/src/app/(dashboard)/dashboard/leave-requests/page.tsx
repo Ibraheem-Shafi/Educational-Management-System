@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,8 +18,13 @@ import {
 } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { Tabs } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { DateField } from '@/components/ui/date-field';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { RequestLeaveDialog } from '@/components/features/leave-requests/request-leave-dialog';
 import { LeaveRequestDetailDialog } from '@/components/features/leave-requests/leave-request-detail-dialog';
@@ -35,6 +40,16 @@ import { cn } from '@/lib/utils';
 
 type Tab = 'all' | 'student' | 'employee' | 'mine';
 
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const dateFieldClassName =
+  'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm sm:w-auto';
+
 export default function LeaveRequestsPage() {
   const { session, user } = useAuth();
   const token = session?.access_token;
@@ -45,8 +60,17 @@ export default function LeaveRequestsPage() {
   const [tab, setTab] = useState<Tab>(canRead ? 'all' : 'mine');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [requestOpen, setRequestOpen] = useState(false);
   const [detailRequest, setDetailRequest] = useState<LeaveRequestResponse | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
   const tabs = useMemo(() => {
     const items: Array<{ id: Tab; label: string }> = [];
@@ -63,18 +87,33 @@ export default function LeaveRequestsPage() {
 
   const listKind = tab === 'student' || tab === 'employee' ? tab : undefined;
   const { scopeKey, appendToSearchParams } = useEffectiveBranchScope();
+  const hasFilters = Boolean(search || status || fromDate || toDate);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('limit', String(limit));
     if (listKind) params.set('kind', listKind);
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (fromDate) params.set('fromDate', fromDate);
+    if (toDate) params.set('toDate', toDate);
     if (tab !== 'mine') appendToSearchParams(params);
     return params.toString();
-  }, [page, limit, listKind, tab, appendToSearchParams]);
+  }, [page, limit, listKind, search, status, fromDate, toDate, tab, appendToSearchParams]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.leaveRequests, tab === 'mine' ? 'mine' : scopeKey, tab, page, limit],
+    queryKey: [
+      ...queryKeys.leaveRequests,
+      tab === 'mine' ? 'mine' : scopeKey,
+      tab,
+      search,
+      status,
+      fromDate,
+      toDate,
+      page,
+      limit,
+    ],
     queryFn: () => {
       if (tab === 'mine') {
         return apiClient<PaginatedResponse<LeaveRequestResponse>>(
@@ -145,6 +184,63 @@ export default function LeaveRequestsPage() {
         )}
         {tab !== 'mine' ? <PageBranchScopeControl /> : null}
       </div>
+
+      {tab !== 'mine' ? (
+        <FilterBar className="items-end">
+          <SearchInput
+            value={search}
+            onValueChange={handleSearchChange}
+            placeholder="Search by name"
+          />
+          <SelectDropdown
+            aria-label="Filter by status"
+            placeholder="All statuses"
+            value={status}
+            onValueChange={(next) => {
+              setStatus(next);
+              setPage(1);
+            }}
+            options={STATUS_OPTIONS}
+          />
+          <DateField
+            label="From"
+            aria-label="From date"
+            value={fromDate}
+            confirmPast={false}
+            onValueChange={(next) => {
+              setFromDate(next);
+              setPage(1);
+            }}
+            className={dateFieldClassName}
+          />
+          <DateField
+            label="To"
+            aria-label="To date"
+            value={toDate}
+            confirmPast={false}
+            min={fromDate || undefined}
+            onValueChange={(next) => {
+              setToDate(next);
+              setPage(1);
+            }}
+            className={dateFieldClassName}
+          />
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSearch('');
+                setStatus('');
+                setFromDate('');
+                setToDate('');
+                setPage(1);
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </FilterBar>
+      ) : null}
 
       <div className="overflow-hidden rounded-xl border border-[var(--stroke-soft-200,#E2E4E9)] bg-white">
         <div className={dataTableWrapperClass}>

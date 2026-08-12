@@ -14,6 +14,7 @@ interface ReceiptPrintData {
     receiptNo: string | null;
     amount: number;
     method: string;
+    providerRef?: string | null;
     paidAt: string | null;
   };
   invoice: {
@@ -94,6 +95,7 @@ export default function PrintFeeReceiptPage() {
             {data.invoice.feeType ? <p>Fee: {data.invoice.feeType.name}</p> : null}
             <p className="text-base font-semibold">Paid: {formatCurrency(data.payment.amount)}</p>
             {fieldVisible(t, 'showPaymentMethod') ? <p>Method: {data.payment.method}</p> : null}
+            {data.payment.providerRef ? <p>Reference: {data.payment.providerRef}</p> : null}
             {data.payment.paidAt ? <p>Date: {new Date(data.payment.paidAt).toLocaleString()}</p> : null}
           </div>
           <PrintFooter footerText={t?.footerText} extraNote={t?.extraNote} />

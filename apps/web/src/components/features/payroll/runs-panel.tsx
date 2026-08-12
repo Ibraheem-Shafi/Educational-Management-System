@@ -1,17 +1,19 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Download, Play, Send, Check, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatCurrency, PERMISSIONS } from '@eims/shared';
+import { formatCurrency, payrollRunStatuses, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import type { PaginatedResponse } from '@eims/types';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { Button } from '@/components/ui/button';
@@ -33,6 +35,22 @@ import { CreateRunDialog } from './create-run-dialog';
 import { AdjustLineDialog } from './adjust-line-dialog';
 import type { PayrollLine, PayrollRunDetail, PayrollRunSummary } from './types';
 import { formatLabel, formatPeriod, statusBadgeCode } from './types';
+
+const MONTH_OPTIONS = [
+  { value: '', label: 'All months' },
+  ...Array.from({ length: 12 }, (_, i) => ({
+    value: String(i + 1),
+    label: new Date(2000, i, 1).toLocaleString('en-US', { month: 'long' }),
+  })),
+];
+
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  ...payrollRunStatuses.map((status) => ({
+    value: status,
+    label: formatLabel(status),
+  })),
+];
 
 function RunActions({
   branchId,
@@ -190,6 +208,7 @@ function RunDetail({
   const canManage = can(PERMISSIONS.PAYROLL_MANAGE);
   const [adjustLine, setAdjustLine] = useState<PayrollLine | null>(null);
   const [, setTick] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const { data: run, isLoading } = useQuery({
     queryKey: queryKeys.payrollRun(runId),
@@ -197,20 +216,31 @@ function RunDetail({
     enabled: !!token && !!runId,
   });
 
+  // Scroll only after details load so layout height is stable (avoids jump-back on refetch).
+  useEffect(() => {
+    if (!run?.id) return;
+    const frame = requestAnimationFrame(() => {
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [runId, run?.id]);
+
   if (isLoading || !run) {
     return (
-      <ContentPanel title="Run details">
-        <div className="p-5">
-          <DataTableSkeletonRows columns={6} rows={4} />
-        </div>
-      </ContentPanel>
+      <div ref={rootRef} className="scroll-mt-4">
+        <ContentPanel title="Run details">
+          <div className="p-5">
+            <DataTableSkeletonRows columns={6} rows={4} />
+          </div>
+        </ContentPanel>
+      </div>
     );
   }
 
   const totalNet = run.lines.reduce((sum, line) => sum + line.netPay, 0);
 
   return (
-    <>
+    <div ref={rootRef} className="scroll-mt-4">
       <ContentPanel
         title={`${formatPeriod(run.year, run.month)} — ${formatLabel(run.status)}`}
         actions={
@@ -308,24 +338,57 @@ function RunDetail({
         open={!!adjustLine}
         onOpenChange={(open) => !open && setAdjustLine(null)}
       />
-    </>
+    </div>
   );
 }
 
-export function RunsPanel({ branchId }: { branchId: string }) {
+export function RunsPanel({
+  branchId,
+  initialRunId,
+}: {
+  branchId: string;
+  initialRunId?: string;
+}) {
   const { session } = useAuth();
   const token = session?.access_token;
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
+  const [status, setStatus] = useState('');
+  const [year, setYear] = useState('');
+  const [month, setMonth] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRunId ?? null);
+
+  useEffect(() => {
+    if (initialRunId) setSelectedRunId(initialRunId);
+  }, [initialRunId]);
+
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    return [
+      { value: '', label: 'All years' },
+      ...Array.from({ length: 8 }, (_, i) => {
+        const y = String(current - 5 + i);
+        return { value: y, label: y };
+      }),
+    ];
+  }, []);
+
+  const hasFilters = Boolean(status || year || month);
 
   const handleLimitChange = useCallback((next: number) => {
     setLimit(next);
     setPage(1);
   }, []);
 
-  const queryParams = { branchId, page, limit, excludeFinalized: true };
+  const queryParams = {
+    branchId,
+    page,
+    limit,
+    ...(status ? { status } : { excludeFinalized: true }),
+    ...(year ? { year: Number(year) } : {}),
+    ...(month ? { month: Number(month) } : {}),
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.payrollRuns(branchId, queryParams),
@@ -335,6 +398,9 @@ export function RunsPanel({ branchId }: { branchId: string }) {
         page: String(page),
         limit: String(limit),
       });
+      if (status) params.set('status', status);
+      if (year) params.set('year', year);
+      if (month) params.set('month', month);
       return apiClient<PaginatedResponse<PayrollRunSummary>>(
         `/payroll/runs?${params.toString()}`,
         { token },
@@ -342,10 +408,13 @@ export function RunsPanel({ branchId }: { branchId: string }) {
     },
     enabled: !!token && !!branchId,
     placeholderData: (previous) => previous,
-    select: (res) => ({
-      ...res,
-      data: res.data.filter((r) => r.status !== 'finalized'),
-    }),
+    select: (res) =>
+      status
+        ? res
+        : {
+            ...res,
+            data: res.data.filter((r) => r.status !== 'finalized'),
+          },
   });
 
   const rows = data?.data ?? [];
@@ -367,6 +436,59 @@ export function RunsPanel({ branchId }: { branchId: string }) {
           </PermissionGate>
         }
       >
+        <div className="border-b border-stroke-soft-200 px-5 py-4">
+          <FilterBar>
+            <SelectDropdown
+              aria-label="Filter by status"
+              placeholder="All statuses"
+              value={status}
+              onValueChange={(next) => {
+                setStatus(next);
+                setPage(1);
+              }}
+              options={STATUS_OPTIONS}
+              className="w-full sm:w-[180px]"
+            />
+            <SelectDropdown
+              aria-label="Filter by year"
+              placeholder="All years"
+              value={year}
+              onValueChange={(next) => {
+                setYear(next);
+                setPage(1);
+              }}
+              options={yearOptions}
+              className="w-full sm:w-[140px]"
+            />
+            <SelectDropdown
+              aria-label="Filter by month"
+              placeholder="All months"
+              value={month}
+              onValueChange={(next) => {
+                setMonth(next);
+                setPage(1);
+              }}
+              options={MONTH_OPTIONS}
+              className="w-full sm:w-[160px]"
+            />
+            {hasFilters && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setStatus('');
+                  setYear('');
+                  setMonth('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </FilterBar>
+        </div>
+
         <div className={dataTableWrapperClass}>
           <table className={dataTableClass}>
             <thead>
@@ -435,7 +557,7 @@ export function RunsPanel({ branchId }: { branchId: string }) {
         )}
       </ContentPanel>
 
-      {selectedRunId && <RunDetail branchId={branchId} runId={selectedRunId} />}
+      {selectedRunId ? <RunDetail branchId={branchId} runId={selectedRunId} /> : null}
 
       <CreateRunDialog
         branchId={branchId}

@@ -34,6 +34,7 @@ export const listAssessmentsQuerySchema = z
     typeId: z.string().optional(),
     status: z.enum(ASSESSMENT_STATUSES).optional(),
     publishedOnly: z.coerce.boolean().optional(),
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -95,11 +96,16 @@ export type UpdateAssessmentSeriesInput = z.infer<typeof updateAssessmentSeriesS
 export const listAssessmentTypesQuerySchema = z
   .object({
     all: z.coerce.boolean().optional(),
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
 export type ListAssessmentTypesQuery = z.infer<typeof listAssessmentTypesQuerySchema>;
 
-export const listAssessmentSeriesQuerySchema = paginationQuerySchema;
+export const listAssessmentSeriesQuerySchema = z
+  .object({
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
 
 export type ListAssessmentSeriesQuery = z.infer<typeof listAssessmentSeriesQuerySchema>;

@@ -59,6 +59,13 @@ export function AuthProvider({
   const meRequestId = useRef(0);
   const loadedTokenRef = useRef<string | null>(null);
   const inflightMe = useRef<Promise<AuthUser | null> | null>(null);
+  const userSupabaseIdRef = useRef<string | null>(
+    e2eBypass ? E2E_MOCK_USER.supabaseUserId : (initialUser?.supabaseUserId ?? null),
+  );
+
+  useEffect(() => {
+    userSupabaseIdRef.current = user?.supabaseUserId ?? null;
+  }, [user?.supabaseUserId]);
 
   useEffect(() => {
     if (e2eBypass) {
@@ -111,7 +118,7 @@ export function AuthProvider({
           loadedTokenRef.current = null;
           setUser(null);
           if (unauthorized) {
-            await supabase.auth.signOut();
+            await supabase.auth.signOut({ scope: 'local' });
           }
         }
       } finally {
@@ -126,15 +133,25 @@ export function AuthProvider({
     } = supabase.auth.onAuthStateChange(async (event, s) => {
       setSession(s);
 
-      if (s?.access_token) {
-        if (
-          initialUser &&
-          user?.id === initialUser.id &&
-          loadedTokenRef.current !== s.access_token
-        ) {
+      if (s?.access_token && s.user?.id) {
+        const sessionUserId = s.user.id;
+        // Only skip /auth/me when SSR profile is for *this* session subject.
+        // Never bind a new access token to a different user's hydrated profile
+        // (common after logout → login as another account on Vercel).
+        const ssrMatchesSession =
+          !!initialUser && initialUser.supabaseUserId === sessionUserId;
+
+        if (ssrMatchesSession && loadedTokenRef.current !== s.access_token) {
           loadedTokenRef.current = s.access_token;
+          setUser(initialUser);
           setLoading(false);
         } else if (s.access_token !== loadedTokenRef.current) {
+          await loadUser(s.access_token);
+        } else if (
+          userSupabaseIdRef.current &&
+          userSupabaseIdRef.current !== sessionUserId
+        ) {
+          loadedTokenRef.current = null;
           await loadUser(s.access_token);
         }
       } else {
@@ -144,34 +161,38 @@ export function AuthProvider({
         setUser(null);
       }
 
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [e2eBypass, supabase, queryClient, initialUser, user?.id]);
+  }, [e2eBypass, supabase, queryClient, initialUser]);
 
   const signOut = useCallback(async () => {
     queryClient.clear();
-    if (e2eBypass) {
-      setUser(null);
-      setSession(null);
-      return;
-    }
-    if (supabase) await supabase.auth.signOut();
+    meRequestId.current += 1;
     loadedTokenRef.current = null;
     inflightMe.current = null;
     setUser(null);
     setSession(null);
+    setLoading(false);
+    if (e2eBypass) return;
+    if (supabase) {
+      await supabase.auth.signOut({ scope: 'local' });
+    }
   }, [e2eBypass, supabase, queryClient]);
 
-  const syncAuth = useCallback((nextSession: Session, profile: AuthUser) => {
-    loadedTokenRef.current = nextSession.access_token;
-    setSession(nextSession);
-    setUser(profile);
-    setLoading(false);
-  }, []);
+  const syncAuth = useCallback(
+    (nextSession: Session, profile: AuthUser) => {
+      queryClient.clear();
+      loadedTokenRef.current = nextSession.access_token;
+      setSession(nextSession);
+      setUser(profile);
+      setLoading(false);
+    },
+    [queryClient],
+  );
 
   const value = useMemo(
     () => ({ session, user, loading, signOut, syncAuth }),

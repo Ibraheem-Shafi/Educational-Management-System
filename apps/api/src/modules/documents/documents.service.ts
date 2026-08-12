@@ -289,6 +289,9 @@ export class DocumentsService implements OnModuleInit {
       .createSignedUrl(objectKey, 3600);
 
     if (error) {
+      this.logger.warn(
+        `Signed URL failed for document ${doc.id} bucket=${DOCUMENTS_BUCKET} key=${objectKey}: ${error.message}`,
+      );
       throw new NotFoundException(
         'This file is no longer available in storage. It may not have been uploaded in this environment.',
       );

@@ -78,12 +78,37 @@ export default function PrintIdCardPage() {
     <>
       <style jsx global>{`
         @media print {
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
           .no-print {
             display: none !important;
           }
+          /* CR80 landscape — content must fit exactly one page */
           @page {
             size: 85.6mm 54mm;
-            margin: 4mm;
+            margin: 0;
+          }
+          .id-card-sheet {
+            min-height: 0 !important;
+            height: 54mm !important;
+            width: 85.6mm !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+          }
+          .id-card {
+            width: 85.6mm !important;
+            height: 54mm !important;
+            max-height: 54mm !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
           }
         }
       `}</style>
@@ -96,41 +121,45 @@ export default function PrintIdCardPage() {
           Print
         </button>
       </div>
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center p-6 print:min-h-0 print:p-0">
-        <div className="w-[340px] overflow-hidden rounded-xl border-2 border-[var(--midnight-blue-950,#01366C)] bg-white shadow-lg print:shadow-none">
-          <div className="bg-[var(--midnight-blue-950,#01366C)] px-4 py-3 text-center text-white">
-            <p className="text-xs uppercase tracking-wide opacity-90">{institution.name}</p>
-            <p className="text-sm font-semibold">Student ID Card</p>
+      <div className="id-card-sheet flex min-h-[calc(100vh-4rem)] items-center justify-center p-6 print:min-h-0 print:p-0">
+        <div className="id-card flex h-[204px] w-[324px] flex-col overflow-hidden rounded-xl border-2 border-[var(--midnight-blue-950,#01366C)] bg-white shadow-lg print:shadow-none">
+          <div className="shrink-0 bg-[var(--midnight-blue-950,#01366C)] px-3 py-1.5 text-center text-white">
+            <p className="truncate text-[9px] uppercase tracking-wide opacity-90">{institution.name}</p>
+            <p className="text-[11px] font-semibold leading-tight">Student ID Card</p>
           </div>
-          <div className="flex gap-4 p-4">
+          <div className="flex min-h-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2">
             {show('showPhoto') ? (
               <UserAvatar
                 name={student.fullName}
                 src={student.photographUrl}
                 seed={student.id}
-                size="lg"
+                size="md"
               />
             ) : null}
-            <div className="min-w-0 flex-1 space-y-1 text-sm">
-              <p className="truncate text-base font-semibold text-[var(--text-main-900)]">{student.fullName}</p>
+            <div className="min-w-0 flex-1 space-y-0.5 text-[11px] leading-tight">
+              <p className="truncate text-[13px] font-semibold text-[var(--text-main-900)]">
+                {student.fullName}
+              </p>
               {show('showRollNumber') && student.rollNumber ? (
                 <p className="font-medium">Roll #: {student.rollNumber}</p>
               ) : null}
               {show('showAdmissionNumber') && student.admissionNumber ? (
-                <p className="text-xs">Adm #: {student.admissionNumber}</p>
+                <p className="truncate text-[10px]">Adm #: {student.admissionNumber}</p>
               ) : null}
               {show('showProgram') ? (
-                <p className="text-[var(--text-sub-500,#525866)]">{student.program ?? '—'}</p>
+                <p className="truncate text-[var(--text-sub-500,#525866)]">{student.program ?? '—'}</p>
               ) : null}
               {show('showBatch') ? (
-                <p className="text-[var(--text-sub-500,#525866)]">{student.batch ?? '—'}</p>
+                <p className="truncate text-[var(--text-sub-500,#525866)]">{student.batch ?? '—'}</p>
               ) : null}
               {show('showCnic') && student.cnicOrBForm ? (
-                <p className="font-mono text-xs text-[var(--text-sub-500,#525866)]">{student.cnicOrBForm}</p>
+                <p className="truncate font-mono text-[10px] text-[var(--text-sub-500,#525866)]">
+                  {student.cnicOrBForm}
+                </p>
               ) : null}
             </div>
           </div>
-          <div className="border-t border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-2 text-center text-xs text-[var(--text-sub-500,#525866)]">
+          <div className="shrink-0 truncate border-t border-[var(--stroke-soft-200,#E2E4E9)] px-3 py-1 text-center text-[9px] text-[var(--text-sub-500,#525866)]">
             {student.branch?.name ?? institution.name}
             {institution.phone ? ` · ${institution.phone}` : ''}
           </div>

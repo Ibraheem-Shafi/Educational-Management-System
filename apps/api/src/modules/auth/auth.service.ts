@@ -25,6 +25,7 @@ import type {
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
   LeaveAttachmentMetaInput,
+  ListLeaveRequestsQuery,
   PortalSectionQuery,
   PrepareLeaveAttachmentUploadInput,
   UpdateProfileInput,
@@ -750,13 +751,8 @@ export class PortalService {
     return this.portalSections.createParentLeaveRequest(user.email, input);
   }
 
-  async listStaffLeaveRequests(
-    scope: BranchScope,
-    kind?: string,
-    page = 1,
-    limit = 8,
-  ) {
-    return this.portalSections.listStaffLeaveRequests(scope, kind, page, limit);
+  async listStaffLeaveRequests(scope: BranchScope, query: ListLeaveRequestsQuery) {
+    return this.portalSections.listStaffLeaveRequests(scope, query);
   }
 
   async createEmployeeLeaveRequest(user: AuthUser, input: CreateEmployeeLeaveRequestInput) {

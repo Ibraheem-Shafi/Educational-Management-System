@@ -9,10 +9,18 @@ import {
   sqlBranchFilter,
 } from '../../common/utils/branch-scope.util';
 import { getSingleBranchId } from '@eims/shared';
-import type { BranchScope, PaginationQuery } from '@eims/shared';
+import type { BranchScope, ListFeeDefaultersQuery } from '@eims/shared';
 import type { PaginatedResponse } from '@eims/types';
 
 const OVERVIEW_CACHE_TTL_MS = 45_000;
+
+function dueDayStart(dateStr: string): Date {
+  return new Date(`${dateStr.slice(0, 10)}T00:00:00.000Z`);
+}
+
+function dueDayEnd(dateStr: string): Date {
+  return new Date(`${dateStr.slice(0, 10)}T23:59:59.999Z`);
+}
 
 @Injectable()
 export class ReportsService {
@@ -159,7 +167,7 @@ export class ReportsService {
 
   async getFeeDefaulters(
     scope: BranchScope,
-    query: PaginationQuery = { page: 1, limit: 8 },
+    query: ListFeeDefaultersQuery = { page: 1, limit: 8 },
   ): Promise<PaginatedResponse<{
     id: string;
     student: { id: string; fullName: string; phone: string | null; batchId: string | null };
@@ -172,10 +180,31 @@ export class ReportsService {
   }>> {
     const branchFilter = prismaBranchFilter(scope);
     const today = new Date();
+    const search = query.search?.trim();
+    const dueDateRange =
+      query.dueFrom || query.dueTo
+        ? {
+            ...(query.dueFrom ? { gte: dueDayStart(query.dueFrom) } : {}),
+            ...(query.dueTo ? { lte: dueDayEnd(query.dueTo) } : {}),
+          }
+        : undefined;
+
     const where = {
       ...branchFilter,
       paidAt: null,
-      OR: [{ dueDate: null }, { dueDate: { lt: today } }],
+      AND: [
+        { OR: [{ dueDate: null }, { dueDate: { lt: today } }] },
+        ...(dueDateRange ? [{ dueDate: dueDateRange }] : []),
+        ...(search
+          ? [
+              {
+                student: {
+                  fullName: { contains: search, mode: 'insensitive' as const },
+                },
+              },
+            ]
+          : []),
+      ],
     };
 
     const page = query.page ?? 1;

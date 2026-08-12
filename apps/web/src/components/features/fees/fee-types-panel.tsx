@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -19,6 +19,10 @@ import {
 } from '@/components/ui/dialog';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -47,6 +51,8 @@ function slugifyCode(name: string): string {
     .slice(0, 50);
 }
 
+type ActiveFilter = '' | 'true' | 'false';
+
 export function FeeTypesPanel({ canManage }: { canManage: boolean }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -58,15 +64,37 @@ export function FeeTypesPanel({ canManage }: { canManage: boolean }) {
   const [codeTouched, setCodeTouched] = useState(false);
   const [description, setDescription] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('');
 
   const createForm = useFormErrors(createFeeTypeSchema);
   const editForm = useFormErrors(updateFeeTypeSchema);
   const activeForm = editing ? editForm : createForm;
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+  }, []);
+
+  const listParams: Record<string, string> = {};
+  if (search.trim()) listParams.search = search.trim();
+  if (activeFilter === 'true') {
+    listParams.isActive = 'true';
+  } else if (activeFilter === 'false') {
+    listParams.isActive = 'false';
+    listParams.includeInactive = 'true';
+  } else {
+    listParams.includeInactive = 'true';
+  }
+
+  const listQuery = new URLSearchParams(listParams).toString();
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.feeTypes({ includeInactive: true }),
+    queryKey: queryKeys.feeTypes({
+      search: search.trim() || undefined,
+      activeFilter: activeFilter || 'all',
+    }),
     queryFn: () =>
-      apiClient<{ data: FeeTypeRow[] }>('/fee-types?includeInactive=true', { token }),
+      apiClient<{ data: FeeTypeRow[] }>(`/fee-types?${listQuery}`, { token }),
     enabled: !!token,
   });
 
@@ -150,6 +178,8 @@ export function FeeTypesPanel({ canManage }: { canManage: boolean }) {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const hasFilters = Boolean(search.trim() || activeFilter);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -168,6 +198,36 @@ export function FeeTypesPanel({ canManage }: { canManage: boolean }) {
           </button>
         )}
       </div>
+
+      <FilterBar className="items-center">
+        <SearchInput
+          value={search}
+          onValueChange={handleSearchChange}
+          placeholder="Search name or code"
+        />
+        <SelectDropdown
+          aria-label="Filter by status"
+          placeholder="All"
+          value={activeFilter}
+          onValueChange={(next) => setActiveFilter(next as ActiveFilter)}
+          options={[
+            { value: '', label: 'All' },
+            { value: 'true', label: 'Active' },
+            { value: 'false', label: 'Inactive' },
+          ]}
+        />
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('');
+              setActiveFilter('');
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </FilterBar>
 
       <div className="bg-white">
         <div className={dataTableWrapperClass}>
