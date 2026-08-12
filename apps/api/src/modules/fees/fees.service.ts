@@ -16,6 +16,7 @@ import type { AuthUser, FeesRevenueTrendResponse, FeesStatsResponse, PaginatedRe
 import type {
   CreateFeeInvoiceInput,
   ListFeeInvoicesQuery,
+  ListFeeInvoicesByStudentQuery,
   ListFeeTypesQuery,
   RecordPaymentInput,
   RecordFeePaymentInput,
@@ -27,6 +28,8 @@ import type {
   PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
   UpdateFeeTypeInput,
+  ListFeeChallansQuery,
+  CreateFeeChallanInput,
 } from '@eims/shared';
 import { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } from '@eims/shared';
 
@@ -182,15 +185,26 @@ export class FeesService {
     return { data: types };
   }
 
-  async findAll(query: ListFeeInvoicesQuery, scope: BranchScope): Promise<PaginatedResponse<Record<string, unknown>>> {
+  private invoiceListWhere(
+    query: Pick<
+      ListFeeInvoicesQuery,
+      | 'branchId'
+      | 'studentId'
+      | 'statusId'
+      | 'feeTypeId'
+      | 'billingPeriod'
+      | 'search'
+      | 'dueFrom'
+      | 'dueTo'
+    >,
+    scope: BranchScope,
+  ) {
     const effective =
       scope.kind === 'selected'
         ? scope
         : query.branchId
           ? selectedBranchScope([query.branchId])
           : scope;
-    await this.applyLateFeesToOverdue(effective);
-
     const search = query.search?.trim();
     const dueDate =
       query.dueFrom || query.dueTo
@@ -200,60 +214,270 @@ export class FeesService {
           }
         : undefined;
 
-    const where = {
-      ...prismaBranchFilter(effective),
-      ...(query.studentId ? { studentId: query.studentId } : {}),
-      ...(query.statusId ? { statusId: query.statusId } : {}),
-      ...(query.feeTypeId ? { feeTypeId: query.feeTypeId } : {}),
-      ...(dueDate ? { dueDate } : {}),
-      ...(search
-        ? {
-            OR: [
-              { invoiceNo: { contains: search, mode: 'insensitive' as const } },
-              { student: { fullName: { contains: search, mode: 'insensitive' as const } } },
-            ],
-          }
-        : {}),
+    return {
+      effective,
+      where: {
+        ...prismaBranchFilter(effective),
+        ...(query.studentId ? { studentId: query.studentId } : {}),
+        ...(query.statusId ? { statusId: query.statusId } : {}),
+        ...(query.feeTypeId ? { feeTypeId: query.feeTypeId } : {}),
+        ...(query.billingPeriod ? { billingPeriod: query.billingPeriod } : {}),
+        ...(dueDate ? { dueDate } : {}),
+        ...(search
+          ? {
+              OR: [
+                { invoiceNo: { contains: search, mode: 'insensitive' as const } },
+                { voucherNo: { contains: search, mode: 'insensitive' as const } },
+                { student: { fullName: { contains: search, mode: 'insensitive' as const } } },
+                { student: { admissionNumber: { contains: search, mode: 'insensitive' as const } } },
+              ],
+            }
+          : {}),
+      },
     };
+  }
+
+  private async attachPaymentSummaries(
+    invoices: Array<{
+      id: string;
+      branchId: string;
+      studentId: string;
+      feeTypeId: string;
+      invoiceNo?: string | null;
+      billingPeriod?: string | null;
+      voucherNo?: string | null;
+      amount: { toString(): string };
+      discount: { toString(): string };
+      fine: { toString(): string };
+      netAmount: { toString(): string };
+      dueDate: Date | null;
+      paidAt: Date | null;
+      statusId: string;
+      remarks: string | null;
+      createdAt: Date;
+      student?: { id: string; fullName: string };
+    }>,
+  ): Promise<
+    Array<
+      Record<string, unknown> & {
+        studentId: string;
+        billingPeriod: string | null;
+        paidAmount: number;
+        remainingAmount: number;
+        latestPaymentId: string | null;
+      }
+    >
+  > {
+    if (invoices.length === 0) return [];
+
+    const invoiceIds = invoices.map((i) => i.id);
+    const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
+    const statusIds = [...new Set(invoices.map((i) => i.statusId))];
+
+    const [feeTypes, statuses, paidAggs, latestPayments] = await Promise.all([
+      this.prisma.feeType.findMany({ where: { id: { in: feeTypeIds } } }),
+      this.prisma.lookupStatus.findMany({ where: { id: { in: statusIds } } }),
+      this.prisma.feePayment.groupBy({
+        by: ['invoiceId'],
+        where: {
+          invoiceId: { in: invoiceIds },
+          status: { in: ['succeeded', 'completed'] },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.feePayment.findMany({
+        where: {
+          invoiceId: { in: invoiceIds },
+          status: { in: ['succeeded', 'completed'] },
+        },
+        orderBy: { paidAt: 'desc' },
+        distinct: ['invoiceId'],
+        select: { id: true, invoiceId: true },
+      }),
+    ]);
+
+    const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
+    const statusMap = new Map(statuses.map((s) => [s.id, s]));
+    const paidMap = new Map(
+      paidAggs.map((a) => [a.invoiceId, this.roundMoney(Number(a._sum.amount ?? 0))]),
+    );
+    const latestMap = new Map(latestPayments.map((p) => [p.invoiceId, p.id]));
+
+    return invoices.map((inv) => {
+      const paidAmount = paidMap.get(inv.id) ?? 0;
+      const netAmount = this.roundMoney(Number(inv.netAmount));
+      const base = this.toResponse(inv, feeTypeMap, statusMap);
+      return {
+        ...base,
+        studentId: inv.studentId,
+        billingPeriod: base.billingPeriod,
+        paidAmount,
+        remainingAmount: Math.max(0, this.roundMoney(netAmount - paidAmount)),
+        latestPaymentId: latestMap.get(inv.id) ?? null,
+      };
+    });
+  }
+
+  async findAll(query: ListFeeInvoicesQuery, scope: BranchScope): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const { where } = this.invoiceListWhere(query, scope);
 
     const [invoices, total] = await Promise.all([
       this.prisma.feeInvoice.findMany({
         where,
         include: {
           student: { select: { id: true, fullName: true } },
-          payments: {
-            where: { status: { in: ['succeeded', 'completed'] } },
-            orderBy: { paidAt: 'desc' },
-            select: { id: true, amount: true },
-          },
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ billingPeriod: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
       }),
       this.prisma.feeInvoice.count({ where }),
     ]);
 
-    const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
-    const statusIds = [...new Set(invoices.map((i) => i.statusId))];
-    const [feeTypes, statuses] = await Promise.all([
-      this.prisma.feeType.findMany({ where: { id: { in: feeTypeIds } } }),
-      this.prisma.lookupStatus.findMany({ where: { id: { in: statusIds } } }),
-    ]);
-    const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
-    const statusMap = new Map(statuses.map((s) => [s.id, s]));
+    const data = await this.attachPaymentSummaries(invoices);
 
     return {
-      data: invoices.map((inv) => ({
-        ...this.toResponse(inv, feeTypeMap, statusMap),
-        ...this.paymentSummary(inv),
-        latestPaymentId: inv.payments[0]?.id ?? null,
-      })),
+      data,
       meta: {
         total,
         page: query.page,
         limit: query.limit,
-        totalPages: Math.ceil(total / query.limit),
+        totalPages: Math.ceil(total / query.limit) || 1,
+      },
+    };
+  }
+
+  /** YYYY-MM for the current calendar month and the month before. */
+  private currentAndPreviousBillingPeriods(now = new Date()): [string, string] {
+    const y = now.getFullYear();
+    const m = now.getMonth(); // 0-based
+    const current = `${y}-${String(m + 1).padStart(2, '0')}`;
+    const prev = new Date(y, m - 1, 1);
+    const previous = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    return [current, previous];
+  }
+
+  private previewInvoicesForStudent<T extends { billingPeriod?: unknown }>(
+    studentInvoices: T[],
+    previewPeriods: Set<string>,
+  ): T[] {
+    const periodOf = (inv: T): string | null =>
+      typeof inv.billingPeriod === 'string' && inv.billingPeriod.length > 0
+        ? inv.billingPeriod
+        : null;
+
+    const inWindow = studentInvoices.filter((inv) => {
+      const period = periodOf(inv);
+      return period != null && previewPeriods.has(period);
+    });
+    if (inWindow.length > 0) return inWindow;
+
+    // Fallback when the student has no rows in the current/previous months:
+    // show invoices from their two most recent billing periods.
+    const periods = [
+      ...new Set(studentInvoices.map(periodOf).filter((p): p is string => p != null)),
+    ]
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 2);
+    if (periods.length === 0) return [];
+    const fallback = new Set(periods);
+    return studentInvoices.filter((inv) => {
+      const period = periodOf(inv);
+      return period != null && fallback.has(period);
+    });
+  }
+
+  async findAllByStudent(
+    query: ListFeeInvoicesByStudentQuery,
+    scope: BranchScope,
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const { where } = this.invoiceListWhere(query, scope);
+    const [currentPeriod, previousPeriod] = this.currentAndPreviousBillingPeriods();
+    const previewPeriods = new Set([currentPeriod, previousPeriod]);
+
+    const groups = await this.prisma.feeInvoice.groupBy({
+      by: ['studentId'],
+      where,
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+
+    groups.sort(
+      (a, b) => (b._max.createdAt?.getTime() ?? 0) - (a._max.createdAt?.getTime() ?? 0),
+    );
+
+    const total = groups.length;
+    const skip = (query.page - 1) * query.limit;
+    const pageGroups = groups.slice(skip, skip + query.limit);
+    const studentIds = pageGroups.map((g) => g.studentId);
+
+    if (studentIds.length === 0) {
+      return {
+        data: [],
+        meta: {
+          total,
+          page: query.page,
+          limit: query.limit,
+          totalPages: Math.ceil(total / query.limit) || 1,
+        },
+      };
+    }
+
+    const [students, invoices] = await Promise.all([
+      this.prisma.student.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, fullName: true, admissionNumber: true },
+      }),
+      this.prisma.feeInvoice.findMany({
+        where: { ...where, studentId: { in: studentIds } },
+        include: {
+          student: { select: { id: true, fullName: true } },
+        },
+        orderBy: [{ billingPeriod: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+
+    const studentMap = new Map(students.map((s) => [s.id, s]));
+    const mapped = await this.attachPaymentSummaries(invoices);
+
+    const byStudent = new Map<string, typeof mapped>();
+    for (const inv of mapped) {
+      const sid = String(inv.studentId);
+      const list = byStudent.get(sid) ?? [];
+      list.push(inv);
+      byStudent.set(sid, list);
+    }
+
+    const data = pageGroups.map((g) => {
+      const studentInvoices = byStudent.get(g.studentId) ?? [];
+      const openBalance = this.roundMoney(
+        studentInvoices.reduce((sum, inv) => sum + Number(inv.remainingAmount ?? 0), 0),
+      );
+      const student = studentMap.get(g.studentId);
+      return {
+        student: student
+          ? {
+              id: student.id,
+              fullName: student.fullName,
+              admissionNumber: student.admissionNumber,
+            }
+          : { id: g.studentId, fullName: '—', admissionNumber: null },
+        totals: {
+          invoiceCount: g._count._all,
+          openBalance,
+        },
+        previewPeriods: [currentPeriod, previousPeriod],
+        preview: this.previewInvoicesForStudent(studentInvoices, previewPeriods),
+      };
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit) || 1,
       },
     };
   }
@@ -285,6 +509,8 @@ export class FeesService {
         studentId: input.studentId,
         feeTypeId: input.feeTypeId,
         invoiceNo,
+        billingPeriod: input.billingPeriod ?? null,
+        voucherNo: input.voucherNo ?? null,
         amount: input.amount,
         discount,
         fine,
@@ -296,6 +522,8 @@ export class FeesService {
       },
       include: { student: { select: { id: true, fullName: true } } },
     });
+
+    await this.applyLateFeesToOverdue(selectedBranchScope([input.branchId]));
 
     await this.audit.log({
       userId: user.id,
@@ -368,6 +596,8 @@ export class FeesService {
     scope: BranchScope,
     options?: { provider?: string; providerRef?: string; status?: string; skipAudit?: boolean },
   ) {
+    await this.applyLateFeesToOverdue(scope);
+
     const invoice = await this.prisma.feeInvoice.findFirst({
       where: { id, ...prismaBranchFilter(scope) },
       include: {
@@ -1227,7 +1457,10 @@ export class FeesService {
     }
   }
 
-  private async nextDocumentNumber(branchId: string, prefix: 'INV' | 'RCP'): Promise<string> {
+  private async nextDocumentNumber(
+    branchId: string,
+    prefix: 'INV' | 'RCP' | 'CHL',
+  ): Promise<string> {
     const year = new Date().getFullYear();
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -1237,7 +1470,9 @@ export class FeesService {
     const count =
       prefix === 'INV'
         ? await this.prisma.feeInvoice.count({ where: { branchId } })
-        : await this.prisma.feePayment.count({ where: { branchId } });
+        : prefix === 'RCP'
+          ? await this.prisma.feePayment.count({ where: { branchId } })
+          : await this.prisma.feeChallan.count({ where: { branchId } });
     return `${prefix}-${code}-${year}-${String(count + 1).padStart(5, '0')}`;
   }
 
@@ -1420,6 +1655,8 @@ export class FeesService {
       studentId: string;
       feeTypeId: string;
       invoiceNo?: string | null;
+      billingPeriod?: string | null;
+      voucherNo?: string | null;
       amount: { toString(): string };
       discount: { toString(): string };
       fine: { toString(): string };
@@ -1442,6 +1679,8 @@ export class FeesService {
       feeTypeId: invoice.feeTypeId,
       feeType: feeTypeMap.get(invoice.feeTypeId) ?? null,
       invoiceNo: invoice.invoiceNo ?? null,
+      billingPeriod: invoice.billingPeriod ?? null,
+      voucherNo: invoice.voucherNo ?? null,
       amount: Number(invoice.amount),
       discount: Number(invoice.discount),
       fine: Number(invoice.fine),
@@ -1454,4 +1693,370 @@ export class FeesService {
       createdAt: invoice.createdAt.toISOString(),
     };
   }
+
+  async listChallans(
+    query: ListFeeChallansQuery,
+    scope: BranchScope,
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const effective =
+      scope.kind === 'selected'
+        ? scope
+        : query.branchId
+          ? selectedBranchScope([query.branchId])
+          : scope;
+    const search = query.search?.trim();
+    const where = {
+      ...prismaBranchFilter(effective),
+      ...(query.studentId ? { studentId: query.studentId } : {}),
+      ...(query.billingPeriod ? { billingPeriod: query.billingPeriod } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { challanNo: { contains: search, mode: 'insensitive' as const } },
+              { student: { fullName: { contains: search, mode: 'insensitive' as const } } },
+              { student: { admissionNumber: { contains: search, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.feeChallan.findMany({
+        where,
+        include: {
+          student: {
+            select: {
+              id: true,
+              fullName: true,
+              admissionNumber: true,
+              rollNumber: true,
+              program: { select: { name: true } },
+              batch: { select: { name: true } },
+            },
+          },
+          lines: { orderBy: { sortOrder: 'asc' } },
+        },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        orderBy: [{ billingPeriod: 'desc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.feeChallan.count({ where }),
+    ]);
+
+    return {
+      data: rows.map((c) => this.toChallanResponse(c)),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit) || 1,
+      },
+    };
+  }
+
+  async createChallan(input: CreateFeeChallanInput, user: AuthUser) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
+    });
+    if (!student) throw new BadRequestException('Invalid student for this branch');
+
+    const grandTotal = this.roundMoney(input.lines.reduce((s, l) => s + Number(l.amount), 0));
+    const challanNo = input.challanNo?.trim() || (await this.nextDocumentNumber(input.branchId, 'CHL'));
+
+    const existing = await this.prisma.feeChallan.findUnique({
+      where: {
+        branchId_studentId_billingPeriod: {
+          branchId: input.branchId,
+          studentId: input.studentId,
+          billingPeriod: input.billingPeriod,
+        },
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('A challan already exists for this student and billing period');
+    }
+
+    const challan = await this.prisma.feeChallan.create({
+      data: {
+        branchId: input.branchId,
+        studentId: input.studentId,
+        challanNo,
+        billingPeriod: input.billingPeriod,
+        dueDate: input.dueDate ? new Date(input.dueDate) : null,
+        status: grandTotal <= 0 ? 'paid' : 'unpaid',
+        grandTotal,
+        paidAmount: 0,
+        dueAmount: grandTotal,
+        sessionLabel: input.sessionLabel ?? null,
+        createdById: user.id,
+        lines: {
+          create: input.lines.map((line, idx) => ({
+            code: line.code,
+            label: line.label,
+            amount: line.amount,
+            sortOrder: line.sortOrder ?? idx,
+            feeInvoiceId: line.feeInvoiceId ?? null,
+          })),
+        },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            fullName: true,
+            admissionNumber: true,
+            rollNumber: true,
+            program: { select: { name: true } },
+            batch: { select: { name: true } },
+          },
+        },
+        lines: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_challan.created',
+      entityType: 'FeeChallan',
+      entityId: challan.id,
+      newValue: { challanNo, billingPeriod: input.billingPeriod, grandTotal },
+    });
+
+    return this.toChallanResponse(challan);
+  }
+
+  async getChallanPrintData(id: string, scope: BranchScope) {
+    const challan = await this.prisma.feeChallan.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: {
+        student: {
+          select: {
+            id: true,
+            fullName: true,
+            rollNumber: true,
+            admissionNumber: true,
+            phone: true,
+            program: { select: { name: true } },
+            batch: { select: { name: true } },
+            branch: { select: { name: true, code: true } },
+            studentParents: {
+              take: 1,
+              include: { parent: { select: { fullName: true, phone: true } } },
+            },
+          },
+        },
+        lines: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+    if (!challan) throw new NotFoundException('Challan not found');
+
+    const sessionLabel = challan.sessionLabel ?? this.sessionLabelFromPeriod(challan.billingPeriod);
+    const sessionPeriods = this.sessionPeriods(sessionLabel);
+    const historyRows = await this.prisma.feeChallan.findMany({
+      where: {
+        branchId: challan.branchId,
+        studentId: challan.studentId,
+        billingPeriod: { in: sessionPeriods },
+      },
+      select: { billingPeriod: true, status: true, paidAmount: true, grandTotal: true },
+    });
+    const historyMap = new Map(historyRows.map((h) => [h.billingPeriod, h]));
+
+    const settings = await this.prisma.institutionSettings.findFirst();
+    const father =
+      challan.student.studentParents[0]?.parent.fullName ?? null;
+    const monthLabel = this.monthLabel(challan.billingPeriod);
+    const grandTotal = Number(challan.grandTotal);
+    const paidAmount = Number(challan.paidAmount);
+
+    return {
+      challan: {
+        id: challan.id,
+        challanNo: challan.challanNo,
+        billingPeriod: challan.billingPeriod,
+        monthLabel,
+        dueDate: challan.dueDate?.toISOString() ?? null,
+        status: challan.status,
+        grandTotal,
+        paidAmount,
+        dueAmount: Number(challan.dueAmount),
+        sessionLabel,
+        amountInWords: amountInWordsPkr(grandTotal),
+        fineNote: 'Amount once paid will not be refunded in any case. After due date Rs. 300 fine will be charged.',
+        lines: challan.lines.map((l) => ({
+          code: l.code,
+          label: l.label,
+          amount: Number(l.amount),
+          sortOrder: l.sortOrder,
+        })),
+      },
+      student: {
+        id: challan.student.id,
+        fullName: challan.student.fullName,
+        fatherName: father,
+        rollNumber: challan.student.rollNumber,
+        admissionNumber: challan.student.admissionNumber,
+        className: challan.student.batch?.name ?? challan.student.program?.name ?? null,
+        phone: challan.student.phone,
+        branch: challan.student.branch,
+      },
+      paymentHistory: sessionPeriods.map((period) => {
+        const row = historyMap.get(period);
+        return {
+          period,
+          monthShort: this.monthShort(period),
+          status: row?.status ?? 'none',
+          paidAmount: row ? Number(row.paidAmount) : 0,
+          grandTotal: row ? Number(row.grandTotal) : 0,
+        };
+      }),
+      institution: {
+        name: settings?.name ?? 'Institution',
+        logoUrl: settings?.logoUrl ?? null,
+        address: settings?.address ?? null,
+        phone: settings?.phone ?? null,
+        email: settings?.email ?? null,
+      },
+    };
+  }
+
+  private toChallanResponse(c: {
+    id: string;
+    branchId: string;
+    studentId: string;
+    challanNo: string | null;
+    billingPeriod: string;
+    dueDate: Date | null;
+    status: string;
+    grandTotal: { toString(): string };
+    paidAmount: { toString(): string };
+    dueAmount: { toString(): string };
+    sessionLabel: string | null;
+    createdAt: Date;
+    student?: {
+      id: string;
+      fullName: string;
+      admissionNumber: string | null;
+      rollNumber: string | null;
+      program?: { name: string } | null;
+      batch?: { name: string } | null;
+    };
+    lines?: Array<{
+      id: string;
+      code: string;
+      label: string;
+      amount: { toString(): string };
+      sortOrder: number;
+      feeInvoiceId: string | null;
+    }>;
+  }) {
+    return {
+      id: c.id,
+      branchId: c.branchId,
+      studentId: c.studentId,
+      student: c.student
+        ? {
+            ...c.student,
+            className: c.student.batch?.name ?? c.student.program?.name ?? null,
+          }
+        : null,
+      challanNo: c.challanNo,
+      billingPeriod: c.billingPeriod,
+      monthLabel: this.monthLabel(c.billingPeriod),
+      dueDate: c.dueDate?.toISOString() ?? null,
+      status: c.status,
+      grandTotal: Number(c.grandTotal),
+      paidAmount: Number(c.paidAmount),
+      dueAmount: Number(c.dueAmount),
+      sessionLabel: c.sessionLabel,
+      lines: (c.lines ?? []).map((l) => ({
+        id: l.id,
+        code: l.code,
+        label: l.label,
+        amount: Number(l.amount),
+        sortOrder: l.sortOrder,
+        feeInvoiceId: l.feeInvoiceId,
+      })),
+      createdAt: c.createdAt.toISOString(),
+    };
+  }
+
+  private sessionLabelFromPeriod(period: string): string {
+    const [y, m] = period.split('-').map(Number);
+    if (!y || !m) return `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+    if (m >= 4) return `${y}-${y + 1}`;
+    return `${y - 1}-${y}`;
+  }
+
+  private sessionPeriods(sessionLabel: string): string[] {
+    const startYear = Number(String(sessionLabel).split('-')[0]);
+    if (!Number.isFinite(startYear)) return [];
+    const months = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+    return months.map((month, idx) => {
+      const year = idx < 9 ? startYear : startYear + 1;
+      return `${year}-${String(month).padStart(2, '0')}`;
+    });
+  }
+
+  private monthLabel(period: string): string {
+    const [y, m] = period.split('-');
+    const date = new Date(Date.UTC(Number(y), Number(m) - 1, 1));
+    return date.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  }
+
+  private monthShort(period: string): string {
+    const [y, m] = period.split('-');
+    const date = new Date(Date.UTC(Number(y), Number(m) - 1, 1));
+    const mon = date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    return `${mon} ${String(y).slice(2)}`;
+  }
+}
+
+const ONES = [
+  '',
+  'One',
+  'Two',
+  'Three',
+  'Four',
+  'Five',
+  'Six',
+  'Seven',
+  'Eight',
+  'Nine',
+  'Ten',
+  'Eleven',
+  'Twelve',
+  'Thirteen',
+  'Fourteen',
+  'Fifteen',
+  'Sixteen',
+  'Seventeen',
+  'Eighteen',
+  'Nineteen',
+];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function twoDigits(n: number): string {
+  if (n < 20) return ONES[n];
+  const t = Math.floor(n / 10);
+  const o = n % 10;
+  return `${TENS[t]}${o ? ` ${ONES[o]}` : ''}`.trim();
+}
+
+function amountInWordsPkr(amount: number): string {
+  const whole = Math.floor(Math.abs(amount));
+  if (whole === 0) return 'Zero Rupees Only';
+  const crore = Math.floor(whole / 10_000_000);
+  const lakh = Math.floor((whole % 10_000_000) / 100_000);
+  const thousand = Math.floor((whole % 100_000) / 1000);
+  const hundred = Math.floor((whole % 1000) / 100);
+  const rest = whole % 100;
+  const parts: string[] = [];
+  if (crore) parts.push(`${twoDigits(crore)} Crore`);
+  if (lakh) parts.push(`${twoDigits(lakh)} Lakh`);
+  if (thousand) parts.push(`${twoDigits(thousand)} Thousand`);
+  if (hundred) parts.push(`${ONES[hundred]} Hundred`);
+  if (rest) parts.push(twoDigits(rest));
+  return `${parts.join(' ')} Rupees Only`;
 }

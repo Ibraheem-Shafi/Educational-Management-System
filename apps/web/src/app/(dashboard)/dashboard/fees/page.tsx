@@ -1,15 +1,21 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Receipt } from 'lucide-react';
+import { ChevronDown, Receipt } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
-import { currencyStat, formatCurrency, formatCurrencyCompact, PERMISSIONS } from '@eims/shared';
+import {
+  currencyStat,
+  formatCurrency,
+  formatCurrencyCompact,
+  PERMISSIONS,
+  type BranchScope,
+} from '@eims/shared';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -30,6 +36,7 @@ import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-d
 import { GenerateInvoicesDialog } from '@/components/features/fees/generate-invoices-dialog';
 import { FeeTypesPanel, type FeeTypeRow } from '@/components/features/fees/fee-types-panel';
 import { FeeStructuresPanel } from '@/components/features/fees/fee-structures-panel';
+import { FeeChallansPanel } from '@/components/features/fees/fee-challans-panel';
 import {
   RecordPaymentDialog,
   type PayInvoiceTarget,
@@ -52,6 +59,7 @@ const filterDateClassName =
 
 interface Invoice {
   id: string;
+  studentId?: string;
   student?: { fullName: string };
   feeType?: { name: string };
   netAmount: number;
@@ -61,6 +69,12 @@ interface Invoice {
   status?: { label: string; code: string };
   paidAt: string | null;
   latestPaymentId?: string | null;
+}
+
+interface StudentInvoiceGroup {
+  student: { id: string; fullName: string; admissionNumber?: string | null };
+  totals: { invoiceCount: number; openBalance: number };
+  preview: Invoice[];
 }
 
 interface LookupStatus {
@@ -87,6 +101,171 @@ function toPayTarget(invoice: {
   };
 }
 
+function invoiceRowActions(
+  inv: Invoice,
+  canCollect: boolean,
+  openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void,
+) {
+  return [
+    {
+      label: 'Print voucher',
+      onClick: () => window.open(`/print/fee-invoices/${inv.id}`, '_blank'),
+    },
+    ...(inv.latestPaymentId
+      ? [
+          {
+            label: 'Print receipt',
+            onClick: () => window.open(`/print/fee-receipts/${inv.latestPaymentId}`, '_blank'),
+          },
+        ]
+      : []),
+    ...(canCollect && !inv.paidAt
+      ? [
+          {
+            label: 'Record payment',
+            onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
+          },
+          {
+            label: 'Pay in full',
+            onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
+          },
+        ]
+      : []),
+  ];
+}
+
+function InvoiceTableRow({
+  inv,
+  canCollect,
+  openRecordPayment,
+  nested,
+}: {
+  inv: Invoice;
+  canCollect: boolean;
+  openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
+  nested?: boolean;
+}) {
+  return (
+    <tr className={cn('transition-colors', dataTableRowHoverClass, nested && 'bg-[var(--bg-weak-50,#F8F9FB)]')}>
+      <td className={cn(dataTableTdClass, nested && 'pl-10 text-[var(--base-muted-foreground,#71717A)]')}>
+        {nested ? '' : (inv.student?.fullName ?? '—')}
+      </td>
+      <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
+      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>{formatCurrency(inv.netAmount)}</td>
+      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+        {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
+      </td>
+      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+        {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+      </td>
+      <td className={dataTableTdClass}>
+        {inv.status ? <StatusBadge label={inv.status.label} code={inv.status.code} /> : '—'}
+      </td>
+      <td className={cn(dataTableTdClass, 'text-right')}>
+        <RowActionsMenu items={invoiceRowActions(inv, canCollect, openRecordPayment)} />
+      </td>
+    </tr>
+  );
+}
+
+function StudentInvoiceExpandRows({
+  studentId,
+  studentName,
+  previewIds,
+  filters,
+  canCollect,
+  openRecordPayment,
+  token,
+}: {
+  studentId: string;
+  studentName: string;
+  previewIds: Set<string>;
+  filters: {
+    scope: BranchScope;
+    statusId: string;
+    feeTypeId: string;
+    dueFrom: string;
+    dueTo: string;
+    search: string;
+  };
+  canCollect: boolean;
+  openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
+  token: string | undefined;
+}) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: [
+      'fee-invoices-student',
+      studentId,
+      filters.statusId,
+      filters.feeTypeId,
+      filters.dueFrom,
+      filters.dueTo,
+      filters.search,
+    ],
+    queryFn: () =>
+      apiClient<PaginatedResponse<Invoice>>(
+        withBranchScope('/fee-invoices', filters.scope, {
+          page: 1,
+          limit: 100,
+          studentId,
+          search: filters.search || undefined,
+          statusId: filters.statusId || undefined,
+          feeTypeId: filters.feeTypeId || undefined,
+          dueFrom: filters.dueFrom || undefined,
+          dueTo: filters.dueTo || undefined,
+        }),
+        { token },
+      ),
+    enabled: !!token,
+  });
+
+  const rest = (data?.data ?? []).filter((inv) => !previewIds.has(inv.id));
+
+  if (isLoading) {
+    return (
+      <tr>
+        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
+          Loading more invoices for {studentName}…
+        </td>
+      </tr>
+    );
+  }
+
+  if (error) {
+    return (
+      <tr>
+        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-red-600">
+          Failed to load remaining invoices
+        </td>
+      </tr>
+    );
+  }
+
+  if (rest.length === 0) {
+    return (
+      <tr>
+        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
+          No additional invoices
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <>
+      {rest.map((inv) => (
+        <InvoiceTableRow
+          key={inv.id}
+          inv={{ ...inv, student: inv.student ?? { fullName: studentName } }}
+          canCollect={canCollect}
+          openRecordPayment={openRecordPayment}
+          nested
+        />
+      ))}
+    </>
+  );
+}
+
 export default function FeesPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
@@ -103,6 +282,7 @@ export default function FeesPage() {
   const [feeTypeId, setFeeTypeId] = useState('');
   const [dueFrom, setDueFrom] = useState('');
   const [dueTo, setDueTo] = useState('');
+  const [expandedStudentIds, setExpandedStudentIds] = useState<Set<string>>(() => new Set());
   const [defaulterPage, setDefaulterPage] = useState(1);
   const [defaulterLimit, setDefaulterLimit] = useState(8);
   const [defaulterSearch, setDefaulterSearch] = useState('');
@@ -113,7 +293,7 @@ export default function FeesPage() {
   const [completedSearch, setCompletedSearch] = useState('');
   const [completedFeeTypeId, setCompletedFeeTypeId] = useState('');
   const [tab, setTab] = useState<
-    'invoices' | 'completed' | 'defaulters' | 'fee-types' | 'structures'
+    'invoices' | 'completed' | 'defaulters' | 'challans' | 'fee-types' | 'structures'
   >('invoices');
 
   const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
@@ -121,6 +301,7 @@ export default function FeesPage() {
   const handleInvoiceSearchChange = useCallback((value: string) => {
     setInvoiceSearch(value);
     setInvoicePage(1);
+    setExpandedStudentIds(new Set());
   }, []);
 
   const handleCompletedSearchChange = useCallback((value: string) => {
@@ -163,9 +344,9 @@ export default function FeesPage() {
     enabled: !!token && (tab === 'invoices' || tab === 'completed'),
   });
 
-  const { data: invoices, isLoading, error } = useQuery({
+  const { data: invoiceGroups, isLoading, error } = useQuery({
     queryKey: [
-      'fee-invoices',
+      'fee-invoices-by-student',
       scopeKey,
       invoicePage,
       invoiceLimit,
@@ -176,8 +357,8 @@ export default function FeesPage() {
       dueTo,
     ],
     queryFn: () =>
-      apiClient<PaginatedResponse<Invoice>>(
-        withBranchScope('/fee-invoices', effectiveScope, {
+      apiClient<PaginatedResponse<StudentInvoiceGroup>>(
+        withBranchScope('/fee-invoices/by-student', effectiveScope, {
           page: invoicePage,
           limit: invoiceLimit,
           search: invoiceSearch || undefined,
@@ -190,6 +371,15 @@ export default function FeesPage() {
       ),
     enabled: !!token && tab === 'invoices',
   });
+
+  const toggleStudentExpanded = useCallback((studentId: string) => {
+    setExpandedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }, []);
 
   const {
     data: completedInvoices,
@@ -262,6 +452,7 @@ export default function FeesPage() {
   const handleLimitChange = useCallback((next: number) => {
     setInvoiceLimit(next);
     setInvoicePage(1);
+    setExpandedStudentIds(new Set());
   }, []);
 
   const handleCompletedLimitChange = useCallback((next: number) => {
@@ -377,13 +568,16 @@ export default function FeesPage() {
           tabs={[
             { id: 'invoices', label: 'Invoices' },
             { id: 'completed', label: 'Completed' },
+            { id: 'challans', label: 'Challans' },
             { id: 'defaulters', label: 'Fee Defaulter' },
             { id: 'fee-types', label: 'Fee types' },
             { id: 'structures', label: 'Structures' },
           ]}
           value={tab}
           onValueChange={(id) =>
-            setTab(id as 'invoices' | 'completed' | 'defaulters' | 'fee-types' | 'structures')
+            setTab(
+              id as 'invoices' | 'completed' | 'challans' | 'defaulters' | 'fee-types' | 'structures',
+            )
           }
         />
         <PageBranchScopeControl />
@@ -404,6 +598,7 @@ export default function FeesPage() {
               onValueChange={(next) => {
                 setStatusId(next);
                 setInvoicePage(1);
+                setExpandedStudentIds(new Set());
               }}
               options={[
                 { value: '', label: 'All statuses' },
@@ -417,6 +612,7 @@ export default function FeesPage() {
               onValueChange={(next) => {
                 setFeeTypeId(next);
                 setInvoicePage(1);
+                setExpandedStudentIds(new Set());
               }}
               options={[
                 { value: '', label: 'All fee types' },
@@ -432,6 +628,7 @@ export default function FeesPage() {
               onValueChange={(next) => {
                 setDueFrom(next);
                 setInvoicePage(1);
+                setExpandedStudentIds(new Set());
               }}
             />
             <DateField
@@ -444,6 +641,7 @@ export default function FeesPage() {
               onValueChange={(next) => {
                 setDueTo(next);
                 setInvoicePage(1);
+                setExpandedStudentIds(new Set());
               }}
             />
             {hasInvoiceFilters && (
@@ -456,6 +654,7 @@ export default function FeesPage() {
                   setDueFrom('');
                   setDueTo('');
                   setInvoicePage(1);
+                  setExpandedStudentIds(new Set());
                 }}
               >
                 Clear filters
@@ -488,7 +687,7 @@ export default function FeesPage() {
                     </tr>
                   )}
 
-                  {!isLoading && !error && invoices?.data.length === 0 && (
+                  {!isLoading && !error && invoiceGroups?.data.length === 0 && (
                     <tr>
                       <td
                         colSpan={7}
@@ -501,72 +700,109 @@ export default function FeesPage() {
 
                   {!isLoading &&
                     !error &&
-                    invoices?.data.map((inv) => (
-                      <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                        <td className={dataTableTdClass}>{inv.student?.fullName ?? '—'}</td>
-                        <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                          {formatCurrency(inv.netAmount)}
-                        </td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                          {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
-                        </td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-                          {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
-                        </td>
-                        <td className={dataTableTdClass}>
-                          {inv.status ? (
-                            <StatusBadge label={inv.status.label} code={inv.status.code} />
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className={cn(dataTableTdClass, 'text-right')}>
-                          <RowActionsMenu
-                            items={[
-                              {
-                                label: 'Print voucher',
-                                onClick: () => window.open(`/print/fee-invoices/${inv.id}`, '_blank'),
-                              },
-                              ...(inv.latestPaymentId
-                                ? [
-                                    {
-                                      label: 'Print receipt',
-                                      onClick: () =>
-                                        window.open(
-                                          `/print/fee-receipts/${inv.latestPaymentId}`,
-                                          '_blank',
-                                        ),
-                                    },
-                                  ]
-                                : []),
-                              ...(canCollect && !inv.paidAt
-                                ? [
-                                    {
-                                      label: 'Record payment',
-                                      onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
-                                    },
-                                    {
-                                      label: 'Pay in full',
-                                      onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
-                                    },
-                                  ]
-                                : []),
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                    invoiceGroups?.data.map((group) => {
+                      const expanded = expandedStudentIds.has(group.student.id);
+                      const moreCount = Math.max(0, group.totals.invoiceCount - group.preview.length);
+                      const previewIds = new Set(group.preview.map((inv) => inv.id));
+                      return (
+                        <Fragment key={group.student.id}>
+                          <tr className="bg-[var(--bg-weak-50,#F8F9FB)]">
+                            <td colSpan={7} className={cn(dataTableTdClass, 'py-2.5')}>
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  {moreCount > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleStudentExpanded(group.student.id)}
+                                      className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-sm font-medium text-[var(--text-main-900,#0A0D14)] hover:bg-white"
+                                      aria-expanded={expanded}
+                                    >
+                                      <ChevronDown
+                                        className={cn(
+                                          'h-4 w-4 shrink-0 transition-transform',
+                                          expanded && 'rotate-180',
+                                        )}
+                                      />
+                                      <span className="truncate">{group.student.fullName}</span>
+                                    </button>
+                                  ) : (
+                                    <span className="truncate text-sm font-medium text-[var(--text-main-900,#0A0D14)]">
+                                      {group.student.fullName}
+                                    </span>
+                                  )}
+                                  {group.student.admissionNumber ? (
+                                    <span className="text-xs text-[var(--base-muted-foreground,#71717A)]">
+                                      En. {group.student.admissionNumber}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                                  <span>
+                                    {group.totals.invoiceCount} invoice
+                                    {group.totals.invoiceCount === 1 ? '' : 's'}
+                                  </span>
+                                  <span>
+                                    Open {formatCurrency(group.totals.openBalance)}
+                                  </span>
+                                  {moreCount > 0 && !expanded ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleStudentExpanded(group.student.id)}
+                                      className="font-medium text-[var(--primary-base,#375DFB)] hover:underline"
+                                    >
+                                      Show {moreCount} more
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                          {group.preview.map((inv) => (
+                            <InvoiceTableRow
+                              key={inv.id}
+                              inv={{
+                                ...inv,
+                                student: inv.student ?? { fullName: group.student.fullName },
+                              }}
+                              canCollect={canCollect}
+                              openRecordPayment={openRecordPayment}
+                              nested
+                            />
+                          ))}
+                          {expanded && moreCount > 0 ? (
+                            <StudentInvoiceExpandRows
+                              studentId={group.student.id}
+                              studentName={group.student.fullName}
+                              previewIds={previewIds}
+                              filters={{
+                                scope: effectiveScope,
+                                statusId,
+                                feeTypeId,
+                                dueFrom,
+                                dueTo,
+                                search: invoiceSearch,
+                              }}
+                              canCollect={canCollect}
+                              openRecordPayment={openRecordPayment}
+                              token={token}
+                            />
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
 
-            {invoices && (
+            {invoiceGroups && (
               <PaginationBar
                 page={invoicePage}
-                totalPages={invoices.meta.totalPages}
+                totalPages={invoiceGroups.meta.totalPages}
                 limit={invoiceLimit}
-                onPageChange={setInvoicePage}
+                onPageChange={(p) => {
+                  setInvoicePage(p);
+                  setExpandedStudentIds(new Set());
+                }}
                 onLimitChange={handleLimitChange}
               />
             )}
@@ -709,6 +945,8 @@ export default function FeesPage() {
           </div>
         </div>
       )}
+
+      {tab === 'challans' && <FeeChallansPanel />}
 
       {tab === 'fee-types' && <FeeTypesPanel canManage={canCollect} />}
 

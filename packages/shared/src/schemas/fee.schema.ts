@@ -17,6 +17,11 @@ export const createFeeInvoiceSchema = z.object({
   fine: z.coerce.number().min(0).optional(),
   dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
   remarks: optionalString(500),
+  billingPeriod: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM')
+    .optional(),
+  voucherNo: optionalString(120),
 });
 
 export type CreateFeeInvoiceInput = z.infer<typeof createFeeInvoiceSchema>;
@@ -27,6 +32,7 @@ export const listFeeInvoicesQuerySchema = z
     studentId: z.string().optional(),
     statusId: z.string().optional(),
     feeTypeId: z.string().optional(),
+    billingPeriod: z.string().optional(),
     search: z.string().optional(),
     dueFrom: z.string().optional(),
     dueTo: z.string().optional(),
@@ -34,6 +40,13 @@ export const listFeeInvoicesQuerySchema = z
   .merge(paginationQuerySchema);
 
 export type ListFeeInvoicesQuery = z.infer<typeof listFeeInvoicesQuerySchema>;
+
+/** Paginate by student; each row includes a latest-2 invoice preview. */
+export const listFeeInvoicesByStudentQuerySchema = listFeeInvoicesQuerySchema.omit({
+  studentId: true,
+});
+
+export type ListFeeInvoicesByStudentQuery = z.infer<typeof listFeeInvoicesByStudentQuerySchema>;
 
 export const recordPaymentSchema = z
   .object({
@@ -201,3 +214,47 @@ export const listFeeDefaultersQuerySchema = z
   .merge(paginationQuerySchema);
 
 export type ListFeeDefaultersQuery = z.infer<typeof listFeeDefaultersQuerySchema>;
+
+export const FEE_CHALLAN_LINE_CODES = [
+  'monthly',
+  'arrears',
+  'admission',
+  'registration',
+  'annual',
+  'party',
+  'security',
+] as const;
+
+export type FeeChallanLineCode = (typeof FEE_CHALLAN_LINE_CODES)[number];
+
+export const listFeeChallansQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    studentId: z.string().optional(),
+    billingPeriod: z.string().optional(),
+    status: z.enum(['unpaid', 'partial', 'paid']).optional(),
+    search: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
+
+export type ListFeeChallansQuery = z.infer<typeof listFeeChallansQuerySchema>;
+
+export const feeChallanLineInputSchema = z.object({
+  code: z.enum(FEE_CHALLAN_LINE_CODES),
+  label: requiredString('Label', 1, 120),
+  amount: z.coerce.number().min(0),
+  sortOrder: z.coerce.number().int().optional(),
+  feeInvoiceId: z.string().optional(),
+});
+
+export const createFeeChallanSchema = z.object({
+  branchId: requiredId('Branch'),
+  studentId: requiredId('Student'),
+  billingPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM'),
+  challanNo: optionalString(80),
+  dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+  sessionLabel: optionalString(40),
+  lines: z.array(feeChallanLineInputSchema).min(1),
+});
+
+export type CreateFeeChallanInput = z.infer<typeof createFeeChallanSchema>;
