@@ -26,18 +26,49 @@ export const listFeeInvoicesQuerySchema = z
     branchId: z.string().optional(),
     studentId: z.string().optional(),
     statusId: z.string().optional(),
+    feeTypeId: z.string().optional(),
+    search: z.string().optional(),
+    dueFrom: z.string().optional(),
+    dueTo: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
 export type ListFeeInvoicesQuery = z.infer<typeof listFeeInvoicesQuerySchema>;
 
-export const recordPaymentSchema = z.object({
-  amount: requiredPositiveNumber('Amount').optional(),
-  method: z.enum(['cash', 'bank', 'online', 'other'], {
-    errorMap: () => ({ message: MSG.select('payment method') }),
-  }).optional(),
-  paidAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
-});
+export const recordPaymentSchema = z
+  .object({
+    amount: requiredPositiveNumber('Amount').optional(),
+    method: z
+      .enum(['cash', 'bank', 'online', 'other'], {
+        errorMap: () => ({ message: MSG.select('payment method') }),
+      })
+      .optional(),
+    paidAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    providerRef: z
+      .string()
+      .trim()
+      .max(120, MSG.maxLength('Transaction reference', 120))
+      .optional(),
+    receipt: z
+      .object({
+        storagePath: z.string().min(1),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().max(120).optional(),
+        sizeBytes: z.number().int().positive().optional(),
+      })
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === 'bank' || data.method === 'online') {
+      if (!data.receipt) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: MSG.required('Payment receipt'),
+          path: ['receipt'],
+        });
+      }
+    }
+  });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
@@ -64,6 +95,11 @@ export const listFeeStructuresQuerySchema = z
     branchId: z.string().optional(),
     batchId: z.string().optional(),
     programId: z.string().optional(),
+    feeTypeId: z.string().optional(),
+    search: z.string().optional(),
+    includeInactive: z.coerce.boolean().optional(),
+    /** When true, only inactive; when false, only active; omit for all when includeInactive. */
+    isActive: z.coerce.boolean().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -146,3 +182,22 @@ export const updateFeeTypeSchema = createFeeTypeSchema.partial().extend({
 });
 
 export type UpdateFeeTypeInput = z.infer<typeof updateFeeTypeSchema>;
+
+export const listFeeTypesQuerySchema = z.object({
+  includeInactive: z.coerce.boolean().optional(),
+  search: z.string().optional(),
+  /** When true, only inactive; when false, only active; omit for all when includeInactive. */
+  isActive: z.coerce.boolean().optional(),
+});
+
+export type ListFeeTypesQuery = z.infer<typeof listFeeTypesQuerySchema>;
+
+export const listFeeDefaultersQuerySchema = z
+  .object({
+    search: z.string().optional(),
+    dueFrom: z.string().optional(),
+    dueTo: z.string().optional(),
+  })
+  .merge(paginationQuerySchema);
+
+export type ListFeeDefaultersQuery = z.infer<typeof listFeeDefaultersQuerySchema>;

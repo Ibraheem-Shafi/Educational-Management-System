@@ -21,6 +21,7 @@ import {
   confirmOcrSessionSchema,
   createOcrSessionSchema,
   listOcrSessionsQuerySchema,
+  prepareAttendanceRegisterUploadSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -29,6 +30,7 @@ import type {
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
   ListOcrSessionsQuery,
+  PrepareAttendanceRegisterUploadInput,
 } from '@eims/shared';
 
 @ApiTags('ai-attendance')
@@ -51,6 +53,15 @@ export class AiAttendanceController {
   @Permissions('ai_attendance.use')
   findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
     return this.service.findOne(id, scope);
+  }
+
+  @Post('register-upload-url')
+  @Permissions('ai_attendance.use')
+  prepareRegisterUpload(
+    @Body(createZodPipe(prepareAttendanceRegisterUploadSchema))
+    body: PrepareAttendanceRegisterUploadInput,
+  ) {
+    return this.service.prepareRegisterUpload(body);
   }
 
   @Post('sessions')

@@ -1,15 +1,24 @@
-import { createClient } from '@/lib/supabase/client';
+import { uploadViaSignedUrl } from '@/lib/upload-via-signed-url';
 
+const DOCUMENTS_BUCKET = 'student-documents';
+
+/** Upload a student document via service-role signed upload URL. */
 export async function uploadStudentDocument(
   file: File,
   studentId: string,
+  branchId: string,
+  accessToken: string,
 ): Promise<{ path: string; mimeType: string; sizeBytes: number }> {
-  const supabase = createClient();
-  const ext = file.name.split('.').pop() ?? 'bin';
-  const path = `${studentId}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from('student-documents').upload(path, file, {
-    upsert: false,
-  });
-  if (error) throw new Error(error.message);
-  return { path, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size };
+  const uploaded = await uploadViaSignedUrl(
+    file,
+    '/documents/upload-url',
+    accessToken,
+    { branchId, studentId },
+    DOCUMENTS_BUCKET,
+  );
+  return {
+    path: uploaded.path,
+    mimeType: uploaded.mimeType,
+    sizeBytes: uploaded.sizeBytes,
+  };
 }

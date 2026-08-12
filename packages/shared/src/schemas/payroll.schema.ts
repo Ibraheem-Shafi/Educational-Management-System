@@ -5,6 +5,7 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
 export const salaryComponentKinds = ['allowance', 'deduction'] as const;
@@ -24,7 +25,7 @@ export const salaryComponentSchema = z.object({
 
 export type SalaryComponentInput = z.infer<typeof salaryComponentSchema>;
 
-export const createSalaryStructureSchema = z.object({
+const createSalaryStructureFieldsSchema = z.object({
   userId: requiredId('User'),
   branchId: requiredId('Branch'),
   basicSalary: z.coerce.number().min(0),
@@ -34,11 +35,19 @@ export const createSalaryStructureSchema = z.object({
   components: z.array(salaryComponentSchema).default([]),
 });
 
+export const createSalaryStructureSchema = refineEndAfterStart(
+  createSalaryStructureFieldsSchema,
+  'effectiveFrom',
+  'effectiveTo',
+);
+
 export type CreateSalaryStructureInput = z.infer<typeof createSalaryStructureSchema>;
 
-export const updateSalaryStructureSchema = createSalaryStructureSchema
-  .omit({ userId: true, branchId: true })
-  .partial();
+export const updateSalaryStructureSchema = refineEndAfterStart(
+  createSalaryStructureFieldsSchema.omit({ userId: true, branchId: true }).partial(),
+  'effectiveFrom',
+  'effectiveTo',
+);
 
 export type UpdateSalaryStructureInput = z.infer<typeof updateSalaryStructureSchema>;
 

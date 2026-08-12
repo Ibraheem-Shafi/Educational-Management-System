@@ -21,6 +21,8 @@ import { FormFieldError } from '@/components/forms/form-field-error';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { CnicInput } from '@/components/ui/cnic-input';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +30,7 @@ const emptyForm = {
   fullName: '',
   email: '',
   phone: '',
+  cnic: '',
   studentId: '',
   relationship: 'father',
 };
@@ -36,10 +39,12 @@ export function AddParentDialog({
   open,
   onOpenChange,
   branchId = '',
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   branchId?: string;
+  onCreated?: () => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -71,10 +76,13 @@ export function AddParentDialog({
         token,
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Parent created');
-      queryClient.invalidateQueries({ queryKey: ['parents'] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.parents() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.parentsStats }),
+      ]);
+      onCreated?.();
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -89,6 +97,7 @@ export function AddParentDialog({
       fullName: form.fullName.trim(),
       ...(form.email.trim() ? { email: form.email.trim() } : {}),
       ...(form.phone.trim() ? { phone: normalizePakistanPhone(form.phone.trim()) } : {}),
+      ...(form.cnic.trim() ? { cnic: form.cnic.trim() } : {}),
       ...(form.studentId ? { studentId: form.studentId, relationshipCode: form.relationship } : {}),
     };
     if (!validate(payload)) return;
@@ -151,17 +160,29 @@ export function AddParentDialog({
               </div>
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
-                <input
-                  className={fieldClassName('phone', modalFieldClassName)}
-                  placeholder="Phone"
+                <PakistanPhoneInput
                   value={form.phone}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, phone: e.target.value }));
+                  onChange={(value) => {
+                    setForm((prev) => ({ ...prev, phone: value }));
                     clearField('phone');
                   }}
+                  className={errors.phone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.phone} />
               </div>
+            </div>
+
+            <div>
+              <FormFieldLabel>CNIC</FormFieldLabel>
+              <CnicInput
+                className={fieldClassName('cnic', modalFieldClassName)}
+                value={form.cnic}
+                onChange={(value) => {
+                  setForm((prev) => ({ ...prev, cnic: value }));
+                  clearField('cnic');
+                }}
+              />
+              <FormFieldError message={errors.cnic} />
             </div>
 
             {!branchId && (

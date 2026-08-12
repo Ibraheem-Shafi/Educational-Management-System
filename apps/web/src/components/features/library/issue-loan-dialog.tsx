@@ -43,9 +43,12 @@ export function IssueLoanDialog({
     useFormErrors(issueLibraryLoanSchema);
 
   const { data: booksData } = useQuery({
-    queryKey: queryKeys.libraryBooks(branchId),
+    queryKey: queryKeys.libraryBooks(branchId, { limit: 100 }),
     queryFn: () =>
-      apiClient<{ data: LibraryBook[] }>(`/library/books?branchId=${branchId}`, { token }),
+      apiClient<{ data: LibraryBook[] }>(
+        `/library/books?branchId=${branchId}&limit=100`,
+        { token },
+      ),
     enabled: !!token && !!branchId && open,
   });
 

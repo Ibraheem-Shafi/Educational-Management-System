@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, ASSESSMENT_STATUSES } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
@@ -19,6 +19,7 @@ import {
 } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
@@ -42,6 +43,14 @@ import { StatusBadge } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
 
 type AssessmentsTab = 'assessments' | 'series' | 'types';
+
+const ASSESSMENT_STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  ...ASSESSMENT_STATUSES.map((status) => ({
+    value: status,
+    label: status === 'in_review' ? 'In review' : status.charAt(0).toUpperCase() + status.slice(1),
+  })),
+];
 
 interface Assessment {
   id: string;
@@ -112,6 +121,8 @@ export default function AssessmentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [typeId, setTypeId] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
   const [taxonomyDialog, setTaxonomyDialog] = useState<{
@@ -133,8 +144,11 @@ export default function AssessmentsPage() {
       limit: String(limit),
     });
     appendToSearchParams(params);
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (typeId) params.set('typeId', typeId);
     return params.toString();
-  }, [page, limit, appendToSearchParams]);
+  }, [page, limit, search, status, typeId, appendToSearchParams]);
 
   const typesQueryParams = useMemo(() => {
     const params = new URLSearchParams({
@@ -142,19 +156,24 @@ export default function AssessmentsPage() {
       limit: String(limit),
       all: 'true',
     });
+    if (search) params.set('search', search);
     return params.toString();
-  }, [page, limit]);
+  }, [page, limit, search]);
 
   const seriesQueryParams = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
       limit: String(limit),
     });
+    if (search) params.set('search', search);
     return params.toString();
-  }, [page, limit]);
+  }, [page, limit, search]);
 
   const handleTabChange = (next: string) => {
     setTab(next as AssessmentsTab);
+    setSearch('');
+    setStatus('');
+    setTypeId('');
     setPage(1);
   };
 
@@ -167,8 +186,24 @@ export default function AssessmentsPage() {
     enabled: !!token,
   });
 
+  const { data: typeOptions } = useQuery({
+    queryKey: queryKeys.assessmentTypes({ all: true, limit: 100, options: true }),
+    queryFn: () =>
+      apiClient<PaginatedResponse<AssessmentType>>('/assessment-types?all=true&limit=100', {
+        token,
+      }),
+    enabled: !!token && tab === 'assessments',
+  });
+
   const { data: assessments, isLoading, error } = useQuery({
-    queryKey: queryKeys.assessments({ scopeKey, page, limit }),
+    queryKey: queryKeys.assessments({
+      scopeKey,
+      page,
+      limit,
+      search: search || undefined,
+      status: status || undefined,
+      typeId: typeId || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<Assessment>>(`/assessments?${assessmentsQueryParams}`, { token }),
     enabled: !!token && tab === 'assessments',
@@ -176,7 +211,12 @@ export default function AssessmentsPage() {
   });
 
   const { data: types, isLoading: typesLoading } = useQuery({
-    queryKey: queryKeys.assessmentTypes({ all: true, page, limit }),
+    queryKey: queryKeys.assessmentTypes({
+      all: true,
+      page,
+      limit,
+      search: search || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<AssessmentType>>(`/assessment-types?${typesQueryParams}`, {
         token,
@@ -186,7 +226,11 @@ export default function AssessmentsPage() {
   });
 
   const { data: seriesList, isLoading: seriesLoading } = useQuery({
-    queryKey: queryKeys.assessmentSeries({ page, limit }),
+    queryKey: queryKeys.assessmentSeries({
+      page,
+      limit,
+      search: search || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<AssessmentSeries>>(`/assessment-series?${seriesQueryParams}`, {
         token,
@@ -225,16 +269,6 @@ export default function AssessmentsPage() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
-
-  const filteredAssessments = useMemo(() => {
-    const list = assessments?.data ?? [];
-    if (!search) return list;
-    const q = search.toLowerCase();
-    return list.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) || (a.type?.name ?? '').toLowerCase().includes(q),
-    );
-  }, [assessments?.data, search]);
 
   const createAction = (() => {
     if (tab === 'assessments' && canEnterMarks) {
@@ -341,11 +375,36 @@ export default function AssessmentsPage() {
         <>
           <FilterBar className="items-center">
             <SearchInput value={search} onValueChange={handleSearchChange} />
-            {search && (
+            <SelectDropdown
+              aria-label="Filter by status"
+              placeholder="All statuses"
+              value={status}
+              onValueChange={(next) => {
+                setStatus(next);
+                setPage(1);
+              }}
+              options={ASSESSMENT_STATUS_OPTIONS}
+            />
+            <SelectDropdown
+              aria-label="Filter by type"
+              placeholder="All types"
+              value={typeId}
+              onValueChange={(next) => {
+                setTypeId(next);
+                setPage(1);
+              }}
+              options={[
+                { value: '', label: 'All types' },
+                ...(typeOptions?.data.map((t) => ({ value: t.id, label: t.name })) ?? []),
+              ]}
+            />
+            {(search || status || typeId) && (
               <Button
                 variant="ghost"
                 onClick={() => {
                   setSearch('');
+                  setStatus('');
+                  setTypeId('');
                   setPage(1);
                 }}
               >
@@ -378,7 +437,7 @@ export default function AssessmentsPage() {
                     </tr>
                   )}
 
-                  {!isLoading && !error && filteredAssessments.length === 0 && (
+                  {!isLoading && !error && (assessments?.data.length ?? 0) === 0 && (
                     <tr>
                       <td
                         colSpan={5}
@@ -391,7 +450,7 @@ export default function AssessmentsPage() {
 
                   {!isLoading &&
                     !error &&
-                    filteredAssessments.map((assessment) => (
+                    assessments?.data.map((assessment) => (
                       <tr
                         key={assessment.id}
                         className={cn('transition-colors', dataTableRowHoverClass)}
@@ -478,6 +537,22 @@ export default function AssessmentsPage() {
       )}
 
       {tab === 'series' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={search} onValueChange={handleSearchChange} />
+            {search && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </FilterBar>
+
         <div className="bg-white">
           <div className={dataTableWrapperClass}>
             <table className={dataTableClass}>
@@ -545,9 +620,26 @@ export default function AssessmentsPage() {
             />
           )}
         </div>
+        </>
       )}
 
       {tab === 'types' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={search} onValueChange={handleSearchChange} />
+            {search && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </FilterBar>
+
         <div className="bg-white">
           <div className={dataTableWrapperClass}>
             <table className={dataTableClass}>
@@ -615,6 +707,7 @@ export default function AssessmentsPage() {
             />
           )}
         </div>
+        </>
       )}
     </div>
   );

@@ -4,7 +4,7 @@ export const LEARNING_TYPE_FILTERS = [
   { value: 'material', label: 'Materials' },
   { value: 'syllabus', label: 'Syllabus' },
   { value: 'homework', label: 'Homework' },
-  { value: 'online_class', label: 'Online class' },
+  { value: 'online_class', label: 'Live video class' },
 ] as const;
 
 export function learningTypeLabel(type: string): string {
@@ -20,7 +20,7 @@ export function learningTypeLabel(type: string): string {
     case 'resource':
       return 'Resource';
     case 'online_class':
-      return 'Online class';
+      return 'Live video class';
     default:
       return type.charAt(0).toUpperCase() + type.slice(1);
   }

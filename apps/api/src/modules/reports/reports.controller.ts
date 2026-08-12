@@ -6,8 +6,8 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchScopeParam, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { paginationQuerySchema } from '@eims/shared';
-import type { BranchScope, PaginationQuery } from '@eims/shared';
+import { listFeeDefaultersQuerySchema } from '@eims/shared';
+import type { BranchScope, ListFeeDefaultersQuery } from '@eims/shared';
 
 @ApiTags('reports')
 @ApiBearerAuth()
@@ -26,7 +26,7 @@ export class ReportsController {
   @Permissions('reports.view')
   getFeeDefaulters(
     @BranchScopeParam() scope: BranchScope,
-    @Query(createZodPipe(paginationQuerySchema)) query: PaginationQuery,
+    @Query(createZodPipe(listFeeDefaultersQuerySchema)) query: ListFeeDefaultersQuery,
   ) {
     return this.reportsService.getFeeDefaulters(scope, query);
   }

@@ -57,7 +57,7 @@ Track implementation against:
 2. `npm run db:seed:all` — foundation + Pakistani demo data + Supabase auth accounts
 3. `npm run db:seed:verify` — confirm counts (students ≥ 45, batches ≥ 6, etc.)
 4. **Demo logins (emails, passwords, roles):** [docs/demo-seed.md](../docs/demo-seed.md)
-5. Supabase: enable Realtime on `Notice` table; create buckets `student-photos`, `student-documents`, `institution-assets`, `attendance-registers`
+5. Supabase: enable Realtime on `Notice` table; buckets are auto-created by the API when missing (`student-photos`, `student-documents`, `institution-assets`, `attendance-registers`, `learning-content`, `leave-attachments`). Browser uploads use **signed upload URLs** from the API (service role) — no Storage INSERT RLS policies required for staff uploads.
 6. Supabase: run `packages/database/supabase/rls.sql` in SQL editor (branch isolation RLS)
 7. Env: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`; optional `TWILIO_*`, `OPENAI_API_KEY`
 8. Enable MFA in Supabase project settings (TOTP); enforce for `super_admin` / `branch_admin` at login

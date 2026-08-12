@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { DoorOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { createVisitorSchema } from '@eims/shared';
+import { createVisitorSchema, normalizePakistanPhone } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { cn } from '@/lib/utils';
 
 const emptyForm = {
@@ -55,7 +56,7 @@ export function VisitorDialog({
   const buildPayload = () => ({
     branchId,
     fullName: form.fullName.trim(),
-    ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+    ...(form.phone.trim() ? { phone: normalizePakistanPhone(form.phone.trim()) } : {}),
     ...(form.purpose.trim() ? { purpose: form.purpose.trim() } : {}),
     ...(form.hostName.trim() ? { hostName: form.hostName.trim() } : {}),
     ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
@@ -129,11 +130,10 @@ export function VisitorDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
-                <input
-                  className={fieldClassName('phone', modalFieldClassName)}
-                  placeholder="Phone"
+                <PakistanPhoneInput
                   value={form.phone}
-                  onChange={(e) => updateForm('phone', e.target.value)}
+                  onChange={(value) => updateForm('phone', value)}
+                  className={errors.phone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.phone} />
               </div>

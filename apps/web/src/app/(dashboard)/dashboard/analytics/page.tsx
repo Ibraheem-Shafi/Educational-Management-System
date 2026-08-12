@@ -187,9 +187,15 @@ export default function AnalyticsPage() {
       />
 
       <div className="space-y-4">
-        <FilterBar className="items-center">
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-auto" />
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-auto" />
+        <FilterBar className="items-end">
+          <div className="flex min-w-0 flex-col gap-1">
+            <label className="text-xs font-medium leading-4 text-[var(--text-sub-500,#525866)]">From</label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-auto" />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <label className="text-xs font-medium leading-4 text-[var(--text-sub-500,#525866)]">To</label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-auto" />
+          </div>
         </FilterBar>
         <TrendAreaChart
           title="Attendance trends"

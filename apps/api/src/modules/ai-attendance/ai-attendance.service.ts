@@ -1,8 +1,9 @@
 import { prismaBranchFilter } from '../../common/utils/branch-scope.util';
 import type { BranchScope } from '@eims/shared';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { AttendanceService } from '../attendance/attendance.service';
@@ -13,6 +14,7 @@ import type {
   ConfirmOcrSessionInput,
   CreateOcrSessionInput,
   ListOcrSessionsQuery,
+  PrepareAttendanceRegisterUploadInput,
 } from '@eims/shared';
 import { detectAttendanceCode, nameSimilarity } from '@eims/shared';
 
@@ -30,14 +32,76 @@ interface OcrSuggestion {
   sourceLine: string | null;
 }
 
+const ATTENDANCE_BUCKET = 'attendance-registers';
+
 @Injectable()
 export class AiAttendanceService {
+  private readonly logger = new Logger(AiAttendanceService.name);
+  private supabaseAdmin;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly attendance: AttendanceService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const url = this.config.get<string>('SUPABASE_URL');
+    const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+    if (url && key) {
+      this.supabaseAdmin = createClient(url, key);
+    }
+  }
+
+  async prepareRegisterUpload(input: PrepareAttendanceRegisterUploadInput) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: input.branchId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
+    await this.ensureAttendanceBucket();
+
+    const safeName =
+      input.fileName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'register';
+    const path = `${input.branchId}/${Date.now()}-${safeName.slice(0, 120)}`;
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(ATTENDANCE_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare register upload');
+    }
+
+    return {
+      bucket: ATTENDANCE_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
+  }
+
+  private async ensureAttendanceBucket(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(ATTENDANCE_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(ATTENDANCE_BUCKET, { public: false });
+        this.logger.log(`Created storage bucket "${ATTENDANCE_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${ATTENDANCE_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   async createSession(input: CreateOcrSessionInput, user: AuthUser) {
     const batch = await this.prisma.batch.findFirst({

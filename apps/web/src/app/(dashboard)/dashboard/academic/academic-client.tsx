@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen } from 'lucide-react';
@@ -25,6 +25,9 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { MainStatsSection, type MainStatItem } from '@/components/layout/main-stats-section';
+import { SearchInput } from '@/components/layout/search-input';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
+import { FilterBar } from '@/components/layout/filter-bar';
 import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
@@ -37,6 +40,17 @@ import { CreateSubjectDialog } from '@/components/features/academic/create-subje
 import { EditSubjectDialog } from '@/components/features/academic/edit-subject-dialog';
 import { CreateSessionDialog } from '@/components/features/academic/create-session-dialog';
 import { cn } from '@/lib/utils';
+
+const ACTIVE_FILTER_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
+
+const CURRENT_FILTER_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'true', label: 'Current' },
+];
 
 const thClass =
   'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
@@ -102,6 +116,15 @@ export default function AcademicPage() {
   const [tab, setTab] = useState<AcademicTab>('programs');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
+  const [programSearch, setProgramSearch] = useState('');
+  const [programIsActive, setProgramIsActive] = useState('');
+  const [batchSearch, setBatchSearch] = useState('');
+  const [batchProgramId, setBatchProgramId] = useState('');
+  const [batchIsActive, setBatchIsActive] = useState('');
+  const [subjectSearch, setSubjectSearch] = useState('');
+  const [subjectIsActive, setSubjectIsActive] = useState('');
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [sessionIsCurrent, setSessionIsCurrent] = useState('');
 
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
   const [createSubjectOpen, setCreateSubjectOpen] = useState(false);
@@ -133,15 +156,45 @@ export default function AcademicPage() {
     setPage(1);
   };
 
-  const subjectsQueryParams = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
-  }).toString();
+  const handleProgramSearchChange = useCallback((value: string) => {
+    setProgramSearch(value);
+    setPage(1);
+  }, []);
 
-  const sessionsQueryParams = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
-  }).toString();
+  const handleBatchSearchChange = useCallback((value: string) => {
+    setBatchSearch(value);
+    setPage(1);
+  }, []);
+
+  const handleSubjectSearchChange = useCallback((value: string) => {
+    setSubjectSearch(value);
+    setPage(1);
+  }, []);
+
+  const handleSessionSearchChange = useCallback((value: string) => {
+    setSessionSearch(value);
+    setPage(1);
+  }, []);
+
+  const subjectsQueryParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (subjectSearch) params.set('search', subjectSearch);
+    if (subjectIsActive) params.set('isActive', subjectIsActive);
+    return params.toString();
+  }, [page, limit, subjectSearch, subjectIsActive]);
+
+  const sessionsQueryParams = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (sessionSearch) params.set('search', sessionSearch);
+    if (sessionIsCurrent) params.set('isCurrent', sessionIsCurrent);
+    return params.toString();
+  }, [page, limit, sessionSearch, sessionIsCurrent]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: [...queryKeys.academicStats(tab), scopeKey],
@@ -153,10 +206,20 @@ export default function AcademicPage() {
   });
 
   const { data: programs, isLoading: programsLoading } = useQuery({
-    queryKey: queryKeys.programs(scopeKey, { page, limit }),
+    queryKey: queryKeys.programs(scopeKey, {
+      page,
+      limit,
+      search: programSearch || undefined,
+      isActive: programIsActive || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<ProgramListItem>>(
-        withBranchScope('/programs', effectiveScope, { page, limit }),
+        withBranchScope('/programs', effectiveScope, {
+          page,
+          limit,
+          search: programSearch || undefined,
+          isActive: programIsActive || undefined,
+        }),
         { token },
       ),
     enabled: !!token && tab === 'programs',
@@ -164,17 +227,17 @@ export default function AcademicPage() {
   });
 
   const { data: programOptionsData } = useQuery({
-    queryKey: queryKeys.programs(singleBranchId ?? '', { options: true, limit: 100 }),
+    queryKey: queryKeys.programs(scopeKey, { options: true, limit: 100 }),
     queryFn: () =>
       apiClient<PaginatedResponse<ProgramListItem>>(
-        `/programs?branchId=${singleBranchId}&limit=100`,
+        withBranchScope('/programs', effectiveScope, { limit: 100 }),
         { token },
       ),
-    enabled: !!token && !!singleBranchId && (tab === 'batches' || createBatchOpen),
+    enabled: !!token && (tab === 'batches' || createBatchOpen),
   });
 
   const { data: subjects, isLoading: subjectsLoading } = useQuery({
-    queryKey: [...queryKeys.subjects, { page, limit }],
+    queryKey: [...queryKeys.subjects, { page, limit, search: subjectSearch, isActive: subjectIsActive }],
     queryFn: () =>
       apiClient<PaginatedResponse<Subject>>(`/subjects?${subjectsQueryParams}`, { token }),
     enabled: !!token && tab === 'subjects',
@@ -182,10 +245,21 @@ export default function AcademicPage() {
   });
 
   const { data: batches, isLoading: batchesLoading } = useQuery({
-    queryKey: queryKeys.batches(scopeKey, undefined, { page, limit }),
+    queryKey: queryKeys.batches(scopeKey, batchProgramId || undefined, {
+      page,
+      limit,
+      search: batchSearch || undefined,
+      isActive: batchIsActive || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<Batch>>(
-        withBranchScope('/batches', effectiveScope, { page, limit }),
+        withBranchScope('/batches', effectiveScope, {
+          page,
+          limit,
+          search: batchSearch || undefined,
+          programId: batchProgramId || undefined,
+          isActive: batchIsActive || undefined,
+        }),
         { token },
       ),
     enabled: !!token && tab === 'batches',
@@ -193,7 +267,12 @@ export default function AcademicPage() {
   });
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery({
-    queryKey: queryKeys.academicSessions({ page, limit }),
+    queryKey: queryKeys.academicSessions({
+      page,
+      limit,
+      search: sessionSearch || undefined,
+      isCurrent: sessionIsCurrent || undefined,
+    }),
     queryFn: () =>
       apiClient<PaginatedResponse<Session>>(`/academic-sessions?${sessionsQueryParams}`, { token }),
     enabled: !!token && tab === 'sessions',
@@ -271,11 +350,37 @@ export default function AcademicPage() {
         onValueChange={handleTabChange}
       />
 
-      {tab !== 'subjects' && tab !== 'sessions' && <PageBranchScopeControl />}
-
       <MainStatsSection isLoading={statsLoading} stats={tabStats(tab, stats)} />
 
       {tab === 'programs' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={programSearch} onValueChange={handleProgramSearchChange} />
+            <SelectDropdown
+              aria-label="Filter by status"
+              placeholder="All"
+              value={programIsActive}
+              onValueChange={(next) => {
+                setProgramIsActive(next);
+                setPage(1);
+              }}
+              options={ACTIVE_FILTER_OPTIONS}
+            />
+            {(programSearch || programIsActive) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setProgramSearch('');
+                  setProgramIsActive('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+            <PageBranchScopeControl />
+          </FilterBar>
+
         <ContentPanel title={`Programs (${programs?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-separate border-spacing-0">
@@ -339,9 +444,52 @@ export default function AcademicPage() {
             />
           )}
         </ContentPanel>
+        </>
       )}
 
       {tab === 'batches' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={batchSearch} onValueChange={handleBatchSearchChange} />
+            <SelectDropdown
+              aria-label="Filter by program"
+              placeholder="All programs"
+              value={batchProgramId}
+              onValueChange={(next) => {
+                setBatchProgramId(next);
+                setPage(1);
+              }}
+              options={[
+                { value: '', label: 'All programs' },
+                ...programOptions,
+              ]}
+            />
+            <SelectDropdown
+              aria-label="Filter by status"
+              placeholder="All"
+              value={batchIsActive}
+              onValueChange={(next) => {
+                setBatchIsActive(next);
+                setPage(1);
+              }}
+              options={ACTIVE_FILTER_OPTIONS}
+            />
+            {(batchSearch || batchProgramId || batchIsActive) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setBatchSearch('');
+                  setBatchProgramId('');
+                  setBatchIsActive('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+            <PageBranchScopeControl />
+          </FilterBar>
+
         <ContentPanel title={`Batches (${batches?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] border-separate border-spacing-0">
@@ -398,9 +546,37 @@ export default function AcademicPage() {
             />
           )}
         </ContentPanel>
+        </>
       )}
 
       {tab === 'sessions' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={sessionSearch} onValueChange={handleSessionSearchChange} />
+            <SelectDropdown
+              aria-label="Filter by current session"
+              placeholder="All"
+              value={sessionIsCurrent}
+              onValueChange={(next) => {
+                setSessionIsCurrent(next);
+                setPage(1);
+              }}
+              options={CURRENT_FILTER_OPTIONS}
+            />
+            {(sessionSearch || sessionIsCurrent) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSessionSearch('');
+                  setSessionIsCurrent('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </FilterBar>
+
         <ContentPanel title={`Sessions (${sessions?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] border-separate border-spacing-0">
@@ -452,6 +628,7 @@ export default function AcademicPage() {
                                 type="date"
                                 className={sessionFieldClassName('endDate', '')}
                                 value={editSessionEnd}
+                                min={editSessionStart || undefined}
                                 onChange={(e) => {
                                   setEditSessionEnd(e.target.value);
                                   clearSessionField('endDate');
@@ -549,9 +726,37 @@ export default function AcademicPage() {
             />
           )}
         </ContentPanel>
+        </>
       )}
 
       {tab === 'subjects' && (
+        <>
+          <FilterBar className="items-center">
+            <SearchInput value={subjectSearch} onValueChange={handleSubjectSearchChange} />
+            <SelectDropdown
+              aria-label="Filter by status"
+              placeholder="All"
+              value={subjectIsActive}
+              onValueChange={(next) => {
+                setSubjectIsActive(next);
+                setPage(1);
+              }}
+              options={ACTIVE_FILTER_OPTIONS}
+            />
+            {(subjectSearch || subjectIsActive) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSubjectSearch('');
+                  setSubjectIsActive('');
+                  setPage(1);
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </FilterBar>
+
         <ContentPanel title={`Subjects (${subjects?.meta.total ?? 0})`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] border-separate border-spacing-0">
@@ -613,6 +818,7 @@ export default function AcademicPage() {
             />
           )}
         </ContentPanel>
+        </>
       )}
 
       <CreateBatchDialog

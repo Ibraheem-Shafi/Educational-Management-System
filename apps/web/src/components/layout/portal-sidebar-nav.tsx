@@ -36,6 +36,8 @@ export interface PortalNavItem {
   roles: Array<'student' | 'parent'>;
   /** When true, only exact path matches (e.g. role home). */
   matchExact?: boolean;
+  /** Compact readiness label (e.g. demo / unfinished surfaces). */
+  badge?: 'soon';
 }
 
 export const portalNavItems: PortalNavItem[] = [
@@ -99,6 +101,7 @@ export const portalNavItems: PortalNavItem[] = [
     label: 'Insights',
     icon: Sparkles,
     roles: ['student'],
+    badge: 'soon',
   },
   {
     href: '/portal/parent',
@@ -291,6 +294,7 @@ function ProfileFooter({
     onNavigate?.();
     await signOut();
     router.replace('/login');
+    router.refresh();
   };
 
   return (
@@ -397,7 +401,14 @@ export function PortalSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 key={`${item.href}-${item.label}`}
                 href={item.href}
                 onClick={onNavigate}
-                title={collapsed ? item.label : undefined}
+                title={
+                  collapsed
+                    ? item.badge === 'soon'
+                      ? `${item.label} (Coming soon)`
+                      : item.label
+                    : undefined
+                }
+                aria-label={item.badge === 'soon' ? `${item.label}, coming soon` : undefined}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900 transition-colors',
                   collapsed && 'justify-center px-2',
@@ -407,7 +418,12 @@ export function PortalSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                 {!collapsed && (
                   <>
-                    <span className="flex-1 truncate">{item.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.badge === 'soon' ? (
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-sub-500)] ring-1 ring-inset ring-[var(--stroke-soft-200,#E2E4E9)]">
+                        Soon
+                      </span>
+                    ) : null}
                     {active && <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />}
                   </>
                 )}

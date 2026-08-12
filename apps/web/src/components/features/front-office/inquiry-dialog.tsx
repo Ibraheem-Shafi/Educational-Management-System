@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import {
   createInquirySchema,
   inquiryStatuses,
+  normalizePakistanPhone,
   updateInquirySchema,
 } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -23,6 +24,7 @@ import {
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { DateField } from '@/components/ui/date-field';
 import { cn } from '@/lib/utils';
 import type { AdmissionInquiry } from './types';
@@ -97,7 +99,11 @@ export function InquiryDialog({
 
     const base = {
       fullName: form.fullName.trim(),
-      phone: form.phone.trim() || (isEdit ? '' : undefined),
+      phone: form.phone.trim()
+        ? normalizePakistanPhone(form.phone.trim())
+        : isEdit
+          ? ''
+          : undefined,
       email: form.email.trim() || (isEdit ? '' : undefined),
       programInterest: form.programInterest.trim() || (isEdit ? '' : undefined),
       status: form.status,
@@ -188,11 +194,10 @@ export function InquiryDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Phone</FormFieldLabel>
-                <input
-                  className={fieldClassName('phone', modalFieldClassName)}
-                  placeholder="Phone"
+                <PakistanPhoneInput
                   value={form.phone}
-                  onChange={(e) => updateForm('phone', e.target.value)}
+                  onChange={(value) => updateForm('phone', value)}
+                  className={errors.phone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.phone} />
               </div>

@@ -94,11 +94,33 @@ export class CertificatesService {
         : query.branchId
           ? selectedBranchScope([query.branchId])
           : scope;
+    const search = query.search?.trim();
+    const issuedAt =
+      query.issuedFrom || query.issuedTo
+        ? {
+            ...(query.issuedFrom
+              ? { gte: new Date(`${query.issuedFrom.slice(0, 10)}T00:00:00.000Z`) }
+              : {}),
+            ...(query.issuedTo
+              ? { lte: new Date(`${query.issuedTo.slice(0, 10)}T23:59:59.999Z`) }
+              : {}),
+          }
+        : undefined;
     const where = {
       deletedAt: null,
       ...prismaBranchFilter(effective),
       ...(query.studentId ? { studentId: query.studentId } : {}),
       ...(query.templateId ? { templateId: query.templateId } : {}),
+      ...(issuedAt ? { issuedAt } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' as const } },
+              { serialNo: { contains: search, mode: 'insensitive' as const } },
+              { student: { fullName: { contains: search, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;

@@ -101,11 +101,12 @@ export default function StudentLearningDetailPage() {
         )}
       </div>
 
-      {data.type === 'online_class' && (
+      {(data.type === 'online_class' || data.meetingUrl) && (
         <OnlineClassSessionMeta
           startsAt={data.startsAt}
           endsAt={data.endsAt}
           meetingUrl={data.meetingUrl}
+          isLiveClass={data.type === 'online_class'}
         />
       )}
 

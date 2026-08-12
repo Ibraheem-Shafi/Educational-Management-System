@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { refineEndAfterStart } from '../validation/date-range';
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD');
 
@@ -30,11 +31,16 @@ export const bulkAttendanceSchema = z.object({
 
 export type BulkAttendanceInput = z.infer<typeof bulkAttendanceSchema>;
 
-export const attendanceHistoryQuerySchema = z.object({
-  studentId: z.string().min(1),
-  from: dateOnlySchema,
-  to: dateOnlySchema,
-});
+export const attendanceHistoryQuerySchema = refineEndAfterStart(
+  z.object({
+    studentId: z.string().min(1),
+    from: dateOnlySchema,
+    to: dateOnlySchema,
+  }),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type AttendanceHistoryQuery = z.infer<typeof attendanceHistoryQuerySchema>;
 

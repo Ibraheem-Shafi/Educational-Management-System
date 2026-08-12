@@ -14,6 +14,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 
 const thClass =
@@ -80,6 +81,7 @@ export default function AiInsightsPage() {
         description="At-risk detection and performance summaries"
       />
 
+      <ComingSoonFrame featureId="ai-insights">
       <MainStatsSection
         isLoading={isLoading}
         stats={[
@@ -180,6 +182,7 @@ export default function AiInsightsPage() {
           </div>
         </ContentPanel>
       </div>
+      </ComingSoonFrame>
     </div>
   );
 }

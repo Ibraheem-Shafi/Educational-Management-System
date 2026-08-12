@@ -49,7 +49,7 @@ export default function DashboardPage() {
   const showRecentActivities = canReadAllActivities || canReadBranchActivities;
 
   const showOrgStats =
-    canManageBranches || canReadStudents || canManageUsers || canReadAcademic;
+    canManageBranches || canReadBranches || canReadStudents || canManageUsers || canReadAcademic;
   const showFeesStats = canReadFees && !canManageBranches && !canReadStudents && !canManageUsers;
 
   const { effectiveScope, scopeKey } = useEffectiveBranchScope();
@@ -108,10 +108,10 @@ export default function DashboardPage() {
   const welcomeName = user?.fullName?.trim() || 'there';
 
   const orgStatCards = [
-    ...(canManageBranches && stats?.totalBranches
+    ...((canManageBranches || canReadBranches) && stats?.totalBranches
       ? [
           {
-            label: 'Total Branches',
+            label: canManageBranches ? 'Total Branches' : 'Branches under you',
             value: formatStatValue(stats.totalBranches.total),
             changePercent: stats.totalBranches.changePercent,
           },

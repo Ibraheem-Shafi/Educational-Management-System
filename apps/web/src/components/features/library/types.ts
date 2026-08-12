@@ -57,7 +57,13 @@ export interface LibraryReservation {
   status: string;
   reservedAt: string;
   branchId: string;
-  book?: { id: string; title: string; author: string };
+  book?: {
+    id: string;
+    title: string;
+    author: string;
+    copies?: LibraryCopy[];
+    _count?: { reservations: number };
+  };
   student?: { id: string; fullName: string } | null;
   user?: { id: string; fullName: string } | null;
 }

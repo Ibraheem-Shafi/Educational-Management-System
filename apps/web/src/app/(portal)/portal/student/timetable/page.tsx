@@ -14,19 +14,23 @@ export default function StudentTimetablePage() {
   const { session } = useAuth();
   const token = session?.access_token;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.portalStudentTimetable,
     queryFn: () => apiClient<PortalTimetableResponse>('/portal/student/timetable', { token }),
     enabled: !!token,
   });
 
   if (isLoading && !data) return <PortalPageSkeleton />;
-  if (error) return <p className="text-red-600">Unable to load timetable.</p>;
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader icon={Calendar} title="Timetable" description="Weekly class schedule" />
-      <PortalTimetableSection slots={data?.slots ?? []} todaySlots={data?.todaySlots ?? []} />
+      <PortalTimetableSection
+        slots={data?.slots ?? []}
+        todaySlots={data?.todaySlots ?? []}
+        isError={isError}
+        onRetry={() => void refetch()}
+      />
     </div>
   );
 }

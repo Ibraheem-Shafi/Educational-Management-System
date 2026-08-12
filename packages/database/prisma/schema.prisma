@@ -683,6 +683,10 @@ model LeaveRequest {
   reason       String
   status       String   @default("pending")
   reviewedById String?
+  attachmentFileName    String?
+  attachmentStoragePath String?
+  attachmentMimeType    String?
+  attachmentSizeBytes   Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

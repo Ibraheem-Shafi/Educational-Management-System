@@ -21,12 +21,14 @@ import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../comm
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createTimetableSlotSchema,
+  createTimetableSlotsBulkSchema,
   listTimetableQuerySchema,
   updateTimetableSlotSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
   CreateTimetableSlotInput,
+  CreateTimetableSlotsBulkInput,
   ListTimetableQuery,
   UpdateTimetableSlotInput,
 } from '@eims/shared';
@@ -70,6 +72,16 @@ export class TimetableController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.timetableService.create(body, user);
+  }
+
+  @Post('bulk')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('timetable.manage')
+  createBulk(
+    @Body(createZodPipe(createTimetableSlotsBulkSchema)) body: CreateTimetableSlotsBulkInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.timetableService.createBulk(body, user);
   }
 
   @Patch(':id')

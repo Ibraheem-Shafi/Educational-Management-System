@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Banknote } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
@@ -20,17 +20,30 @@ const TABS = [
 type PayrollTab = (typeof TABS)[number]['id'];
 
 export default function PayrollPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const userIdFilter = searchParams.get('userId') ?? undefined;
-  const initialTab = (searchParams.get('runId')
-    ? 'runs'
-    : userIdFilter
-      ? 'structures'
-      : 'structures') as PayrollTab;
+  const runIdFromUrl = searchParams.get('runId') ?? undefined;
 
-  const [tab, setTab] = useState<PayrollTab>(initialTab);
+  const [tab, setTab] = useState<PayrollTab>(runIdFromUrl ? 'runs' : 'structures');
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(runIdFromUrl);
   const { singleBranchId } = useEffectiveBranchScope();
   const branchId = singleBranchId ?? '';
+
+  useEffect(() => {
+    if (!runIdFromUrl) return;
+    setSelectedRunId(runIdFromUrl);
+    setTab('runs');
+  }, [runIdFromUrl]);
+
+  const handleViewRun = useCallback(
+    (runId: string) => {
+      setSelectedRunId(runId);
+      setTab('runs');
+      router.replace(`/dashboard/payroll?runId=${runId}`, { scroll: false });
+    },
+    [router],
+  );
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
@@ -57,9 +70,9 @@ export default function PayrollPage() {
       ) : tab === 'structures' ? (
         <StructuresPanel branchId={branchId} userId={userIdFilter} />
       ) : tab === 'runs' ? (
-        <RunsPanel branchId={branchId} />
+        <RunsPanel branchId={branchId} initialRunId={selectedRunId} />
       ) : (
-        <HistoryPanel branchId={branchId} />
+        <HistoryPanel branchId={branchId} onViewRun={handleViewRun} />
       )}
     </div>
   );

@@ -4,16 +4,18 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
-import { PERMISSIONS, updateInstitutionSettingsSchema, requiredString } from '@eims/shared';
+import { PERMISSIONS, updateInstitutionSettingsSchema, requiredString, normalizePakistanPhone } from '@eims/shared';
 import { z } from 'zod';
 import { useAuth } from '@/providers/auth-provider';
 import { useInstitution } from '@/providers/institution-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { uploadInstitutionAsset } from '@/lib/upload-institution-asset';
+import { ACCEPT_IMAGE_NO_GIF } from '@/lib/image-upload';
 import type { InstitutionSettingsResponse } from '@eims/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { queryKeys } from '@/lib/query-keys';
 import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
@@ -156,7 +158,7 @@ export default function SettingsPage() {
     const payload = {
       name,
       primaryColor,
-      phone: phone || null,
+      phone: phone.trim() ? normalizePakistanPhone(phone.trim()) : null,
       email: email || null,
       timezone,
       currency,
@@ -212,14 +214,13 @@ export default function SettingsPage() {
             <FormFieldError message={settingsErrors.primaryColor} />
           </div>
           <div>
-            <Input
-              placeholder="Phone"
+            <PakistanPhoneInput
               value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
+              onChange={(value) => {
+                setPhone(value);
                 clearSettingsField('phone');
               }}
-              className={settingsFieldClassName('phone', '')}
+              className={settingsErrors.phone ? 'border-red-500' : undefined}
             />
             <FormFieldError message={settingsErrors.phone} />
           </div>
@@ -263,12 +264,13 @@ export default function SettingsPage() {
             <label className="text-sm font-medium text-[var(--text-main-900)]">Logo</label>
             <Input
               type="file"
-              accept="image/*"
+              accept={ACCEPT_IMAGE_NO_GIF}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
+                e.target.value = '';
                 if (!file) return;
                 try {
-                  const url = await uploadInstitutionAsset(file, 'logo');
+                  const url = await uploadInstitutionAsset(file, 'logo', token!);
                   await saveMutation.mutateAsync({ logoUrl: url });
                   toast.success('Logo uploaded');
                 } catch (err) {

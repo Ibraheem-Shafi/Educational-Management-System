@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Mail, Phone } from 'lucide-react';
 import Link from 'next/link';
@@ -29,6 +29,7 @@ import { FilterBar } from '@/components/layout/filter-bar';
 import { StatusBadge } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { ContactIcon } from '@/components/layout/contact-icon';
 import { Tabs } from '@/components/ui/tabs';
 import { AddBranchDialog } from '@/components/features/branches/add-branch-dialog';
 import { EditBranchDialog } from '@/components/features/branches/edit-branch-dialog';
@@ -50,40 +51,6 @@ function formatBranchId(code: string): string {
 
 function formatCount(value: number): string {
   return value.toLocaleString('en-US');
-}
-
-function ContactIcon({
-  href,
-  label,
-  children,
-  disabled,
-}: {
-  href?: string;
-  label: string;
-  children: ReactNode;
-  disabled?: boolean;
-}) {
-  const className = cn(
-    'flex h-8 w-8 items-center justify-center rounded-full border-[0.8px] border-[var(--stroke-soft-200,#E2E4E9)] p-2',
-    'text-[var(--text-sub-500,#525866)] transition-colors',
-    disabled
-      ? 'cursor-not-allowed opacity-40'
-      : 'hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)]',
-  );
-
-  if (disabled || !href) {
-    return (
-      <span className={className} aria-label={label} title={label}>
-        {children}
-      </span>
-    );
-  }
-
-  return (
-    <a href={href} className={className} aria-label={label} title={label} onClick={(e) => e.stopPropagation()}>
-      {children}
-    </a>
-  );
 }
 
 function MyBranchPanel({
@@ -410,18 +377,10 @@ export default function BranchesPage() {
                         <td className={tdClass}>{branch.addressLabel}</td>
                         <td className={tdClass}>
                           <div className="flex items-center gap-2">
-                            <ContactIcon
-                              href={branch.email ? `mailto:${branch.email}` : undefined}
-                              label={branch.email ?? 'No email'}
-                              disabled={!branch.email}
-                            >
+                            <ContactIcon kind="email" value={branch.email}>
                               <Mail className="h-4 w-4" strokeWidth={1.2} />
                             </ContactIcon>
-                            <ContactIcon
-                              href={branch.phone ? `tel:${branch.phone}` : undefined}
-                              label={branch.phone ?? 'No phone'}
-                              disabled={!branch.phone}
-                            >
+                            <ContactIcon kind="phone" value={branch.phone}>
                               <Phone className="h-4 w-4" strokeWidth={1.2} />
                             </ContactIcon>
                           </div>

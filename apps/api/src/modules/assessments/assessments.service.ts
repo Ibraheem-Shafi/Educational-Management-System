@@ -81,7 +81,17 @@ export class AssessmentsService {
 
   async listTypes(query: ListAssessmentTypesQuery): Promise<PaginatedResponse<AssessmentType>> {
     const includeInactive = query.all === true;
-    const where = includeInactive ? {} : { isActive: true };
+    const where = {
+      ...(includeInactive ? {} : { isActive: true }),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 
@@ -142,16 +152,27 @@ export class AssessmentsService {
   }
 
   async listSeries(query: ListAssessmentSeriesQuery) {
+    const where = {
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' as const } },
+              { code: { contains: query.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 
     const [series, total] = await Promise.all([
       this.prisma.assessmentSeries.findMany({
+        where,
         orderBy: { name: 'asc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.assessmentSeries.count(),
+      this.prisma.assessmentSeries.count({ where }),
     ]);
     return paginatedResult(series, total, page, limit);
   }
@@ -232,6 +253,9 @@ export class AssessmentsService {
       ...(query.typeId ? { typeId: query.typeId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.publishedOnly ? { status: 'published' as const } : {}),
+      ...(query.search
+        ? { name: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;

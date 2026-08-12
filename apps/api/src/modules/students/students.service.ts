@@ -1,17 +1,25 @@
 import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
 import type { BranchScope } from '@eims/shared';
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 import type { AuthUser, PaginatedResponse, StudentsStatsResponse } from '@eims/types';
-import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from '@eims/shared';
+import type {
+  CreateStudentInput,
+  ListStudentsQuery,
+  PrepareStudentPhotoUploadInput,
+  UpdateStudentInput,
+} from '@eims/shared';
 
 const STATS_CACHE_TTL_MS = 45_000;
 const OPTIONS_LIMIT_MAX = 200;
+const PHOTOS_BUCKET = 'student-photos';
 
 export type StudentOptionsQuery = {
   branchId?: string;
@@ -22,12 +30,22 @@ export type StudentOptionsQuery = {
 
 @Injectable()
 export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+  private supabaseAdmin;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly lookupCache: LookupCacheService,
     private readonly ttlCache: TtlCacheService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    const url = this.config.get<string>('SUPABASE_URL');
+    const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+    if (url && key) {
+      this.supabaseAdmin = createClient(url, key);
+    }
+  }
 
   async getStats(scope: BranchScope): Promise<StudentsStatsResponse> {
     const cacheKey = `students:stats:${scopeCacheKey(scope)}`;
@@ -334,6 +352,66 @@ export class StudentsService {
         code: l.subject.code,
       })),
     };
+  }
+
+  async preparePhotoUpload(
+    id: string,
+    input: PrepareStudentPhotoUploadInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const canUpload =
+      user.permissions.includes('students.update') || user.permissions.includes('students.create');
+    if (!canUpload) throw new ForbiddenException('Insufficient permissions');
+
+    const student = await this.prisma.student.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+      select: { id: true, branchId: true },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
+    await this.ensurePhotosBucket();
+
+    const safeName =
+      input.fileName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'photo';
+    const path = `${student.branchId}/${student.id}/${Date.now()}-${safeName.slice(0, 120)}`;
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(PHOTOS_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare photo upload');
+    }
+
+    return {
+      bucket: PHOTOS_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
+  }
+
+  private async ensurePhotosBucket(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(PHOTOS_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(PHOTOS_BUCKET, { public: true });
+        this.logger.log(`Created storage bucket "${PHOTOS_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${PHOTOS_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async update(id: string, input: UpdateStudentInput, user: AuthUser, scope: BranchScope) {

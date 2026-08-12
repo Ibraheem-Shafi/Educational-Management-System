@@ -1,6 +1,7 @@
 'use client';
 
 import { ContentPanel } from '@/components/layout/content-panel';
+import { Button } from '@/components/ui/button';
 import { DAY_NAMES } from '@/lib/portal-types';
 import {
   dataTableClass,
@@ -22,10 +23,29 @@ interface TimetableSlot {
 export function PortalTimetableSection({
   slots,
   todaySlots = [],
+  isError = false,
+  onRetry,
 }: {
   slots: TimetableSlot[];
   todaySlots?: TimetableSlot[];
+  isError?: boolean;
+  onRetry?: () => void;
 }) {
+  if (isError) {
+    return (
+      <ContentPanel title="Timetable">
+        <div className="flex items-center justify-between gap-3 px-5 py-4">
+          <p className="text-sm text-red-600">Unable to load timetable.</p>
+          {onRetry ? (
+            <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      </ContentPanel>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {todaySlots.length > 0 && (

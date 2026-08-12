@@ -75,7 +75,7 @@ export function UploadDocumentDialog({
 
   const uploadMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
-      const uploaded = await uploadStudentDocument(file!, form.studentId);
+      const uploaded = await uploadStudentDocument(file!, form.studentId, effectiveBranchId, token!);
       return apiClient('/documents', {
         method: 'POST',
         token,

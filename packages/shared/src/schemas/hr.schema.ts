@@ -5,12 +5,13 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
 export const employmentTypes = ['full_time', 'part_time', 'contract', 'intern'] as const;
 export const contractStatuses = ['active', 'ended', 'terminated'] as const;
 
-export const createContractSchema = z.object({
+const createContractFieldsSchema = z.object({
   userId: requiredId('User'),
   branchId: requiredId('Branch'),
   startDate: requiredId('Start date'),
@@ -21,11 +22,19 @@ export const createContractSchema = z.object({
   documentPath: z.string().optional().nullable(),
 });
 
+export const createContractSchema = refineEndAfterStart(
+  createContractFieldsSchema,
+  'startDate',
+  'endDate',
+);
+
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 
-export const updateContractSchema = createContractSchema
-  .omit({ userId: true, branchId: true })
-  .partial();
+export const updateContractSchema = refineEndAfterStart(
+  createContractFieldsSchema.omit({ userId: true, branchId: true }).partial(),
+  'startDate',
+  'endDate',
+);
 
 export type UpdateContractInput = z.infer<typeof updateContractSchema>;
 

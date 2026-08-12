@@ -12,6 +12,9 @@ export const MSG = {
   positiveNumber: (label: string) => `${label} must be a positive number`,
   invalidDate: 'Enter a valid date',
   invalidUrl: 'Enter a valid URL',
+  endAfterStart: 'End date must be after start date',
+  endOnOrAfterStart: 'End date must be on or after start date',
+  endTimeAfterStart: 'End time must be after start time',
 } as const;
 
 /** Required non-empty string ID (branch, status, etc.) */

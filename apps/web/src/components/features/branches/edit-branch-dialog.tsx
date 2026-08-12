@@ -19,7 +19,6 @@ import { BranchFormFields } from '@/components/features/branches/branch-form-fie
 import {
   buildBranchPhonePayload,
   emptyBranchForm,
-  parsePhoneForBranchForm,
   type BranchFormValues,
 } from '@/lib/branch-form';
 import { useFormErrors } from '@/hooks/use-form-errors';
@@ -27,14 +26,12 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 function branchToForm(branch: BranchDetailResponse): BranchFormValues {
-  const { phoneCountryCode, phone } = parsePhoneForBranchForm(branch.phone);
   return {
     name: branch.name,
     code: branch.code,
     address: branch.address ?? branch.addressLabel,
     email: branch.email ?? '',
-    phoneCountryCode,
-    phone,
+    phone: branch.phone ?? '',
   };
 }
 

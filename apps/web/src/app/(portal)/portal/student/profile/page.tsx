@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserRound } from 'lucide-react';
-import { updateProfileSchema } from '@eims/shared';
+import { updateProfileSchema, normalizePakistanPhone } from '@eims/shared';
 import { toast } from 'sonner';
 import type { PortalStudentProfileResponse } from '@eims/types';
 import { useAuth } from '@/providers/auth-provider';
@@ -15,6 +15,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { Button } from '@/components/ui/button';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 
@@ -23,7 +24,7 @@ export default function StudentProfilePage() {
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [phone, setPhone] = useState('');
-  const { errors, clearField, validate, applyApiErrors, fieldClassName } =
+  const { errors, clearField, validate, applyApiErrors } =
     useFormErrors(updateProfileSchema);
 
   const { data, isLoading } = useQuery({
@@ -62,14 +63,11 @@ export default function StudentProfilePage() {
             <p className="text-[var(--text-sub-500)]">{profile?.email}</p>
             <label className="mt-3 block">
               <span className="text-xs text-[var(--text-sub-500)]">Phone</span>
-              <input
-                className={fieldClassName(
-                  'phone',
-                  'mt-1 w-full max-w-xs rounded-lg border border-stroke-soft-200 px-3 py-2',
-                )}
+              <PakistanPhoneInput
+                className="mt-1 max-w-xs"
                 value={phoneValue}
-                onChange={(e) => {
-                  setPhone(e.target.value);
+                onChange={(value) => {
+                  setPhone(value);
                   clearField('phone');
                 }}
               />
@@ -79,7 +77,11 @@ export default function StudentProfilePage() {
               className="mt-3"
               size="sm"
               onClick={() => {
-                const payload = { phone: phoneValue.trim() || null };
+                const payload = {
+                  phone: phoneValue.trim()
+                    ? normalizePakistanPhone(phoneValue.trim())
+                    : null,
+                };
                 if (!validate(payload)) return;
                 save.mutate(payload);
               }}

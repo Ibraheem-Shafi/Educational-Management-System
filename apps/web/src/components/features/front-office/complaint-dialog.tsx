@@ -8,6 +8,7 @@ import {
   complaintStatuses,
   complaintTypes,
   createComplaintSchema,
+  normalizePakistanPhone,
   priorities,
   updateComplaintSchema,
 } from '@eims/shared';
@@ -25,6 +26,7 @@ import {
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { cn } from '@/lib/utils';
 import type { ComplaintRequest } from './types';
 import { formatLabel } from './types';
@@ -94,7 +96,7 @@ export function ComplaintDialog({
           ? { requesterName: '' }
           : {}),
       ...(form.requesterPhone.trim()
-        ? { requesterPhone: form.requesterPhone.trim() }
+        ? { requesterPhone: normalizePakistanPhone(form.requesterPhone.trim()) }
         : isEdit
           ? { requesterPhone: '' }
           : {}),
@@ -243,11 +245,10 @@ export function ComplaintDialog({
               </div>
               <div>
                 <FormFieldLabel>Requester phone</FormFieldLabel>
-                <input
-                  className={fieldClassName('requesterPhone', modalFieldClassName)}
-                  placeholder="Phone"
+                <PakistanPhoneInput
                   value={form.requesterPhone}
-                  onChange={(e) => updateForm('requesterPhone', e.target.value)}
+                  onChange={(value) => updateForm('requesterPhone', value)}
+                  className={errors.requesterPhone ? 'border-red-500' : undefined}
                 />
                 <FormFieldError message={errors.requesterPhone} />
               </div>

@@ -52,6 +52,8 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   permission?: string;
+  /** Compact readiness label (e.g. demo / unfinished surfaces). */
+  badge?: 'soon';
 };
 
 export type NavGroup = {
@@ -116,8 +118,20 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
       { href: '/dashboard/reports', label: 'Reports', icon: FileBarChart, permission: 'reports.view' },
-      { href: '/dashboard/ai-insights', label: 'AI Insights', icon: Sparkles, permission: 'ai_insights.read' },
-      { href: '/dashboard/ai-attendance', label: 'AI Attendance', icon: ScanLine, permission: 'ai_attendance.use' },
+      {
+        href: '/dashboard/ai-insights',
+        label: 'AI Insights',
+        icon: Sparkles,
+        permission: 'ai_insights.read',
+        badge: 'soon',
+      },
+      {
+        href: '/dashboard/ai-attendance',
+        label: 'AI Attendance',
+        icon: ScanLine,
+        permission: 'ai_attendance.use',
+        badge: 'soon',
+      },
     ],
   },
   {
@@ -130,6 +144,7 @@ export const navGroups: NavGroup[] = [
         label: 'Communications',
         icon: MessageSquare,
         permission: 'communications.send',
+        badge: 'soon',
       },
     ],
   },
@@ -305,6 +320,8 @@ function ProfileFooter({
     setOpen(false);
     onNavigate?.();
     await signOut();
+    router.replace('/login');
+    router.refresh();
   };
 
   return (
@@ -380,12 +397,18 @@ function NavLinkItem({
 }) {
   const Icon = item.icon;
   const active = isNavItemActive(pathname, item.href);
+  const title = collapsed
+    ? item.badge === 'soon'
+      ? `${item.label} (Coming soon)`
+      : item.label
+    : undefined;
 
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
-      title={collapsed ? item.label : undefined}
+      title={title}
+      aria-label={item.badge === 'soon' ? `${item.label}, coming soon` : undefined}
       className={cn(
         'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900 transition-colors',
         collapsed && 'justify-center px-2',
@@ -396,7 +419,12 @@ function NavLinkItem({
       <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
       {!collapsed && (
         <>
-          <span className="flex-1 truncate">{item.label}</span>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {item.badge === 'soon' ? (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-sub-500)] ring-1 ring-inset ring-[var(--stroke-soft-200,#E2E4E9)]">
+              Soon
+            </span>
+          ) : null}
           {active && <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />}
         </>
       )}

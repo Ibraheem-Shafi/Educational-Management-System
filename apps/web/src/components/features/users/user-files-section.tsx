@@ -76,7 +76,7 @@ export function UserFilesSection({
   const uploadMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const file = payload._file as File;
-      const uploaded = await uploadEmployeeDocument(file, userId);
+      const uploaded = await uploadEmployeeDocument(file, userId, branchId!, token!);
       return apiClient('/documents', {
         method: 'POST',
         token,

@@ -15,11 +15,16 @@ import { DocumentsService } from './documents.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { createDocumentSchema, listDocumentsQuerySchema } from '@eims/shared';
+import { createDocumentSchema, listDocumentsQuerySchema, prepareDocumentUploadSchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { BranchScope, CreateDocumentInput, ListDocumentsQuery } from '@eims/shared';
+import type {
+  BranchScope,
+  CreateDocumentInput,
+  ListDocumentsQuery,
+  PrepareDocumentUploadInput,
+} from '@eims/shared';
 
 @ApiTags('documents')
 @ApiBearerAuth()
@@ -51,6 +56,15 @@ export class DocumentsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.documentsService.create(body, user);
+  }
+
+  @Post('upload-url')
+  @Permissions('documents.upload')
+  prepareUpload(
+    @Body(createZodPipe(prepareDocumentUploadSchema)) body: PrepareDocumentUploadInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.documentsService.prepareUpload(body, user);
   }
 
   @Get(':id/signed-url')

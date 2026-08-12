@@ -5,6 +5,7 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
 export const accountTypes = ['asset', 'liability', 'equity', 'income', 'expense'] as const;
@@ -73,16 +74,21 @@ export const updateVoucherSchema = z.object({
 
 export type UpdateVoucherInput = z.infer<typeof updateVoucherSchema>;
 
-export const listVouchersQuerySchema = z
-  .object({
-    branchId: z.string().optional(),
-    status: z.enum(voucherStatuses).optional(),
-    voucherType: z.enum(voucherTypes).optional(),
-    from: z.string().optional(),
-    to: z.string().optional(),
-    search: z.string().optional(),
-  })
-  .merge(paginationQuerySchema);
+export const listVouchersQuerySchema = refineEndAfterStart(
+  z
+    .object({
+      branchId: z.string().optional(),
+      status: z.enum(voucherStatuses).optional(),
+      voucherType: z.enum(voucherTypes).optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      search: z.string().optional(),
+    })
+    .merge(paginationQuerySchema),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type ListVouchersQuery = z.infer<typeof listVouchersQuerySchema>;
 
@@ -119,28 +125,43 @@ export const listBudgetsQuerySchema = z
 
 export type ListBudgetsQuery = z.infer<typeof listBudgetsQuerySchema>;
 
-export const trialBalanceQuerySchema = z.object({
-  branchId: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-});
+export const trialBalanceQuerySchema = refineEndAfterStart(
+  z.object({
+    branchId: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
 
-export const incomeExpenseQuerySchema = z.object({
-  branchId: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-});
+export const incomeExpenseQuerySchema = refineEndAfterStart(
+  z.object({
+    branchId: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type IncomeExpenseQuery = z.infer<typeof incomeExpenseQuerySchema>;
 
-export const accountStatementQuerySchema = z.object({
-  branchId: z.string().optional(),
-  accountId: z.string().min(1),
-  from: z.string().optional(),
-  to: z.string().optional(),
-});
+export const accountStatementQuerySchema = refineEndAfterStart(
+  z.object({
+    branchId: z.string().optional(),
+    accountId: z.string().min(1),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type AccountStatementQuery = z.infer<typeof accountStatementQuerySchema>;
 

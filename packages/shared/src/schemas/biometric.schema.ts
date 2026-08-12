@@ -5,6 +5,7 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
 export const biometricEntityTypes = ['student', 'user'] as const;
@@ -64,16 +65,21 @@ export const updateBiometricMappingSchema = createBiometricMappingSchema
 
 export type UpdateBiometricMappingInput = z.infer<typeof updateBiometricMappingSchema>;
 
-export const listBiometricPunchLogsQuerySchema = z
-  .object({
-    branchId: z.string().optional(),
-    deviceId: z.string().optional(),
-    externalPersonId: z.string().optional(),
-    matched: z.coerce.boolean().optional(),
-    from: z.string().datetime().optional(),
-    to: z.string().datetime().optional(),
-  })
-  .merge(paginationQuerySchema);
+export const listBiometricPunchLogsQuerySchema = refineEndAfterStart(
+  z
+    .object({
+      branchId: z.string().optional(),
+      deviceId: z.string().optional(),
+      externalPersonId: z.string().optional(),
+      matched: z.coerce.boolean().optional(),
+      from: z.string().datetime().optional(),
+      to: z.string().datetime().optional(),
+    })
+    .merge(paginationQuerySchema),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type ListBiometricPunchLogsQuery = z.infer<typeof listBiometricPunchLogsQuerySchema>;
 

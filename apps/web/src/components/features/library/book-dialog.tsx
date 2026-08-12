@@ -44,6 +44,7 @@ export function BookDialog({
   branchId,
   book,
   categories,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,6 +52,8 @@ export function BookDialog({
   book: LibraryBook | null;
   categories: LibraryCategory[];
   copyStatuses?: string[];
+  /** Called after a successful create/update so the list can reset filters/page. */
+  onSaved?: (result: { created: boolean }) => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -140,8 +143,9 @@ export function BookDialog({
     },
     onSuccess: async () => {
       toast.success(isEdit ? 'Book updated' : 'Book added');
-      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryBooks(branchId) });
+      await queryClient.invalidateQueries({ queryKey: ['library-books', branchId] });
       await queryClient.invalidateQueries({ queryKey: queryKeys.libraryStats(branchId) });
+      onSaved?.({ created: !isEdit });
       onOpenChange(false);
     },
     onError: (err: Error) => {

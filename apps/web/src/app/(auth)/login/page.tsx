@@ -8,7 +8,11 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { apiClient } from '@/lib/api-client';
 import { getPostLoginPath } from '@/lib/auth-redirect';
-import { getLoginErrorMessage, isPortalDisabledLoginError } from '@/lib/login-errors';
+import {
+  getAuthMeLoginErrorMessage,
+  getLoginErrorMessage,
+  isPortalDisabledLoginError,
+} from '@/lib/login-errors';
 import { resolveAdminMfaStep, startMfaChallenge } from '@/lib/mfa';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
@@ -72,6 +76,7 @@ function LoginPageContent() {
     navigatedRef.current = true;
     toast.success('Welcome back');
     router.replace(getPostLoginPath(roles));
+    router.refresh();
   }, [router]);
 
   useEffect(() => {
@@ -127,9 +132,10 @@ function LoginPageContent() {
       const me = await apiClient<{ user: AuthUser }>('/auth/me', { token: accessToken });
       syncAuth(authData.session, me.user);
       roles = me.user.roles;
-    } catch {
+    } catch (err) {
+      await supabase.auth.signOut();
       setLoading(false);
-      toast.error('Could not load account');
+      toast.error(getAuthMeLoginErrorMessage(err));
       return;
     }
 
@@ -182,8 +188,9 @@ function LoginPageContent() {
         });
         syncAuth(sessionData.session, me.user);
         finishLogin(me.user.roles);
-      } catch {
-        toast.error('Could not load account');
+      } catch (err) {
+        await supabase.auth.signOut();
+        toast.error(getAuthMeLoginErrorMessage(err));
       }
     }
     setLoading(false);

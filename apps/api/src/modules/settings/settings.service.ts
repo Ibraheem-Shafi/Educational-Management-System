@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
@@ -6,17 +8,29 @@ import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import type { InstitutionSettingsResponse, UpdateInstitutionSettingsRequest } from '@eims/types';
 import type { AuthUser } from '@eims/types';
 import type { FeatureFlags, InstitutionType, TerminologyMap } from '@eims/types';
+import type { PrepareInstitutionAssetUploadInput } from '@eims/shared';
 
 const SETTINGS_CACHE_TTL_MS = 300_000;
+const ASSETS_BUCKET = 'institution-assets';
 
 @Injectable()
 export class SettingsService {
+  private readonly logger = new Logger(SettingsService.name);
+  private supabaseAdmin;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
     private readonly lookupCache: LookupCacheService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    const url = this.config.get<string>('SUPABASE_URL');
+    const key = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+    if (url && key) {
+      this.supabaseAdmin = createClient(url, key);
+    }
+  }
 
   async getInstitutionSettings(): Promise<InstitutionSettingsResponse> {
     const cached = this.ttlCache.get<InstitutionSettingsResponse>('settings:institution');
@@ -29,6 +43,51 @@ export class SettingsService {
     const response = this.toResponse(settings);
     this.ttlCache.set('settings:institution', response, SETTINGS_CACHE_TTL_MS);
     return response;
+  }
+
+  async prepareInstitutionAssetUpload(input: PrepareInstitutionAssetUploadInput) {
+    if (!this.supabaseAdmin) {
+      throw new BadRequestException(
+        'File uploads are not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      );
+    }
+
+    await this.ensureAssetsBucket();
+
+    const safeName =
+      input.fileName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '') || 'asset';
+    const path = `${input.folder}/${Date.now()}-${safeName.slice(0, 120)}`;
+    const { data, error } = await this.supabaseAdmin.storage
+      .from(ASSETS_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new BadRequestException(error?.message ?? 'Could not prepare asset upload');
+    }
+
+    return {
+      bucket: ASSETS_BUCKET,
+      path: data.path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+    };
+  }
+
+  private async ensureAssetsBucket(): Promise<void> {
+    if (!this.supabaseAdmin) return;
+    try {
+      const { data } = await this.supabaseAdmin.storage.getBucket(ASSETS_BUCKET);
+      if (!data) {
+        await this.supabaseAdmin.storage.createBucket(ASSETS_BUCKET, { public: true });
+        this.logger.log(`Created storage bucket "${ASSETS_BUCKET}"`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not verify/create storage bucket "${ASSETS_BUCKET}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async getLookups(categoryCode: string) {

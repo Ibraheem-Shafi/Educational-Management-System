@@ -21,9 +21,10 @@ import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import {
   FormFieldLabel,
-  InvitePhoneField,
   modalFieldClassName,
 } from '@/components/features/users/invite-form-fields';
+import { CnicInput } from '@/components/ui/cnic-input';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -35,7 +36,6 @@ const GENDER_OPTIONS = [
 
 type EditForm = {
   fullName: string;
-  phoneCountryCode: string;
   phone: string;
   gender: string;
   cnic: string;
@@ -46,7 +46,6 @@ type EditForm = {
 function emptyForm(): EditForm {
   return {
     fullName: '',
-    phoneCountryCode: '+92',
     phone: '',
     gender: '',
     cnic: '',
@@ -55,21 +54,10 @@ function emptyForm(): EditForm {
   };
 }
 
-function parsePhone(raw: string | null): { phoneCountryCode: string; phone: string } {
-  if (!raw) return { phoneCountryCode: '+92', phone: '' };
-  const match = raw.match(/^(\+\d{1,3})\s*(.*)$/);
-  if (match) {
-    return { phoneCountryCode: match[1], phone: match[2].replace(/\D/g, '') };
-  }
-  return { phoneCountryCode: '+92', phone: raw.replace(/\D/g, '') };
-}
-
 function userToForm(user: UserDetailResponse): EditForm {
-  const { phoneCountryCode, phone } = parsePhone(user.phone);
   return {
     fullName: user.fullName,
-    phoneCountryCode,
-    phone,
+    phone: user.phone ?? '',
     gender: user.gender ?? '',
     cnic: user.cnic ?? '',
     department: user.department ?? '',
@@ -152,9 +140,8 @@ export function EditUserDialog({
   };
 
   const buildPayload = () => {
-    const phoneDigits = form.phone.replace(/\D/g, '');
-    const fullPhone = phoneDigits
-      ? normalizePakistanPhone(`${form.phoneCountryCode}${phoneDigits}`)
+    const fullPhone = form.phone.trim()
+      ? normalizePakistanPhone(form.phone.trim())
       : null;
     return {
       fullName: form.fullName.trim(),
@@ -232,14 +219,14 @@ export function EditUserDialog({
                   <FormFieldError message={errors.fullName} />
                 </Field>
                 <div>
-                  <InvitePhoneField
+                  <FormFieldLabel>Phone</FormFieldLabel>
+                  <PakistanPhoneInput
                     value={form.phone}
-                    countryCode={form.phoneCountryCode}
                     onChange={(value) => {
                       update('phone', value);
                       clearField('phone');
                     }}
-                    onCountryCodeChange={(code) => update('phoneCountryCode', code)}
+                    className={errors.phone ? 'border-red-500' : undefined}
                   />
                   <FormFieldError message={errors.phone} />
                 </div>
@@ -258,14 +245,12 @@ export function EditUserDialog({
                   <FormFieldError message={errors.gender} />
                 </Field>
                 <Field label="CNIC">
-                  <input
-                    type="text"
+                  <CnicInput
                     value={form.cnic}
-                    onChange={(e) => {
-                      update('cnic', e.target.value);
+                    onChange={(value) => {
+                      update('cnic', value);
                       clearField('cnic');
                     }}
-                    placeholder="12345-1234567-1"
                     className={fieldClassName('cnic', modalFieldClassName)}
                   />
                   <FormFieldError message={errors.cnic} />

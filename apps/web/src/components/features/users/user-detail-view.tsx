@@ -7,6 +7,7 @@ import {
   ChevronRight,
   FileText,
   Info,
+  Loader2,
   Mail,
   Phone,
   ScrollText,
@@ -122,9 +123,13 @@ export function UserDetailSkeleton() {
 export function UserDetailView({
   user,
   onEdit,
+  onReactivate,
+  reactivatePending,
 }: {
   user: UserDetailResponse;
   onEdit?: () => void;
+  onReactivate?: () => void;
+  reactivatePending?: boolean;
 }) {
   const permissionGroups = useMemo(
     () => groupPermissions(user.permissions ?? []),
@@ -186,12 +191,30 @@ export function UserDetailView({
             </div>
           </div>
         </div>
-        {onEdit && (
-          <button type="button" onClick={onEdit} className={pageHeaderActionClassName}>
-            <SquarePen className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
-            Edit user
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onEdit && (
+            <button type="button" onClick={onEdit} className={pageHeaderActionClassName}>
+              <SquarePen className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
+              Edit user
+            </button>
+          )}
+          {onReactivate && !user.isActive && (
+            <button
+              type="button"
+              onClick={onReactivate}
+              disabled={reactivatePending}
+              className={cn(
+                pageHeaderActionClassName,
+                'inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              {reactivatePending ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-white" aria-hidden />
+              ) : null}
+              {reactivatePending ? 'Reactivating…' : 'Reactivate'}
+            </button>
+          )}
+        </div>
       </div>
 
       <DetailCard title="Profile" icon={Info}>

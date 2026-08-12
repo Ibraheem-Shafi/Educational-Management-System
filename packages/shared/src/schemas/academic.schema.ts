@@ -5,7 +5,8 @@ import {
   requiredId,
   requiredString,
 } from '../validation/messages';
-import { paginationQuerySchema } from './common.schema';
+import { refineEndAfterStart } from '../validation/date-range';
+import { paginationQuerySchema, queryBooleanSchema } from './common.schema';
 
 export const programBatchInputSchema = z.object({
   id: requiredId('Batch').optional(),
@@ -35,7 +36,8 @@ export type UpdateProgramInput = z.infer<typeof updateProgramSchema>;
 export const listProgramsQuerySchema = z
   .object({
     branchId: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -66,7 +68,8 @@ export const listBatchesQuerySchema = z
   .object({
     branchId: z.string().optional(),
     programId: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
+    search: z.string().optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -88,29 +91,39 @@ export type UpdateSubjectInput = z.infer<typeof updateSubjectSchema>;
 export const listSubjectsQuerySchema = z
   .object({
     search: z.string().optional(),
-    isActive: z.coerce.boolean().optional(),
+    isActive: queryBooleanSchema,
   })
   .merge(paginationQuerySchema);
 
 export type ListSubjectsQuery = z.infer<typeof listSubjectsQuerySchema>;
 
-export const createAcademicSessionSchema = z.object({
+const academicSessionFieldsSchema = z.object({
   name: requiredString('Session name', 2, 100),
   startDate: z.string().datetime({ message: MSG.invalidDate }),
   endDate: z.string().datetime({ message: MSG.invalidDate }),
   isCurrent: z.boolean().optional(),
 });
 
+export const createAcademicSessionSchema = refineEndAfterStart(
+  academicSessionFieldsSchema,
+  'startDate',
+  'endDate',
+);
+
 export type CreateAcademicSessionInput = z.infer<typeof createAcademicSessionSchema>;
 
-export const updateAcademicSessionSchema = createAcademicSessionSchema.partial();
+export const updateAcademicSessionSchema = refineEndAfterStart(
+  academicSessionFieldsSchema.partial(),
+  'startDate',
+  'endDate',
+);
 
 export type UpdateAcademicSessionInput = z.infer<typeof updateAcademicSessionSchema>;
 
 export const listAcademicSessionsQuerySchema = z
   .object({
     search: z.string().optional(),
-    isCurrent: z.coerce.boolean().optional(),
+    isCurrent: queryBooleanSchema,
   })
   .merge(paginationQuerySchema);
 

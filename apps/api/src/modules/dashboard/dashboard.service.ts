@@ -127,7 +127,7 @@ export class DashboardService {
 
   private async getAssignedBatchIds(teacherId: string): Promise<string[]> {
     const slots = await this.prisma.timetableSlot.findMany({
-      where: { teacherId },
+      where: { teacherId, isActive: true },
       select: { batchId: true },
       distinct: ['batchId'],
     });
@@ -149,12 +149,20 @@ export class DashboardService {
     scope: BranchScope,
   ): Promise<DashboardStatsResponse> {
     const canManageBranches = user.permissions.includes('branches.manage');
+    const canReadBranches = user.permissions.includes('branches.read');
     const canReadStudents = user.permissions.includes('students.read');
     const canManageUsers = user.permissions.includes('users.manage');
     const canReadAcademic = user.permissions.includes('academic.read');
     const assignedScope = this.shouldScopeToAssignedBatches(user);
 
-    if (!canManageBranches && !canReadStudents && !canManageUsers && !canReadAcademic && !assignedScope) {
+    if (
+      !canManageBranches &&
+      !canReadBranches &&
+      !canReadStudents &&
+      !canManageUsers &&
+      !canReadAcademic &&
+      !assignedScope
+    ) {
       return {};
     }
 
@@ -167,11 +175,14 @@ export class DashboardService {
 
     const result: DashboardStatsResponse = {};
 
-    if (canManageBranches) {
+    // Institution-wide for branch managers; scoped for read-only (e.g. branch admin).
+    // Do not apply the header branch selector to manage counts — selecting a branch
+    // should filter students/staff/classes, not shrink the org branch total to 1.
+    if (canManageBranches || canReadBranches) {
       const branchWhere = {
         deletedAt: null,
         isActive: true,
-        ...(prismaBranchIdFilter(scope)),
+        ...(canManageBranches ? {} : prismaBranchIdFilter(scope)),
       };
       const [totalBranches, totalBranchesPrevious] = await Promise.all([
         this.prisma.branch.count({ where: branchWhere }),

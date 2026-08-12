@@ -6,16 +6,16 @@ import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LEARNING_AUDIENCES,
-  LEARNING_MEETING_PLATFORMS,
   LEARNING_RESOURCE_TYPES,
   LEARNING_VISIBILITY_SCOPES,
   createLearningResourceSchema,
   updateLearningResourceSchema,
 } from '@eims/shared';
-import type { LearningResourceResponse } from '@eims/types';
+import type { LearningAttachmentResponse, LearningResourceResponse } from '@eims/types';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { uploadLearningContent } from '@/lib/upload-learning-content';
 import { handleFormValidationError } from '@/lib/form-api-error';
 import { useBatches } from '@/hooks/use-batches';
 import { useSubjectsOptions } from '@/hooks/use-subjects-options';
@@ -27,6 +27,7 @@ import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { DateField } from '@/components/ui/date-field';
+import { LearningAttachmentsField } from '@/components/features/learning/learning-attachments-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -71,8 +72,10 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
   const [dueAt, setDueAt] = useState('');
   const [maxMarks, setMaxMarks] = useState('');
   const [isPublished, setIsPublished] = useState(false);
-  const [fileName, setFileName] = useState('');
-  const [storagePath, setStoragePath] = useState('');
+  const [existingAttachments, setExistingAttachments] = useState<LearningAttachmentResponse[]>([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<Set<string>>(() => new Set());
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
@@ -92,8 +95,9 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
     setDueAt(existing.dueAt ? existing.dueAt.slice(0, 16) : '');
     setMaxMarks(existing.maxMarks ? String(existing.maxMarks) : '');
     setIsPublished(existing.isPublished);
-    setFileName(existing.attachments?.[0]?.fileName ?? '');
-    setStoragePath(existing.attachments?.[0]?.storagePath ?? '');
+    setExistingAttachments(existing.attachments ?? []);
+    setRemovedAttachmentIds(new Set());
+    setPendingFiles([]);
     setStartsAt(existing.startsAt ? existing.startsAt.slice(0, 16) : '');
     setEndsAt(existing.endsAt ? existing.endsAt.slice(0, 16) : '');
     setMeetingUrl(existing.meetingUrl ?? '');
@@ -133,10 +137,37 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
     maxMarks: maxMarks ? Number(maxMarks) : null,
     startsAt: isOnlineClass && startsAt ? new Date(startsAt).toISOString() : null,
     endsAt: isOnlineClass && endsAt ? new Date(endsAt).toISOString() : null,
-    meetingUrl: isOnlineClass ? meetingUrl.trim() || null : null,
-    meetingPlatform: isOnlineClass ? meetingPlatform : null,
+    meetingUrl: meetingUrl.trim() || null,
+    meetingPlatform: meetingUrl.trim()
+      ? isOnlineClass
+        ? meetingPlatform
+        : meetingPlatform || 'other'
+      : null,
     isPublished,
   });
+
+  const downloadAttachment = async (attachmentId: string, fileName: string) => {
+    if (!token || !editId) return;
+    setDownloadingId(attachmentId);
+    try {
+      const res = await apiClient<{ url: string }>(
+        `/learning/${editId}/attachments/${attachmentId}/signed-url`,
+        { token },
+      );
+      const anchor = document.createElement('a');
+      anchor.href = res.url;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch {
+      toast.error('Unable to download attachment');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const submitMutation = useMutation({
     mutationFn: async (payload: ReturnType<typeof buildPayload>) => {
@@ -147,11 +178,25 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
         token,
         body: JSON.stringify(payload),
       });
-      if (fileName.trim() && storagePath.trim()) {
+
+      for (const attachmentId of removedAttachmentIds) {
+        await apiClient(`/learning/${resource.id}/attachments/${attachmentId}`, {
+          method: 'DELETE',
+          token,
+        });
+      }
+
+      for (const file of pendingFiles) {
+        const uploaded = await uploadLearningContent(file, resource.id, token!);
         await apiClient(`/learning/${resource.id}/attachments`, {
           method: 'POST',
           token,
-          body: JSON.stringify({ fileName: fileName.trim(), storagePath: storagePath.trim() }),
+          body: JSON.stringify({
+            fileName: uploaded.fileName,
+            storagePath: uploaded.path,
+            mimeType: uploaded.mimeType,
+            sizeBytes: uploaded.sizeBytes,
+          }),
         });
       }
     },
@@ -194,6 +239,7 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
       >
         <form
           className="space-y-6 p-5"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             const payload = buildPayload();
@@ -232,8 +278,21 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
               <SelectDropdown
                 aria-label="Type"
                 value={type}
-                onValueChange={setType}
-                options={LEARNING_RESOURCE_TYPES.map((v) => ({ value: v, label: v.replace('_', ' ') }))}
+                onValueChange={(value) => {
+                  setType(value);
+                  if (value === 'online_class') {
+                    setMeetingPlatform((prev) => (prev === 'other' || !prev ? 'meet' : prev));
+                  } else if (meetingUrl) {
+                    setMeetingPlatform('other');
+                  }
+                }}
+                options={LEARNING_RESOURCE_TYPES.map((v) => ({
+                  value: v,
+                  label:
+                    v === 'online_class'
+                      ? 'Live video class'
+                      : v.replace('_', ' ').replace(/^\w/, (c) => c.toUpperCase()),
+                }))}
                 className="w-full"
               />
             </div>
@@ -332,39 +391,13 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                     type="datetime-local"
                     className={fieldClassName('endsAt', modalFieldClassName)}
                     value={endsAt}
+                    min={startsAt || undefined}
                     onValueChange={(next) => {
                       setEndsAt(next);
                       clearField('endsAt');
                     }}
                   />
                   <FormFieldError message={errors.endsAt} />
-                </div>
-                <div>
-                  <FormFieldLabel required>Meeting URL</FormFieldLabel>
-                  <input
-                    type="url"
-                    className={fieldClassName('meetingUrl', modalFieldClassName)}
-                    value={meetingUrl}
-                    onChange={(e) => {
-                      setMeetingUrl(e.target.value);
-                      clearField('meetingUrl');
-                    }}
-                    placeholder="https://meet.google.com/..."
-                  />
-                  <FormFieldError message={errors.meetingUrl} />
-                </div>
-                <div>
-                  <FormFieldLabel>Meeting platform</FormFieldLabel>
-                  <SelectDropdown
-                    aria-label="Meeting platform"
-                    value={meetingPlatform}
-                    onValueChange={setMeetingPlatform}
-                    options={LEARNING_MEETING_PLATFORMS.map((v) => ({
-                      value: v,
-                      label: v.charAt(0).toUpperCase() + v.slice(1),
-                    }))}
-                    className="w-full"
-                  />
                 </div>
               </>
             ) : (
@@ -388,20 +421,92 @@ export function LearningFormPage({ mode }: { mode: 'create' | 'edit' }) {
                 placeholder="e.g. 100"
               />
             </div>
-            <div>
-              <FormFieldLabel>Attachment filename</FormFieldLabel>
-              <input className={modalFieldClassName} value={fileName} onChange={(e) => setFileName(e.target.value)} />
-            </div>
-            <div>
-              <FormFieldLabel>Attachment storage path</FormFieldLabel>
-              <input
-                className={modalFieldClassName}
-                value={storagePath}
-                onChange={(e) => setStoragePath(e.target.value)}
-                placeholder="storage://..."
-              />
-            </div>
           </div>
+
+          {isOnlineClass ? (
+            <div className="space-y-4 rounded-xl border border-stroke-soft-200 bg-neutral-50 p-4">
+              <div>
+                <p className="text-sm font-medium text-text-main-900">Live video class</p>
+                <p className="mt-1 text-xs text-text-sub-500">
+                  Share the Zoom, Google Meet, or Teams link students will use to join.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <FormFieldLabel required>Meeting / video call URL</FormFieldLabel>
+                  <input
+                    type="url"
+                    className={fieldClassName('meetingUrl', modalFieldClassName)}
+                    value={meetingUrl}
+                    onChange={(e) => {
+                      setMeetingUrl(e.target.value);
+                      clearField('meetingUrl');
+                    }}
+                    placeholder="https://meet.google.com/… or https://zoom.us/j/…"
+                  />
+                  <FormFieldError message={errors.meetingUrl} />
+                </div>
+                <div>
+                  <FormFieldLabel>Platform</FormFieldLabel>
+                  <SelectDropdown
+                    aria-label="Meeting platform"
+                    value={meetingPlatform}
+                    onValueChange={setMeetingPlatform}
+                    options={[
+                      { value: 'meet', label: 'Google Meet' },
+                      { value: 'zoom', label: 'Zoom' },
+                      { value: 'teams', label: 'Microsoft Teams' },
+                      { value: 'other', label: 'Other' },
+                    ]}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 rounded-xl border border-stroke-soft-200 p-4">
+              <div>
+                <p className="text-sm font-medium text-text-main-900">Video link (optional)</p>
+                <p className="mt-1 text-xs text-text-sub-500">
+                  Add a YouTube, Vimeo, Drive, or recorded class link. You can also upload video files
+                  below as attachments.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <FormFieldLabel>Video / recording URL</FormFieldLabel>
+                  <input
+                    type="url"
+                    className={fieldClassName('meetingUrl', modalFieldClassName)}
+                    value={meetingUrl}
+                    onChange={(e) => {
+                      setMeetingUrl(e.target.value);
+                      if (e.target.value.trim()) setMeetingPlatform('other');
+                      clearField('meetingUrl');
+                    }}
+                    placeholder="https://youtube.com/watch?v=… or Drive link"
+                  />
+                  <FormFieldError message={errors.meetingUrl} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <LearningAttachmentsField
+            existing={existingAttachments}
+            removedIds={removedAttachmentIds}
+            pendingFiles={pendingFiles}
+            disabled={submitMutation.isPending}
+            downloadingId={downloadingId}
+            onAddFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+            onRemovePending={(index) =>
+              setPendingFiles((prev) => prev.filter((_, i) => i !== index))
+            }
+            onRemoveExisting={(id) =>
+              setRemovedAttachmentIds((prev) => new Set(prev).add(id))
+            }
+            onDownloadExisting={editId ? downloadAttachment : undefined}
+          />
 
           <div>
             <FormFieldLabel>Description</FormFieldLabel>

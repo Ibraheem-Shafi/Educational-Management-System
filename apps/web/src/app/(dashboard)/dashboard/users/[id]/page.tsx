@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserCog } from 'lucide-react';
+import { toast } from 'sonner';
 import type { UserDetailResponse } from '@eims/types';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -23,6 +24,7 @@ export default function UserDetailPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
+  const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.USERS_MANAGE);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -30,6 +32,29 @@ export default function UserDetailPage() {
     queryKey: queryKeys.userDetail(id),
     queryFn: () => apiClient<UserDetailResponse>(`/users/${id}`, { token }),
     enabled: !!token && !!id,
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: () =>
+      apiClient(`/users/${id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ isActive: true }),
+      }),
+    onMutate: () => ({ toastId: toast.loading('Reactivating user…') }),
+    onSuccess: async (_data, _vars, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.success('User reactivated');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.userDetail(id) }),
+        queryClient.invalidateQueries({ queryKey: ['users'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.usersStats }),
+      ]);
+    },
+    onError: (err: Error, _vars, ctx) => {
+      toast.dismiss(ctx?.toastId);
+      toast.error(err.message);
+    },
   });
 
   if (isLoading) {
@@ -56,6 +81,10 @@ export default function UserDetailPage() {
       <UserDetailView
         user={user}
         onEdit={canManage ? () => setEditOpen(true) : undefined}
+        onReactivate={
+          canManage && !user.isActive ? () => reactivateMutation.mutate() : undefined
+        }
+        reactivatePending={reactivateMutation.isPending}
       />
       <EditUserDialog userId={user.id} open={editOpen} onOpenChange={setEditOpen} />
     </>

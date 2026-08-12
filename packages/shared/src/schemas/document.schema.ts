@@ -45,3 +45,40 @@ export const listDocumentsQuerySchema = z.object({
 });
 
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;
+
+export const prepareDocumentUploadSchema = z
+  .object({
+    fileName: requiredString('File name', 1, 255),
+    branchId: requiredId('Branch'),
+    studentId: requiredId('Student').optional(),
+    userId: requiredId('User').optional(),
+  })
+  .refine((data) => Boolean(data.studentId) !== Boolean(data.userId), {
+    message: 'Exactly one of studentId or userId is required',
+  });
+
+export type PrepareDocumentUploadInput = z.infer<typeof prepareDocumentUploadSchema>;
+
+export const prepareStudentPhotoUploadSchema = z.object({
+  fileName: requiredString('File name', 1, 255),
+});
+
+export type PrepareStudentPhotoUploadInput = z.infer<typeof prepareStudentPhotoUploadSchema>;
+
+export const prepareInstitutionAssetUploadSchema = z.object({
+  fileName: requiredString('File name', 1, 255),
+  folder: z.enum(['logo', 'favicon']),
+});
+
+export type PrepareInstitutionAssetUploadInput = z.infer<
+  typeof prepareInstitutionAssetUploadSchema
+>;
+
+export const prepareAttendanceRegisterUploadSchema = z.object({
+  fileName: requiredString('File name', 1, 255),
+  branchId: requiredId('Branch'),
+});
+
+export type PrepareAttendanceRegisterUploadInput = z.infer<
+  typeof prepareAttendanceRegisterUploadSchema
+>;

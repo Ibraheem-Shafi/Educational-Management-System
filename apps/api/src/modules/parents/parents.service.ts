@@ -63,6 +63,10 @@ export class ParentsService {
     return result;
   }
 
+  private invalidateParentsCache(): void {
+    this.ttlCache.deleteByPrefix('parents:');
+  }
+
   async findAll(query: ListParentsQuery): Promise<PaginatedResponse<Record<string, unknown>>> {
     const where = {
       deletedAt: null,
@@ -88,7 +92,7 @@ export class ParentsService {
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: { fullName: 'asc' },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.parent.count({ where }),
     ]);
@@ -133,6 +137,8 @@ export class ParentsService {
         studentId: input.studentId,
         relationshipCode: input.relationshipCode,
       }, user);
+    } else {
+      this.invalidateParentsCache();
     }
 
     await this.audit.log({
@@ -178,6 +184,7 @@ export class ParentsService {
       newValue: link,
     });
 
+    this.invalidateParentsCache();
     return this.findOne(parentId);
   }
 
@@ -197,6 +204,7 @@ export class ParentsService {
       previousValue: link,
     });
 
+    this.invalidateParentsCache();
     return { success: true };
   }
 

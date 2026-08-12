@@ -150,4 +150,8 @@ export interface LeaveRequestResponse {
   reason: string;
   status: string;
   createdAt: string;
+  attachmentFileName: string | null;
+  attachmentStoragePath: string | null;
+  attachmentMimeType: string | null;
+  attachmentSizeBytes: number | null;
 }

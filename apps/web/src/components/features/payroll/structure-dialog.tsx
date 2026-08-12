@@ -195,7 +195,7 @@ export function StructureDialog({
           </button>
         </div>
 
-        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
+        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" noValidate onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
             {!isEdit && !userId && (
               <div>
@@ -266,6 +266,7 @@ export function StructureDialog({
                 <FormFieldLabel label="Effective to" />
                 <DateField
                   value={form.effectiveTo}
+                  min={form.effectiveFrom || undefined}
                   onValueChange={(next) => {
                     clearField('effectiveTo');
                     setForm((prev) => ({ ...prev, effectiveTo: next }));

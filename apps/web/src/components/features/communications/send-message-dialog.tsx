@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, X } from 'lucide-react';
-import { sendMessageSchema } from '@eims/shared';
+import { sendMessageSchema, normalizePakistanPhone } from '@eims/shared';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -17,6 +17,7 @@ import {
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { FormFieldError } from '@/components/forms/form-field-error';
+import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -99,7 +100,7 @@ export function SendMessageDialog({
             e.preventDefault();
             const payload = {
               channel: form.channel,
-              recipient: form.recipient.trim(),
+              recipient: normalizePakistanPhone(form.recipient.trim()),
               body: form.body.trim(),
             };
             if (!validate(payload)) return;
@@ -125,11 +126,10 @@ export function SendMessageDialog({
 
             <div>
               <FormFieldLabel required>Recipient phone</FormFieldLabel>
-              <input
-                className={fieldClassName('recipient', modalFieldClassName)}
-                placeholder="Recipient phone (+92...)"
+              <PakistanPhoneInput
                 value={form.recipient}
-                onChange={(e) => updateField('recipient', e.target.value)}
+                onChange={(value) => updateField('recipient', value)}
+                className={errors.recipient ? 'border-red-500' : undefined}
               />
               <FormFieldError message={errors.recipient} />
             </div>

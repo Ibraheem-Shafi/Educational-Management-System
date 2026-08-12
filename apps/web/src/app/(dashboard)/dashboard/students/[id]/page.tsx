@@ -166,7 +166,7 @@ export default function StudentDetailPage() {
 
   const uploadDocMutation = useMutation({
     mutationFn: async (file: File) => {
-      const uploaded = await uploadStudentDocument(file, id);
+      const uploaded = await uploadStudentDocument(file, id, student?.branchId ?? '', token!);
       return apiClient('/documents', {
         method: 'POST',
         token,

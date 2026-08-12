@@ -23,6 +23,7 @@ import {
   listFeeInvoicesQuerySchema,
   recordPaymentSchema,
   recordFeePaymentSchema,
+  prepareFeePaymentReceiptUploadSchema,
   createFeeStructureSchema,
   updateFeeStructureSchema,
   listFeeStructuresQuerySchema,
@@ -30,6 +31,7 @@ import {
   previewBulkInvoicesSchema,
   createFeeTypeSchema,
   updateFeeTypeSchema,
+  listFeeTypesQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -38,9 +40,11 @@ import type {
   ListFeeInvoicesQuery,
   RecordPaymentInput,
   RecordFeePaymentInput,
+  PrepareFeePaymentReceiptUploadInput,
   CreateFeeStructureInput,
   UpdateFeeStructureInput,
   ListFeeStructuresQuery,
+  ListFeeTypesQuery,
   GenerateBulkInvoicesInput,
   PreviewBulkInvoicesInput,
   CreateFeeTypeInput,
@@ -68,8 +72,8 @@ export class FeesController {
 
   @Get('fee-types')
   @Permissions('fees.read')
-  listTypes() {
-    return this.feesService.listTypes();
+  listTypes(@Query(createZodPipe(listFeeTypesQuerySchema)) query: ListFeeTypesQuery) {
+    return this.feesService.listTypes(query);
   }
 
   @Post('fee-types')
@@ -196,6 +200,19 @@ export class FeesController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.feesService.recordPayment(id, body, user, scope);
+  }
+
+  @Post('fee-invoices/:id/payment-receipt/upload-url')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('fees.collect')
+  preparePaymentReceiptUpload(
+    @Param('id') id: string,
+    @Body(createZodPipe(prepareFeePaymentReceiptUploadSchema))
+    body: PrepareFeePaymentReceiptUploadInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.preparePaymentReceiptUpload(id, body, user, scope);
   }
 
   @Post('fee-invoices/:id/payments')

@@ -17,10 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import {
-  InvitePhoneField,
-  inviteFieldClassName,
-} from '@/components/features/users/invite-form-fields';
+import { inviteFieldClassName } from '@/components/features/users/invite-form-fields';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -44,13 +41,7 @@ function FieldLabel({ children, required }: { children: ReactNode; required?: bo
 }
 
 const emptyForm = {
-  fullName: '',
   email: '',
-  phoneCountryCode: '+92',
-  phone: '',
-  address: '',
-  cnic: '',
-  gender: '',
   roleId: '',
   branchId: '',
 };
@@ -126,15 +117,7 @@ export function InviteUserDialog({
     inviteMutation.mutate(payload);
   };
 
-  const canSubmit =
-    form.fullName.trim() &&
-    form.email.trim() &&
-    form.phone.trim() &&
-    form.address.trim() &&
-    form.cnic.trim() &&
-    form.gender &&
-    form.roleId &&
-    form.branchId;
+  const canSubmit = form.email.trim() && form.roleId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,7 +130,8 @@ export function InviteUserDialog({
             <div className="min-w-0">
               <DialogTitle>Invite User</DialogTitle>
               <DialogDescription className="mt-1">
-                Enter the details to add new customer
+                Send an invitation email. Profile details can be completed after accept or via Edit
+                user.
               </DialogDescription>
             </div>
           </div>
@@ -164,16 +148,6 @@ export function InviteUserDialog({
         <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
             <div>
-              <FieldLabel required>Full Name</FieldLabel>
-              <input
-                className={inviteFieldClassName}
-                placeholder="e.g., Nørrebro Kulturhus"
-                value={form.fullName}
-                onChange={(e) => update('fullName', e.target.value)}
-              />
-            </div>
-
-            <div>
               <FieldLabel required>Email</FieldLabel>
               <input
                 type="email"
@@ -186,54 +160,6 @@ export function InviteUserDialog({
                 }}
               />
               <FormFieldError message={errors.email} />
-            </div>
-
-            <div>
-              <FieldLabel required>Phone Number</FieldLabel>
-              <InvitePhoneField
-                countryCode={form.phoneCountryCode}
-                onCountryCodeChange={(code) => update('phoneCountryCode', code)}
-                value={form.phone}
-                onChange={(value) => update('phone', value)}
-                required
-              />
-            </div>
-            <div>
-              <FieldLabel required>Address</FieldLabel>
-              <input
-                className={inviteFieldClassName}
-                placeholder="Enter Address"
-                value={form.address}
-                onChange={(e) => update('address', e.target.value)}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <FieldLabel required>CNIC</FieldLabel>
-                <input
-                  className={inviteFieldClassName}
-                  placeholder="Enter CNIC"
-                  value={form.cnic}
-                  onChange={(e) => update('cnic', e.target.value)}
-                />
-              </div>
-              <div>
-                <FieldLabel required>Gender</FieldLabel>
-                <SelectDropdown
-                  aria-label="Select gender"
-                  placeholder="Select Gender"
-                  value={form.gender}
-                  onValueChange={(value) => update('gender', value)}
-                  options={[
-                    { value: '', label: 'Select Gender' },
-                    { value: 'male', label: 'Male' },
-                    { value: 'female', label: 'Female' },
-                    { value: 'other', label: 'Other' },
-                  ]}
-                  className="w-full"
-                />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -256,7 +182,7 @@ export function InviteUserDialog({
                 <FormFieldError message={errors.roleId} />
               </div>
               <div>
-                <FieldLabel required>Select Branch</FieldLabel>
+                <FieldLabel>Select Branch</FieldLabel>
                 <SelectDropdown
                   aria-label="Select branch"
                   placeholder="Select Branch"
@@ -266,8 +192,11 @@ export function InviteUserDialog({
                     clearField('branchId');
                   }}
                   options={[
-                    { value: '', label: 'Select Branch' },
-                    ...(branches?.data.map((branch) => ({ value: branch.id, label: branch.name })) ?? []),
+                    { value: '', label: 'All / none' },
+                    ...(branches?.data.map((branch) => ({
+                      value: branch.id,
+                      label: branch.name,
+                    })) ?? []),
                   ]}
                   className="w-full"
                 />

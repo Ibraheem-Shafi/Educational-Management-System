@@ -22,6 +22,7 @@ import {
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 import type { BiometricDevice } from './types';
 import { formatDateTime, statusBadgeCode } from './types';
@@ -81,7 +82,7 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
   const rows = data?.data ?? [];
 
   return (
-    <div className="space-y-4">
+    <ComingSoonFrame featureId="biometric-integration" className="space-y-4">
       <ContentPanel title="Webhook integration">
         <div className="space-y-3 px-5 py-4 text-sm text-[var(--text-sub-500)]">
           <p>
@@ -198,6 +199,6 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
           </>
         )}
       </ContentPanel>
-    </div>
+    </ComingSoonFrame>
   );
 }

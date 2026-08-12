@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -70,7 +70,8 @@ export function DeactivateUserDialog({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-sub-500)] hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)]"
+            disabled={isPending}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-sub-500)] hover:bg-[var(--neutral-50)] hover:text-[var(--text-main-900)] disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -104,11 +105,18 @@ export function DeactivateUserDialog({
             onClick={onConfirm}
             disabled={isPending || !user}
             className={cn(
-              'inline-flex h-10 flex-1 items-center justify-center rounded-[10px] bg-[#DF1C41] p-[10px]',
+              'inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-[10px] bg-[#DF1C41] p-[10px]',
               'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',
             )}
           >
-            {isPending ? 'Deactivating…' : 'Deactivate User'}
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Deactivating…
+              </>
+            ) : (
+              'Deactivate User'
+            )}
           </button>
         </div>
       </DialogContent>

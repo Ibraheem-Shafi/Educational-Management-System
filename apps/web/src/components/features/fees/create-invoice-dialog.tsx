@@ -59,10 +59,13 @@ export function CreateInvoiceDialog({
   const { data: students } = useStudentsOptions(token, effectiveBranchId, open);
 
   const { data: feeTypes } = useQuery({
-    queryKey: ['fee-types'],
+    queryKey: queryKeys.feeTypes(),
     queryFn: () => apiClient<{ data: FeeType[] }>('/fee-types', { token }),
     enabled: !!token && open,
   });
+
+  const feeTypesList = feeTypes?.data ?? [];
+  const hasNoFeeTypes = !!feeTypes && feeTypesList.length === 0;
 
   useEffect(() => {
     if (!open) {
@@ -189,11 +192,16 @@ export function CreateInvoiceDialog({
                 }}
                 options={[
                   { value: '', label: 'Select fee type' },
-                  ...(feeTypes?.data.map((f) => ({ value: f.id, label: f.name })) ?? []),
+                  ...feeTypesList.map((f) => ({ value: f.id, label: f.name })),
                 ]}
                 className={fieldClassName('feeTypeId', 'w-full')}
               />
               <FormFieldError message={errors.feeTypeId} />
+              {hasNoFeeTypes && (
+                <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                  No fee types yet. Add types like Exam or Digitization on the Fee types tab first.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

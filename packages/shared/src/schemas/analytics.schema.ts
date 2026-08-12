@@ -1,12 +1,18 @@
 import { z } from 'zod';
+import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
-export const analyticsTrendsQuerySchema = z.object({
-  branchId: z.string().optional(),
-  batchId: z.string().optional(),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
+export const analyticsTrendsQuerySchema = refineEndAfterStart(
+  z.object({
+    branchId: z.string().optional(),
+    batchId: z.string().optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
+  'from',
+  'to',
+  { allowEqual: true },
+);
 
 export type AnalyticsTrendsQuery = z.infer<typeof analyticsTrendsQuerySchema>;
 

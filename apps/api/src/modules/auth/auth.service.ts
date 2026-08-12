@@ -24,7 +24,10 @@ import type {
   BranchScope,
   CreateEmployeeLeaveRequestInput,
   CreateLeaveRequestInput,
+  LeaveAttachmentMetaInput,
+  ListLeaveRequestsQuery,
   PortalSectionQuery,
+  PrepareLeaveAttachmentUploadInput,
   UpdateProfileInput,
 } from '@eims/shared';
 
@@ -748,13 +751,8 @@ export class PortalService {
     return this.portalSections.createParentLeaveRequest(user.email, input);
   }
 
-  async listStaffLeaveRequests(
-    scope: BranchScope,
-    kind?: string,
-    page = 1,
-    limit = 8,
-  ) {
-    return this.portalSections.listStaffLeaveRequests(scope, kind, page, limit);
+  async listStaffLeaveRequests(scope: BranchScope, query: ListLeaveRequestsQuery) {
+    return this.portalSections.listStaffLeaveRequests(scope, query);
   }
 
   async createEmployeeLeaveRequest(user: AuthUser, input: CreateEmployeeLeaveRequestInput) {
@@ -767,5 +765,53 @@ export class PortalService {
 
   async reviewLeaveRequest(user: AuthUser, id: string, status: 'approved' | 'rejected') {
     return this.portalSections.reviewLeaveRequest(id, status, user.id);
+  }
+
+  async prepareLeaveAttachmentUpload(
+    user: AuthUser,
+    id: string,
+    input: PrepareLeaveAttachmentUploadInput,
+  ) {
+    return this.portalSections.prepareLeaveAttachmentUpload(id, input, {
+      userId: user.id,
+      parentEmail: user.email,
+    });
+  }
+
+  async setLeaveAttachment(user: AuthUser, id: string, input: LeaveAttachmentMetaInput) {
+    return this.portalSections.setLeaveAttachment(id, input, {
+      userId: user.id,
+      parentEmail: user.email,
+    });
+  }
+
+  async getLeaveAttachmentSignedUrl(user: AuthUser, id: string) {
+    const canStaff =
+      user.permissions.includes('leave.read') || user.permissions.includes('leave.manage');
+    if (canStaff) {
+      return this.portalSections.getLeaveAttachmentSignedUrl(id, { staff: true });
+    }
+    return this.portalSections.getLeaveAttachmentSignedUrl(id, {
+      userId: user.id,
+      parentEmail: user.email,
+    });
+  }
+
+  async prepareParentLeaveAttachmentUpload(
+    user: AuthUser,
+    id: string,
+    input: PrepareLeaveAttachmentUploadInput,
+  ) {
+    return this.portalSections.prepareLeaveAttachmentUpload(id, input, {
+      parentEmail: user.email,
+    });
+  }
+
+  async setParentLeaveAttachment(user: AuthUser, id: string, input: LeaveAttachmentMetaInput) {
+    return this.portalSections.setLeaveAttachment(id, input, { parentEmail: user.email });
+  }
+
+  async getParentLeaveAttachmentSignedUrl(user: AuthUser, id: string) {
+    return this.portalSections.getLeaveAttachmentSignedUrl(id, { parentEmail: user.email });
   }
 }
