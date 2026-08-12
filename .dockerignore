@@ -1,0 +1,43 @@
+# Git / IDE / OS
+.git
+.gitignore
+.cursor
+.idea
+.vscode
+**/.DS_Store
+**/Thumbs.db
+
+# Dependencies & build outputs (rebuilt inside images)
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+
+# Env secrets — pass via compose env_file / build args, never bake into context
+.env
+.env.*
+!.env.docker.example
+apps/*/.env
+apps/*/.env.local
+**/*.pem
+**/*.key
+
+# Not needed in runtime images (mobile package.json still required for npm workspaces)
+apps/mobile/app
+apps/mobile/assets
+apps/mobile/node_modules
+docs
+**/*.md
+!docker/README.md
+.github
+**/.eslintrc*
+**/eslint.config.*
+**/playwright.config.*
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/vitest.config.*

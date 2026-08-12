@@ -1,0 +1,19 @@
+# Reverse proxy + automatic HTTPS for nexium-eims.online
+# DNS A records must point to this VPS before certificates can issue:
+#   nexium-eims.online      -> VPS IP
+#   www.nexium-eims.online  -> VPS IP
+#   api.nexium-eims.online  -> VPS IP
+
+{
+	email {$ACME_EMAIL}
+}
+
+nexium-eims.online, www.nexium-eims.online {
+	encode gzip
+	reverse_proxy web:3000
+}
+
+api.nexium-eims.online {
+	encode gzip
+	reverse_proxy api:3001
+}
