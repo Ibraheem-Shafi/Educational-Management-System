@@ -29,6 +29,7 @@ export interface StudentDetailData {
   gender: string | null;
   dateOfBirth: string | null;
   photographUrl: string | null;
+  monthlyFeeDiscount?: number | null;
   batch?: { name: string };
   program?: { name: string };
   status?: { code: string; label: string };
@@ -188,6 +189,14 @@ export function StudentDetailView({
             <InfoField label="Program" value={student.program?.name ?? '—'} />
             <InfoField label="Batch" value={student.batch?.name ?? '—'} />
             <InfoField label="Status" value={student.status?.label ?? '—'} />
+            <InfoField
+              label="Monthly fee discount"
+              value={
+                student.monthlyFeeDiscount && student.monthlyFeeDiscount > 0
+                  ? `Rs ${Number(student.monthlyFeeDiscount).toLocaleString('en-PK')}`
+                  : '—'
+              }
+            />
           </div>
           {subjectsSection && <div className="border-t border-[var(--stroke-soft-200,#E2E4E9)] p-5">{subjectsSection}</div>}
         </DetailCard>

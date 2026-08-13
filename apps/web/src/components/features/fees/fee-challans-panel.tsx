@@ -3,15 +3,17 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
-import { formatCurrency } from '@eims/shared';
+import { formatCurrency, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { withBranchScope } from '@/lib/branch-scope';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { PaginatedResponse } from '@eims/types';
 import { SearchInput } from '@/components/layout/search-input';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { StatusBadge } from '@/components/layout/status-badge';
+import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
   dataTableRowHoverClass,
@@ -20,17 +22,16 @@ import {
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
-import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/layout/filter-bar';
+import {
+  EditChallanDialog,
+  type EditableChallan,
+} from '@/components/features/fees/edit-challan-dialog';
 
-interface ChallanRow {
-  id: string;
-  challanNo: string | null;
-  billingPeriod: string;
+interface ChallanRow extends EditableChallan {
   monthLabel: string;
   status: string;
   grandTotal: number;
-  paidAmount: number;
   dueAmount: number;
   student?: {
     fullName: string;
@@ -42,11 +43,14 @@ interface ChallanRow {
 export function FeeChallansPanel() {
   const { session } = useAuth();
   const token = session?.access_token;
+  const { can } = usePermissions();
+  const canCollect = can(PERMISSIONS.FEES_COLLECT);
   const { effectiveScope } = useEffectiveBranchScope();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState('');
   const [billingPeriod, setBillingPeriod] = useState('');
+  const [editChallan, setEditChallan] = useState<EditableChallan | null>(null);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -101,7 +105,7 @@ export function FeeChallansPanel() {
               <th className={dataTableThClass}>Status</th>
               <th className={`${dataTableThClass} text-right`}>Total</th>
               <th className={`${dataTableThClass} text-right`}>Due</th>
-              <th className={dataTableThClass}>Print</th>
+              <th className={dataTableThClass}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -126,22 +130,38 @@ export function FeeChallansPanel() {
                   <td className={dataTableTdClass}>
                     <StatusBadge
                       label={row.status}
-                      code={row.status === 'paid' ? 'paid' : row.status === 'partial' ? 'partial' : 'pending'}
+                      code={
+                        row.status === 'paid'
+                          ? 'paid'
+                          : row.status === 'partial'
+                            ? 'partial'
+                            : 'pending'
+                      }
                     />
                   </td>
-                  <td className={`${dataTableTdClass} text-right`}>{formatCurrency(row.grandTotal)}</td>
-                  <td className={`${dataTableTdClass} text-right`}>{formatCurrency(row.dueAmount)}</td>
+                  <td className={`${dataTableTdClass} text-right`}>
+                    {formatCurrency(row.grandTotal)}
+                  </td>
+                  <td className={`${dataTableTdClass} text-right`}>
+                    {formatCurrency(row.dueAmount)}
+                  </td>
                   <td className={dataTableTdClass}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1 px-2"
-                      onClick={() => window.open(`/print/challans/${row.id}`, '_blank')}
-                    >
-                      <Printer className="h-4 w-4" />
-                      Print
-                    </Button>
+                    <RowActionsMenu
+                      items={[
+                        {
+                          label: 'Print',
+                          onClick: () => window.open(`/print/challans/${row.id}`, '_blank'),
+                        },
+                        ...(canCollect
+                          ? [
+                              {
+                                label: 'Edit',
+                                onClick: () => setEditChallan(row),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                   </td>
                 </tr>
               ))
@@ -162,6 +182,14 @@ export function FeeChallansPanel() {
           }}
         />
       ) : null}
+
+      <EditChallanDialog
+        open={!!editChallan}
+        onOpenChange={(next) => {
+          if (!next) setEditChallan(null);
+        }}
+        challan={editChallan}
+      />
     </div>
   );
 }

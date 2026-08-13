@@ -40,6 +40,7 @@ export const createStudentSchema = z.object({
   subjectIds: z.array(z.string()).optional(),
   customFields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   guardians: z.array(admissionGuardianSchema).max(3).optional(),
+  monthlyFeeDiscount: z.coerce.number().min(0).optional(),
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;

@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 interface FeeType {
   id: string;
   name: string;
+  code?: string;
 }
 
 const emptyForm = {
@@ -66,6 +67,18 @@ export function CreateInvoiceDialog({
 
   const feeTypesList = feeTypes?.data ?? [];
   const hasNoFeeTypes = !!feeTypes && feeTypesList.length === 0;
+  const selectedFeeType = feeTypesList.find((t) => t.id === form.feeTypeId);
+
+  const { data: selectedStudent } = useQuery({
+    queryKey: ['student', form.studentId],
+    queryFn: () =>
+      apiClient<{ monthlyFeeDiscount?: number }>(`/students/${form.studentId}`, { token }),
+    enabled: !!token && open && !!form.studentId,
+  });
+
+  const studentMonthlyDiscount = Number(selectedStudent?.monthlyFeeDiscount ?? 0);
+  const showMonthlyDiscountHint =
+    selectedFeeType?.code === 'monthly' && studentMonthlyDiscount > 0;
 
   useEffect(() => {
     if (!open) {
@@ -224,13 +237,19 @@ export function CreateInvoiceDialog({
                 <input
                   type="number"
                   className={fieldClassName('discount', modalFieldClassName)}
-                  placeholder="Discount"
+                  placeholder="Additional discount"
                   value={form.discount}
                   onChange={(e) => {
                     clearField('discount');
                     setForm((prev) => ({ ...prev, discount: e.target.value }));
                   }}
                 />
+                {showMonthlyDiscountHint ? (
+                  <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                    Student monthly discount: Rs {studentMonthlyDiscount.toLocaleString('en-PK')} will
+                    be applied automatically (this field is additional).
+                  </p>
+                ) : null}
                 <FormFieldError message={errors.discount} />
               </div>
             </div>

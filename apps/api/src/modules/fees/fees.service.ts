@@ -30,6 +30,8 @@ import type {
   UpdateFeeTypeInput,
   ListFeeChallansQuery,
   CreateFeeChallanInput,
+  UpdateFeeInvoiceInput,
+  UpdateFeeChallanInput,
 } from '@eims/shared';
 import { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } from '@eims/shared';
 
@@ -486,6 +488,7 @@ export class FeesService {
     const [student, feeType, pendingStatus] = await Promise.all([
       this.prisma.student.findFirst({
         where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
+        select: { id: true, monthlyFeeDiscount: true },
       }),
       this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } }),
       this.prisma.lookupStatus.findFirst({
@@ -498,7 +501,18 @@ export class FeesService {
     if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
 
     const siblingDiscount = await this.computeSiblingDiscount(input.studentId, input.amount);
-    const discount = (input.discount ?? 0) + siblingDiscount;
+    const monthlyRecurring = this.monthlyFeeDiscountForType(
+      feeType.code,
+      Number(student.monthlyFeeDiscount),
+      input.amount,
+    );
+    const { discount, remarks } = this.composeInvoiceDiscount({
+      amount: input.amount,
+      extraDiscount: input.discount ?? 0,
+      siblingDiscount,
+      monthlyRecurring,
+      existingRemarks: input.remarks,
+    });
     const fine = input.fine ?? 0;
     const netAmount = input.amount - discount + fine;
 
@@ -517,7 +531,7 @@ export class FeesService {
         netAmount,
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
         statusId: pendingStatus.id,
-        remarks: input.remarks,
+        remarks,
         createdById: user.id,
       },
       include: { student: { select: { id: true, fullName: true } } },
@@ -540,6 +554,190 @@ export class FeesService {
       paidAmount: 0,
       remainingAmount: this.roundMoney(netAmount),
     };
+  }
+
+  async updateInvoice(
+    id: string,
+    input: UpdateFeeInvoiceInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: {
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+        student: { select: { id: true, fullName: true } },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const amount =
+      input.amount !== undefined
+        ? this.roundMoney(input.amount)
+        : this.roundMoney(Number(invoice.amount));
+    const discount =
+      input.discount !== undefined
+        ? Math.max(0, this.roundMoney(input.discount))
+        : this.roundMoney(Number(invoice.discount));
+    const fine =
+      input.fine !== undefined
+        ? Math.max(0, this.roundMoney(input.fine))
+        : this.roundMoney(Number(invoice.fine));
+    const netAmount = this.roundMoney(amount - discount + fine);
+    const paidTotal = this.getPaidAmount(invoice);
+
+    if (netAmount < paidTotal) {
+      throw new BadRequestException(
+        `Net amount (${netAmount}) cannot be less than already paid (${paidTotal}). Reverse or adjust payments first.`,
+      );
+    }
+
+    const previousValue = {
+      amount: Number(invoice.amount),
+      discount: Number(invoice.discount),
+      fine: Number(invoice.fine),
+      netAmount: Number(invoice.netAmount),
+      dueDate: invoice.dueDate?.toISOString() ?? null,
+      billingPeriod: invoice.billingPeriod ?? null,
+      voucherNo: invoice.voucherNo ?? null,
+      remarks: invoice.remarks,
+    };
+
+    await this.prisma.feeInvoice.update({
+      where: { id },
+      data: {
+        amount,
+        discount,
+        fine,
+        netAmount,
+        ...(input.dueDate !== undefined
+          ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+          : {}),
+        ...(input.billingPeriod !== undefined
+          ? { billingPeriod: input.billingPeriod || null }
+          : {}),
+        ...(input.voucherNo !== undefined ? { voucherNo: input.voucherNo || null } : {}),
+        ...(input.remarks !== undefined ? { remarks: input.remarks || null } : {}),
+      },
+    });
+
+    const updated = await this.syncInvoiceAfterPayment(id);
+    const [feeType, status] = await Promise.all([
+      this.prisma.feeType.findUnique({ where: { id: updated.feeTypeId } }),
+      this.prisma.lookupStatus.findUnique({ where: { id: updated.statusId } }),
+    ]);
+    const feeTypeMap = feeType ? new Map([[feeType.id, feeType]]) : new Map();
+    const statusMap = status ? new Map([[status.id, status]]) : new Map();
+
+    // Propagate discount to later months (same student + fee type).
+    let cascadedCount = 0;
+    if (input.discount !== undefined) {
+      cascadedCount = await this.cascadeDiscountToFutureInvoices({
+        sourceInvoiceId: id,
+        studentId: invoice.studentId,
+        feeTypeId: invoice.feeTypeId,
+        billingPeriod: updated.billingPeriod ?? invoice.billingPeriod,
+        dueDate: updated.dueDate ?? invoice.dueDate,
+        discount,
+        scope,
+      });
+
+      // Keep recurring student discount in sync for monthly fee types.
+      if (feeType?.code === 'monthly') {
+        await this.prisma.student.update({
+          where: { id: invoice.studentId },
+          data: { monthlyFeeDiscount: discount },
+        });
+      }
+    }
+
+    const newValue = {
+      amount,
+      discount,
+      fine,
+      netAmount,
+      dueDate: updated.dueDate?.toISOString() ?? null,
+      billingPeriod: updated.billingPeriod ?? null,
+      voucherNo: updated.voucherNo ?? null,
+      remarks: updated.remarks,
+      statusId: updated.statusId,
+      cascadedCount,
+    };
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_invoice.updated',
+      entityType: 'FeeInvoice',
+      entityId: id,
+      previousValue,
+      newValue,
+    });
+
+    return {
+      ...this.toResponse(updated, feeTypeMap, statusMap),
+      ...this.paymentSummary(updated),
+      cascadedCount,
+    };
+  }
+
+  /**
+   * Apply the same discount to later invoices for this student + fee type.
+   * Skips rows where net would fall below already-paid amounts.
+   */
+  private async cascadeDiscountToFutureInvoices(opts: {
+    sourceInvoiceId: string;
+    studentId: string;
+    feeTypeId: string;
+    billingPeriod: string | null;
+    dueDate: Date | null;
+    discount: number;
+    scope: BranchScope;
+  }): Promise<number> {
+    const period = opts.billingPeriod?.trim() || null;
+    const futureWhere = period
+      ? { billingPeriod: { gt: period } }
+      : opts.dueDate
+        ? { dueDate: { gt: opts.dueDate } }
+        : null;
+    if (!futureWhere) return 0;
+
+    const futures = await this.prisma.feeInvoice.findMany({
+      where: {
+        id: { not: opts.sourceInvoiceId },
+        studentId: opts.studentId,
+        feeTypeId: opts.feeTypeId,
+        ...prismaBranchFilter(opts.scope),
+        ...futureWhere,
+      },
+      include: {
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+      },
+      orderBy: [{ billingPeriod: 'asc' }, { dueDate: 'asc' }],
+    });
+
+    let cascaded = 0;
+    for (const inv of futures) {
+      const amount = this.roundMoney(Number(inv.amount));
+      const fine = this.roundMoney(Number(inv.fine));
+      const discount = Math.max(0, Math.min(opts.discount, amount));
+      const netAmount = this.roundMoney(amount - discount + fine);
+      const paidTotal = this.getPaidAmount(inv);
+      if (netAmount < paidTotal) continue;
+      if (
+        this.roundMoney(Number(inv.discount)) === discount &&
+        this.roundMoney(Number(inv.netAmount)) === netAmount
+      ) {
+        continue;
+      }
+
+      await this.prisma.feeInvoice.update({
+        where: { id: inv.id },
+        data: { discount, netAmount },
+      });
+      await this.syncInvoiceAfterPayment(inv.id);
+      cascaded += 1;
+    }
+    return cascaded;
   }
 
   async recordPayment(id: string, input: RecordPaymentInput, user: AuthUser, scope: BranchScope) {
@@ -724,7 +922,10 @@ export class FeesService {
     return this.prisma.feeInvoice.update({
       where: { id: invoiceId },
       data: { statusId, paidAt },
-      include: { student: { select: { id: true, fullName: true } } },
+      include: {
+        student: { select: { id: true, fullName: true } },
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+      },
     });
   }
 
@@ -1010,7 +1211,7 @@ export class FeesService {
 
     const students = await this.prisma.student.findMany({
       where: { branchId: input.branchId, batchId: input.batchId, deletedAt: null },
-      select: { id: true, programId: true, batchId: true },
+      select: { id: true, programId: true, batchId: true, monthlyFeeDiscount: true },
     });
     if (students.length === 0) throw new BadRequestException('No students in batch');
 
@@ -1043,6 +1244,14 @@ export class FeesService {
 
     if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
     if (structures.length === 0) throw new BadRequestException('No fee structures for batch');
+
+    const feeTypeIds = [...new Set(structures.map((s) => s.feeTypeId))];
+    if (input.feeTypeId) feeTypeIds.push(input.feeTypeId);
+    const feeTypes = await this.prisma.feeType.findMany({
+      where: { id: { in: [...new Set(feeTypeIds)] } },
+      select: { id: true, code: true },
+    });
+    const feeTypeCodeById = new Map(feeTypes.map((f) => [f.id, f.code]));
 
     const dueDate = this.resolveBulkDueDate(input.dueDate);
     const year = new Date().getFullYear();
@@ -1081,19 +1290,29 @@ export class FeesService {
         const siblingDiscount = siblingInfo.eligibleIds.has(student.id)
           ? Math.round((amount * siblingInfo.percent) / 100)
           : 0;
+        const monthlyRecurring = this.monthlyFeeDiscountForType(
+          feeTypeCodeById.get(structure.feeTypeId),
+          Number(student.monthlyFeeDiscount),
+          amount,
+        );
+        const { discount, remarks } = this.composeInvoiceDiscount({
+          amount,
+          siblingDiscount,
+          monthlyRecurring,
+        });
         draft.push({
           branchId: input.branchId,
           studentId: student.id,
           feeTypeId: structure.feeTypeId,
           amount,
-          discount: siblingDiscount,
+          discount,
           fine: 0,
-          netAmount: this.roundMoney(amount - siblingDiscount),
+          netAmount: this.roundMoney(amount - discount),
           dueDate: structure.dueDayOfMonth
             ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
             : dueDate,
           statusId: pendingStatus.id,
-          remarks: siblingDiscount > 0 ? `Sibling discount applied: ${siblingDiscount}` : null,
+          remarks,
           createdById: user.id,
         });
       }
@@ -1145,7 +1364,7 @@ export class FeesService {
           ...(input.batchId ? { batchId: input.batchId } : {}),
           id: { in: studentIds },
         },
-        select: { id: true, programId: true, batchId: true },
+        select: { id: true, programId: true, batchId: true, monthlyFeeDiscount: true },
       }),
       this.prisma.lookupStatus.findFirst({
         where: { code: 'pending', category: { code: 'fee_status' } },
@@ -1195,7 +1414,17 @@ export class FeesService {
         const siblingDiscount = siblingInfo.eligibleIds.has(line.studentId)
           ? Math.round((amount * siblingInfo.percent) / 100)
           : 0;
-        const netAmount = this.roundMoney(amount - siblingDiscount);
+        const monthlyRecurring = this.monthlyFeeDiscountForType(
+          feeType.code,
+          Number(student.monthlyFeeDiscount),
+          amount,
+        );
+        const { discount, remarks } = this.composeInvoiceDiscount({
+          amount,
+          siblingDiscount,
+          monthlyRecurring,
+        });
+        const netAmount = this.roundMoney(amount - discount);
         const invoiceNo = `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`;
 
         return {
@@ -1204,14 +1433,14 @@ export class FeesService {
           feeTypeId: input.feeTypeId!,
           invoiceNo,
           amount,
-          discount: siblingDiscount,
+          discount,
           fine: 0,
           netAmount,
           dueDate: structure?.dueDayOfMonth
             ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
             : dueDate,
           statusId: pendingStatus.id,
-          remarks: siblingDiscount > 0 ? `Sibling discount applied: ${siblingDiscount}` : null,
+          remarks,
           createdById: user.id,
         };
       });
@@ -1365,6 +1594,37 @@ export class FeesService {
     return Math.round((amount * percent) / 100);
   }
 
+  /** Fixed monthly tuition discount; only when fee type code is `monthly`. */
+  private monthlyFeeDiscountForType(
+    feeTypeCode: string | null | undefined,
+    studentMonthlyDiscount: number,
+    amount: number,
+  ): number {
+    if (feeTypeCode !== 'monthly') return 0;
+    const recurring = this.roundMoney(studentMonthlyDiscount);
+    if (recurring <= 0) return 0;
+    return Math.min(recurring, this.roundMoney(amount));
+  }
+
+  private composeInvoiceDiscount(opts: {
+    amount: number;
+    extraDiscount?: number;
+    siblingDiscount: number;
+    monthlyRecurring: number;
+    existingRemarks?: string | null;
+  }): { discount: number; remarks: string | null } {
+    const amount = this.roundMoney(opts.amount);
+    const extra = this.roundMoney(opts.extraDiscount ?? 0);
+    const sibling = this.roundMoney(opts.siblingDiscount);
+    const monthly = this.roundMoney(opts.monthlyRecurring);
+    const discount = Math.min(amount, Math.max(0, extra + sibling + monthly));
+    const parts: string[] = [];
+    if (opts.existingRemarks?.trim()) parts.push(opts.existingRemarks.trim());
+    if (monthly > 0) parts.push(`Monthly fee discount: ${monthly}`);
+    if (sibling > 0) parts.push(`Sibling discount applied: ${sibling}`);
+    return { discount, remarks: parts.length ? parts.join(' · ') : null };
+  }
+
   /** One settings + sibling graph lookup for many students (bulk generate). */
   private async loadSiblingDiscountContext(studentIds: string[]): Promise<{
     percent: number;
@@ -1457,10 +1717,7 @@ export class FeesService {
     }
   }
 
-  private async nextDocumentNumber(
-    branchId: string,
-    prefix: 'INV' | 'RCP' | 'CHL',
-  ): Promise<string> {
+  private async nextDocumentNumber(branchId: string, prefix: 'INV' | 'RCP'): Promise<string> {
     const year = new Date().getFullYear();
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -1470,10 +1727,34 @@ export class FeesService {
     const count =
       prefix === 'INV'
         ? await this.prisma.feeInvoice.count({ where: { branchId } })
-        : prefix === 'RCP'
-          ? await this.prisma.feePayment.count({ where: { branchId } })
-          : await this.prisma.feeChallan.count({ where: { branchId } });
+        : await this.prisma.feePayment.count({ where: { branchId } });
     return `${prefix}-${code}-${year}-${String(count + 1).padStart(5, '0')}`;
+  }
+
+  /** Branch-identifying challan no: `{CAMPUS}-{YYYY}-{#####}` (sequence per branch + year). */
+  private async nextChallanNumber(branchId: string): Promise<string> {
+    const year = new Date().getFullYear();
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { code: true },
+    });
+    const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+    const prefix = `${code}-${year}-`;
+
+    const existing = await this.prisma.feeChallan.findMany({
+      where: { branchId, challanNo: { startsWith: prefix } },
+      select: { challanNo: true },
+    });
+
+    let maxSeq = 0;
+    for (const row of existing) {
+      const tail = row.challanNo?.slice(prefix.length) ?? '';
+      if (!/^\d+$/.test(tail)) continue;
+      const n = Number.parseInt(tail, 10);
+      if (n > maxSeq) maxSeq = n;
+    }
+
+    return `${prefix}${String(maxSeq + 1).padStart(5, '0')}`;
   }
 
   async getInvoicePrintData(id: string, scope: BranchScope) {
@@ -1762,7 +2043,7 @@ export class FeesService {
     if (!student) throw new BadRequestException('Invalid student for this branch');
 
     const grandTotal = this.roundMoney(input.lines.reduce((s, l) => s + Number(l.amount), 0));
-    const challanNo = input.challanNo?.trim() || (await this.nextDocumentNumber(input.branchId, 'CHL'));
+    const challanNo = input.challanNo?.trim() || (await this.nextChallanNumber(input.branchId));
 
     const existing = await this.prisma.feeChallan.findUnique({
       where: {
@@ -1824,6 +2105,115 @@ export class FeesService {
     });
 
     return this.toChallanResponse(challan);
+  }
+
+  async updateChallan(
+    id: string,
+    input: UpdateFeeChallanInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const challan = await this.prisma.feeChallan.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: { lines: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!challan) throw new NotFoundException('Challan not found');
+
+    const paidAmount = this.roundMoney(Number(challan.paidAmount));
+    const previousValue = {
+      dueDate: challan.dueDate?.toISOString() ?? null,
+      sessionLabel: challan.sessionLabel,
+      grandTotal: Number(challan.grandTotal),
+      dueAmount: Number(challan.dueAmount),
+      status: challan.status,
+      lines: challan.lines.map((l) => ({
+        code: l.code,
+        label: l.label,
+        amount: Number(l.amount),
+        sortOrder: l.sortOrder,
+        feeInvoiceId: l.feeInvoiceId,
+      })),
+    };
+
+    const lines = input.lines;
+    const grandTotal = lines
+      ? this.roundMoney(lines.reduce((s, l) => s + Number(l.amount), 0))
+      : this.roundMoney(Number(challan.grandTotal));
+
+    if (grandTotal < paidAmount) {
+      throw new BadRequestException(
+        `Grand total (${grandTotal}) cannot be less than already paid (${paidAmount}). Adjust payments first.`,
+      );
+    }
+
+    const dueAmount = this.roundMoney(Math.max(0, grandTotal - paidAmount));
+    const status = dueAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (lines) {
+        await tx.feeChallanLine.deleteMany({ where: { challanId: id } });
+        await tx.feeChallanLine.createMany({
+          data: lines.map((line, idx) => ({
+            challanId: id,
+            code: line.code,
+            label: line.label,
+            amount: line.amount,
+            sortOrder: line.sortOrder ?? idx,
+            feeInvoiceId: line.feeInvoiceId ?? null,
+          })),
+        });
+      }
+
+      return tx.feeChallan.update({
+        where: { id },
+        data: {
+          grandTotal,
+          dueAmount,
+          status,
+          ...(input.dueDate !== undefined
+            ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+            : {}),
+          ...(input.sessionLabel !== undefined ? { sessionLabel: input.sessionLabel || null } : {}),
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              fullName: true,
+              admissionNumber: true,
+              rollNumber: true,
+              program: { select: { name: true } },
+              batch: { select: { name: true } },
+            },
+          },
+          lines: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_challan.updated',
+      entityType: 'FeeChallan',
+      entityId: id,
+      previousValue,
+      newValue: {
+        dueDate: updated.dueDate?.toISOString() ?? null,
+        sessionLabel: updated.sessionLabel,
+        grandTotal: Number(updated.grandTotal),
+        dueAmount: Number(updated.dueAmount),
+        status: updated.status,
+        lines: updated.lines.map((l) => ({
+          code: l.code,
+          label: l.label,
+          amount: Number(l.amount),
+          sortOrder: l.sortOrder,
+          feeInvoiceId: l.feeInvoiceId,
+        })),
+      },
+    });
+
+    return this.toChallanResponse(updated);
   }
 
   async getChallanPrintData(id: string, scope: BranchScope) {

@@ -9,8 +9,8 @@ import {
   sqlBranchFilter,
 } from '../../common/utils/branch-scope.util';
 import { getSingleBranchId } from '@eims/shared';
-import type { BranchScope, ListFeeDefaultersQuery } from '@eims/shared';
-import type { PaginatedResponse } from '@eims/types';
+import type { BranchScope, ListFeeDefaultersQuery, FeeDefaultersSummaryQuery } from '@eims/shared';
+import type { FeeDefaultersSummaryResponse, PaginatedResponse } from '@eims/types';
 
 const OVERVIEW_CACHE_TTL_MS = 45_000;
 
@@ -255,5 +255,104 @@ export class ReportsService {
       page,
       limit,
     );
+  }
+
+  async getFeeDefaultersSummary(
+    scope: BranchScope,
+    query: FeeDefaultersSummaryQuery = {},
+  ): Promise<FeeDefaultersSummaryResponse> {
+    const branchFilter = prismaBranchFilter(scope);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const search = query.search?.trim();
+    const dueDateRange =
+      query.dueFrom || query.dueTo
+        ? {
+            ...(query.dueFrom ? { gte: dueDayStart(query.dueFrom) } : {}),
+            ...(query.dueTo ? { lte: dueDayEnd(query.dueTo) } : {}),
+          }
+        : undefined;
+
+    const where = {
+      ...branchFilter,
+      paidAt: null,
+      AND: [
+        { OR: [{ dueDate: null }, { dueDate: { lt: today } }] },
+        ...(dueDateRange ? [{ dueDate: dueDateRange }] : []),
+        ...(search
+          ? [
+              {
+                student: {
+                  fullName: { contains: search, mode: 'insensitive' as const },
+                },
+              },
+            ]
+          : []),
+      ],
+    };
+
+    const invoices = await this.prisma.feeInvoice.findMany({
+      where,
+      select: {
+        netAmount: true,
+        dueDate: true,
+        payments: {
+          where: { status: { in: ['succeeded', 'completed'] } },
+          select: { amount: true },
+        },
+      },
+    });
+
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const remainingOf = (inv: (typeof invoices)[number]) => {
+      const paid = round2((inv.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0));
+      const net = round2(Number(inv.netAmount));
+      return Math.max(0, round2(net - paid));
+    };
+
+    const agingMap: Record<'0-30' | '31-60' | '61+', { count: number; remainingAmount: number }> = {
+      '0-30': { count: 0, remainingAmount: 0 },
+      '31-60': { count: 0, remainingAmount: 0 },
+      '61+': { count: 0, remainingAmount: 0 },
+    };
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    for (const inv of invoices) {
+      if (!inv.dueDate) continue;
+      const remaining = remainingOf(inv);
+      const due = new Date(inv.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const days = Math.max(0, Math.floor((today.getTime() - due.getTime()) / dayMs));
+      const bucket = days <= 30 ? '0-30' : days <= 60 ? '31-60' : '61+';
+      agingMap[bucket].count += 1;
+      agingMap[bucket].remainingAmount = round2(agingMap[bucket].remainingAmount + remaining);
+    }
+
+    const now = new Date();
+    const trend: FeeDefaultersSummaryResponse['trend'] = [];
+    for (let i = 5; i >= 0; i--) {
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0, 23, 59, 59, 999));
+      const monthKey = `${monthStart.getUTCFullYear()}-${String(monthStart.getUTCMonth() + 1).padStart(2, '0')}`;
+      let remainingAmount = 0;
+      let count = 0;
+      for (const inv of invoices) {
+        if (!inv.dueDate) continue;
+        const due = inv.dueDate.getTime();
+        if (due < monthStart.getTime() || due > monthEnd.getTime()) continue;
+        remainingAmount = round2(remainingAmount + remainingOf(inv));
+        count += 1;
+      }
+      trend.push({ month: monthKey, remainingAmount, count });
+    }
+
+    return {
+      aging: (['0-30', '31-60', '61+'] as const).map((bucket) => ({
+        bucket,
+        count: agingMap[bucket].count,
+        remainingAmount: agingMap[bucket].remainingAmount,
+      })),
+      trend,
+    };
   }
 }

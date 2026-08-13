@@ -261,6 +261,8 @@ model Student {
   statusId         String
   admissionNumber  String?
   rollNumber       String?
+  /// Fixed PKR off monthly tuition; applied on each new monthly fee invoice.
+  monthlyFeeDiscount Decimal @default(0) @db.Decimal(12, 2)
   customFields     Json      @default("{}")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

@@ -26,6 +26,22 @@ export const createFeeInvoiceSchema = z.object({
 
 export type CreateFeeInvoiceInput = z.infer<typeof createFeeInvoiceSchema>;
 
+export const updateFeeInvoiceSchema = z.object({
+  amount: requiredPositiveNumber('Amount').optional(),
+  discount: z.coerce.number().min(0).optional(),
+  fine: z.coerce.number().min(0).optional(),
+  dueDate: z.string().datetime({ message: MSG.invalidDate }).nullable().optional(),
+  remarks: optionalString(500),
+  billingPeriod: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM')
+    .nullable()
+    .optional(),
+  voucherNo: optionalString(120),
+});
+
+export type UpdateFeeInvoiceInput = z.infer<typeof updateFeeInvoiceSchema>;
+
 export const listFeeInvoicesQuerySchema = z
   .object({
     branchId: z.string().optional(),
@@ -215,6 +231,15 @@ export const listFeeDefaultersQuerySchema = z
 
 export type ListFeeDefaultersQuery = z.infer<typeof listFeeDefaultersQuerySchema>;
 
+/** Filters for defaulters summary charts (no pagination). */
+export const feeDefaultersSummaryQuerySchema = z.object({
+  search: z.string().optional(),
+  dueFrom: z.string().optional(),
+  dueTo: z.string().optional(),
+});
+
+export type FeeDefaultersSummaryQuery = z.infer<typeof feeDefaultersSummaryQuerySchema>;
+
 export const FEE_CHALLAN_LINE_CODES = [
   'monthly',
   'arrears',
@@ -258,3 +283,12 @@ export const createFeeChallanSchema = z.object({
 });
 
 export type CreateFeeChallanInput = z.infer<typeof createFeeChallanSchema>;
+
+/** Past challans: lines/due/session only — student and billing period are immutable. */
+export const updateFeeChallanSchema = z.object({
+  dueDate: z.string().datetime({ message: MSG.invalidDate }).nullable().optional(),
+  sessionLabel: optionalString(40),
+  lines: z.array(feeChallanLineInputSchema).min(1).optional(),
+});
+
+export type UpdateFeeChallanInput = z.infer<typeof updateFeeChallanSchema>;

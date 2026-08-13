@@ -57,6 +57,8 @@ export const queryKeys = {
   attendanceTrend: (month: string) => ['attendance-trend', month] as const,
   feesStats: ['fees-stats'] as const,
   feesRevenueTrend: ['fees-revenue-trend'] as const,
+  reportsFeeDefaultersSummary: (params?: Params) =>
+    listKey('reports-fee-defaulters-summary', params),
   feeTypes: (params?: Params) => listKey('fee-types', params),
   feeStructures: (params?: Params) => listKey('fee-structures', params),
   parentsStats: ['parents-stats'] as const,

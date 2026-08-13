@@ -8,7 +8,12 @@ import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
-import type { FeesRevenueTrendResponse, FeesStatsResponse, PaginatedResponse } from '@eims/types';
+import type {
+  FeesRevenueTrendResponse,
+  FeesStatsResponse,
+  FeeDefaultersSummaryResponse,
+  PaginatedResponse,
+} from '@eims/types';
 import {
   currencyStat,
   formatCurrency,
@@ -32,7 +37,9 @@ import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
 import { Tabs } from '@/components/ui/tabs';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
+import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
+import { EditInvoiceDialog } from '@/components/features/fees/edit-invoice-dialog';
 import { GenerateInvoicesDialog } from '@/components/features/fees/generate-invoices-dialog';
 import { FeeTypesPanel, type FeeTypeRow } from '@/components/features/fees/fee-types-panel';
 import { FeeStructuresPanel } from '@/components/features/fees/fee-structures-panel';
@@ -87,6 +94,20 @@ function formatCount(value: number): string {
   return value.toLocaleString('en-US');
 }
 
+function sharePercent(part: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
+
+function monthLabel(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split('-').map(Number);
+  if (!y || !m) return yyyyMm;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', {
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
 function toPayTarget(invoice: {
   id: string;
   netAmount: number;
@@ -105,6 +126,7 @@ function invoiceRowActions(
   inv: Invoice,
   canCollect: boolean,
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void,
+  openEditInvoice?: (invoiceId: string) => void,
 ) {
   return [
     {
@@ -116,6 +138,14 @@ function invoiceRowActions(
           {
             label: 'Print receipt',
             onClick: () => window.open(`/print/fee-receipts/${inv.latestPaymentId}`, '_blank'),
+          },
+        ]
+      : []),
+    ...(canCollect && openEditInvoice
+      ? [
+          {
+            label: 'Edit',
+            onClick: () => openEditInvoice(inv.id),
           },
         ]
       : []),
@@ -138,11 +168,13 @@ function InvoiceTableRow({
   inv,
   canCollect,
   openRecordPayment,
+  openEditInvoice,
   nested,
 }: {
   inv: Invoice;
   canCollect: boolean;
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
+  openEditInvoice?: (invoiceId: string) => void;
   nested?: boolean;
 }) {
   return (
@@ -162,7 +194,9 @@ function InvoiceTableRow({
         {inv.status ? <StatusBadge label={inv.status.label} code={inv.status.code} /> : '—'}
       </td>
       <td className={cn(dataTableTdClass, 'text-right')}>
-        <RowActionsMenu items={invoiceRowActions(inv, canCollect, openRecordPayment)} />
+        <RowActionsMenu
+          items={invoiceRowActions(inv, canCollect, openRecordPayment, openEditInvoice)}
+        />
       </td>
     </tr>
   );
@@ -175,6 +209,7 @@ function StudentInvoiceExpandRows({
   filters,
   canCollect,
   openRecordPayment,
+  openEditInvoice,
   token,
 }: {
   studentId: string;
@@ -190,6 +225,7 @@ function StudentInvoiceExpandRows({
   };
   canCollect: boolean;
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
+  openEditInvoice?: (invoiceId: string) => void;
   token: string | undefined;
 }) {
   const { data, isLoading, error } = useQuery({
@@ -259,6 +295,7 @@ function StudentInvoiceExpandRows({
           inv={{ ...inv, student: inv.student ?? { fullName: studentName } }}
           canCollect={canCollect}
           openRecordPayment={openRecordPayment}
+          openEditInvoice={openEditInvoice}
           nested
         />
       ))}
@@ -275,6 +312,7 @@ export default function FeesPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [payInvoice, setPayInvoice] = useState<PayInvoiceTarget | null>(null);
   const [payMode, setPayMode] = useState<PaymentDialogMode>('partial');
+  const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
   const [invoiceSearch, setInvoiceSearch] = useState('');
@@ -444,9 +482,34 @@ export default function FeesPage() {
     enabled: !!token && tab === 'defaulters',
   });
 
+  const { data: defaultersSummary, isLoading: defaultersSummaryLoading } = useQuery({
+    queryKey: [
+      ...queryKeys.reportsFeeDefaultersSummary({
+        scopeKey,
+        search: defaulterSearch,
+        dueFrom: defaulterDueFrom,
+        dueTo: defaulterDueTo,
+      }),
+    ],
+    queryFn: () =>
+      apiClient<FeeDefaultersSummaryResponse>(
+        withBranchScope('/reports/fee-defaulters/summary', effectiveScope, {
+          search: defaulterSearch || undefined,
+          dueFrom: defaulterDueFrom || undefined,
+          dueTo: defaulterDueTo || undefined,
+        }),
+        { token },
+      ),
+    enabled: !!token && tab === 'defaulters',
+  });
+
   const openRecordPayment = (invoice: PayInvoiceTarget, mode: PaymentDialogMode = 'partial') => {
     setPayMode(mode);
     setPayInvoice(invoice);
+  };
+
+  const openEditInvoice = (invoiceId: string) => {
+    setEditInvoiceId(invoiceId);
   };
 
   const handleLimitChange = useCallback((next: number) => {
@@ -524,6 +587,14 @@ export default function FeesPage() {
           setCompletedPage(1);
           setTab('completed');
         }}
+      />
+
+      <EditInvoiceDialog
+        open={!!editInvoiceId}
+        onOpenChange={(open) => {
+          if (!open) setEditInvoiceId(null);
+        }}
+        invoiceId={editInvoiceId}
       />
 
       <MainStatsSection
@@ -766,6 +837,7 @@ export default function FeesPage() {
                               }}
                               canCollect={canCollect}
                               openRecordPayment={openRecordPayment}
+                              openEditInvoice={openEditInvoice}
                               nested
                             />
                           ))}
@@ -784,6 +856,7 @@ export default function FeesPage() {
                               }}
                               canCollect={canCollect}
                               openRecordPayment={openRecordPayment}
+                              openEditInvoice={openEditInvoice}
                               token={token}
                             />
                           ) : null}
@@ -924,6 +997,14 @@ export default function FeesPage() {
                                     },
                                   ]
                                 : []),
+                              ...(canCollect
+                                ? [
+                                    {
+                                      label: 'Edit',
+                                      onClick: () => openEditInvoice(inv.id),
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </td>
@@ -961,6 +1042,94 @@ export default function FeesPage() {
 
       {tab === 'defaulters' && (
         <div className="space-y-4">
+          {(() => {
+            const outstanding = stats?.outstandingAmount.total ?? 0;
+            const collected = stats?.collectedLast30Days.total ?? 0;
+            const healthTotal = outstanding + collected;
+            const aging = defaultersSummary?.aging ?? [];
+            const agingTotal = aging.reduce((sum, b) => sum + b.remainingAmount, 0);
+            const agingColors: Record<string, string> = {
+              '0-30': '#F59E0B',
+              '31-60': '#F97316',
+              '61+': '#DC2626',
+            };
+            const agingLabels: Record<string, string> = {
+              '0-30': '0–30 days',
+              '31-60': '31–60 days',
+              '61+': '61+ days',
+            };
+            const trendPoints = (defaultersSummary?.trend ?? []).map((p) => ({
+              label: monthLabel(p.month),
+              value: p.remainingAmount,
+            }));
+            const trendCurrent = trendPoints[trendPoints.length - 1]?.value ?? 0;
+            const trendPrevious = trendPoints[trendPoints.length - 2]?.value ?? 0;
+            const trendChange =
+              trendPrevious > 0
+                ? Math.round(((trendCurrent - trendPrevious) / trendPrevious) * 1000) / 10
+                : null;
+
+            return (
+              <>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <MetricDonutCard
+                    title="Collection health"
+                    subtitle="Outstanding vs collected (30d)"
+                    isLoading={statsLoading}
+                    segments={[
+                      {
+                        label: 'Outstanding',
+                        rate: sharePercent(outstanding, healthTotal),
+                        color: '#DC2626',
+                      },
+                      {
+                        label: 'Collected',
+                        rate: sharePercent(collected, healthTotal),
+                        color: '#16A34A',
+                      },
+                    ]}
+                  />
+                  <MetricDonutCard
+                    title="Overdue aging"
+                    subtitle="Unpaid by days past due"
+                    isLoading={defaultersSummaryLoading}
+                    segments={
+                      agingTotal > 0
+                        ? aging.map((b) => ({
+                            label: agingLabels[b.bucket] ?? b.bucket,
+                            rate: sharePercent(b.remainingAmount, agingTotal),
+                            color: agingColors[b.bucket] ?? '#71717A',
+                          }))
+                        : [
+                            { label: '0–30 days', rate: 0, color: '#F59E0B' },
+                            { label: '31–60 days', rate: 0, color: '#F97316' },
+                            { label: '61+ days', rate: 0, color: '#DC2626' },
+                          ]
+                    }
+                  />
+                </div>
+                <TrendAreaChart
+                  title="Overdue remaining"
+                  subtitle="By due month · last 6 months"
+                  data={trendPoints}
+                  changePercent={trendChange}
+                  isLoading={defaultersSummaryLoading}
+                  valueFormatter={(v) => formatCurrencyCompact(v)}
+                  gradientId="feesDefaultersOverdueGradient"
+                  totalLabel="Latest month"
+                  totalValue={formatCurrencyCompact(trendCurrent)}
+                />
+                {!defaultersSummaryLoading &&
+                  agingTotal <= 0 &&
+                  trendPoints.every((p) => p.value <= 0) && (
+                    <p className="text-sm text-[var(--base-muted-foreground,#71717A)]">
+                      No overdue amounts to chart for the current filters.
+                    </p>
+                  )}
+              </>
+            );
+          })()}
+
           <FilterBar className="items-end">
             <SearchInput
               value={defaulterSearch}
@@ -1052,6 +1221,10 @@ export default function FeesPage() {
                           {canCollect ? (
                             <RowActionsMenu
                               items={[
+                                {
+                                  label: 'Edit',
+                                  onClick: () => openEditInvoice(inv.id),
+                                },
                                 {
                                   label: 'Record payment',
                                   onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
