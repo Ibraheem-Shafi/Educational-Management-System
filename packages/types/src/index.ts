@@ -6,6 +6,7 @@ export * from './api/common/metric-with-trend';
 export * from './api/settings/institution-settings.response';
 export * from './api/auth/auth-me.response';
 export * from './api/reports/overview.response';
+export * from './api/reports/fee-defaulters-summary.response';
 export * from './api/analytics/dashboard-kpis.response';
 export * from './api/students/stats.response';
 export * from './api/branches/stats.response';

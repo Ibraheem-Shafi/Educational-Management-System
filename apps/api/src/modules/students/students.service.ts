@@ -197,6 +197,7 @@ export class StudentsService {
           statusId: true,
           admissionNumber: true,
           rollNumber: true,
+          monthlyFeeDiscount: true,
           customFields: true,
           createdAt: true,
           updatedAt: true,
@@ -260,6 +261,7 @@ export class StudentsService {
           statusId: input.statusId,
           admissionNumber: input.admissionNumber ?? null,
           rollNumber: input.rollNumber ?? null,
+          monthlyFeeDiscount: input.monthlyFeeDiscount ?? 0,
           customFields: input.customFields ?? {},
           createdById: user.id,
         },
@@ -325,6 +327,7 @@ export class StudentsService {
         statusId: true,
         admissionNumber: true,
         rollNumber: true,
+        monthlyFeeDiscount: true,
         customFields: true,
         createdAt: true,
         updatedAt: true,
@@ -420,6 +423,21 @@ export class StudentsService {
     });
     if (!existing) throw new NotFoundException('Student not found');
 
+    const isPrivileged =
+      user.roles.includes('super_admin') || user.roles.includes('branch_admin');
+    const accountantFeeFieldsOnly =
+      user.roles.includes('accountant') && !isPrivileged;
+
+    if (accountantFeeFieldsOnly) {
+      const allowedKeys = new Set(['monthlyFeeDiscount', 'programId', 'batchId']);
+      const forbidden = Object.keys(input).filter((k) => !allowedKeys.has(k));
+      if (forbidden.length > 0) {
+        throw new BadRequestException(
+          `Accountants may only update fee-related fields (monthlyFeeDiscount, programId, batchId). Rejected: ${forbidden.join(', ')}`,
+        );
+      }
+    }
+
     if (input.batchId) {
       const batch = await this.prisma.batch.findFirst({
         where: { id: input.batchId, branchId: existing.branchId, deletedAt: null },
@@ -429,24 +447,35 @@ export class StudentsService {
 
     const student = await this.prisma.student.update({
       where: { id },
-      data: {
-        ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
-        ...(input.dateOfBirth !== undefined
-          ? { dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null }
-          : {}),
-        ...(input.gender !== undefined ? { gender: input.gender } : {}),
-        ...(input.cnicOrBForm !== undefined ? { cnicOrBForm: input.cnicOrBForm } : {}),
-        ...(input.phone !== undefined ? { phone: input.phone } : {}),
-        ...(input.email !== undefined ? { email: input.email } : {}),
-        ...(input.address !== undefined ? { address: input.address } : {}),
-        ...(input.photographUrl !== undefined ? { photographUrl: input.photographUrl } : {}),
-        ...(input.programId !== undefined ? { programId: input.programId } : {}),
-        ...(input.batchId !== undefined ? { batchId: input.batchId } : {}),
-        ...(input.statusId !== undefined ? { statusId: input.statusId } : {}),
-        ...(input.admissionNumber !== undefined ? { admissionNumber: input.admissionNumber } : {}),
-        ...(input.rollNumber !== undefined ? { rollNumber: input.rollNumber } : {}),
-        ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
-      },
+      data: accountantFeeFieldsOnly
+        ? {
+            ...(input.programId !== undefined ? { programId: input.programId } : {}),
+            ...(input.batchId !== undefined ? { batchId: input.batchId } : {}),
+            ...(input.monthlyFeeDiscount !== undefined
+              ? { monthlyFeeDiscount: input.monthlyFeeDiscount }
+              : {}),
+          }
+        : {
+            ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+            ...(input.dateOfBirth !== undefined
+              ? { dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null }
+              : {}),
+            ...(input.gender !== undefined ? { gender: input.gender } : {}),
+            ...(input.cnicOrBForm !== undefined ? { cnicOrBForm: input.cnicOrBForm } : {}),
+            ...(input.phone !== undefined ? { phone: input.phone } : {}),
+            ...(input.email !== undefined ? { email: input.email } : {}),
+            ...(input.address !== undefined ? { address: input.address } : {}),
+            ...(input.photographUrl !== undefined ? { photographUrl: input.photographUrl } : {}),
+            ...(input.programId !== undefined ? { programId: input.programId } : {}),
+            ...(input.batchId !== undefined ? { batchId: input.batchId } : {}),
+            ...(input.statusId !== undefined ? { statusId: input.statusId } : {}),
+            ...(input.admissionNumber !== undefined ? { admissionNumber: input.admissionNumber } : {}),
+            ...(input.rollNumber !== undefined ? { rollNumber: input.rollNumber } : {}),
+            ...(input.monthlyFeeDiscount !== undefined
+              ? { monthlyFeeDiscount: input.monthlyFeeDiscount }
+              : {}),
+            ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
+          },
       include: { batch: true, program: true },
     });
 
@@ -501,6 +530,7 @@ export class StudentsService {
     statusId: string;
     admissionNumber?: string | null;
     rollNumber?: string | null;
+    monthlyFeeDiscount?: { toString(): string } | number | null;
     customFields?: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
@@ -525,6 +555,7 @@ export class StudentsService {
       statusId: student.statusId,
       admissionNumber: student.admissionNumber ?? null,
       rollNumber: student.rollNumber ?? null,
+      monthlyFeeDiscount: Number(student.monthlyFeeDiscount ?? 0),
       customFields:
         student.customFields && typeof student.customFields === 'object' && !Array.isArray(student.customFields)
           ? (student.customFields as Record<string, unknown>)

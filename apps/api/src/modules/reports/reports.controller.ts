@@ -6,8 +6,8 @@ import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchScopeParam, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { listFeeDefaultersQuerySchema } from '@eims/shared';
-import type { BranchScope, ListFeeDefaultersQuery } from '@eims/shared';
+import { listFeeDefaultersQuerySchema, feeDefaultersSummaryQuerySchema } from '@eims/shared';
+import type { BranchScope, ListFeeDefaultersQuery, FeeDefaultersSummaryQuery } from '@eims/shared';
 
 @ApiTags('reports')
 @ApiBearerAuth()
@@ -20,6 +20,15 @@ export class ReportsController {
   @Permissions('reports.view')
   getOverview(@BranchScopeParam() scope: BranchScope) {
     return this.reportsService.getOverview(scope);
+  }
+
+  @Get('fee-defaulters/summary')
+  @Permissions('reports.view')
+  getFeeDefaultersSummary(
+    @BranchScopeParam() scope: BranchScope,
+    @Query(createZodPipe(feeDefaultersSummaryQuerySchema)) query: FeeDefaultersSummaryQuery,
+  ) {
+    return this.reportsService.getFeeDefaultersSummary(scope, query);
   }
 
   @Get('fee-defaulters')

@@ -35,6 +35,8 @@ import {
   listFeeTypesQuerySchema,
   listFeeChallansQuerySchema,
   createFeeChallanSchema,
+  updateFeeInvoiceSchema,
+  updateFeeChallanSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -55,6 +57,8 @@ import type {
   UpdateFeeTypeInput,
   ListFeeChallansQuery,
   CreateFeeChallanInput,
+  UpdateFeeInvoiceInput,
+  UpdateFeeChallanInput,
 } from '@eims/shared';
 
 @ApiTags('fees')
@@ -206,6 +210,17 @@ export class FeesController {
     return this.feesService.create(body, user);
   }
 
+  @Patch('fee-invoices/:id')
+  @Permissions('fees.collect')
+  updateInvoice(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateFeeInvoiceSchema)) body: UpdateFeeInvoiceInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.updateInvoice(id, body, user, scope);
+  }
+
   @Patch('fee-invoices/:id/pay')
   @Permissions('fees.collect')
   recordPayment(
@@ -265,6 +280,17 @@ export class FeesController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.feesService.createChallan(body, user);
+  }
+
+  @Patch('fee-challans/:id')
+  @Permissions('fees.collect')
+  updateChallan(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateFeeChallanSchema)) body: UpdateFeeChallanInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.updateChallan(id, body, user, scope);
   }
 
   @Get('fee-challans/:id/print-data')

@@ -84,6 +84,12 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const inquiryPrefilledRef = useRef(false);
   const isEditing = !!studentId;
   const editPrefilledRef = useRef(false);
+  const feeFieldsOnly = useMemo(() => {
+    if (!isEditing || !user?.roles?.length) return false;
+    const privileged =
+      user.roles.includes('super_admin') || user.roles.includes('branch_admin');
+    return user.roles.includes('accountant') && !privileged;
+  }, [isEditing, user?.roles]);
   const schema = useMemo(
     (): ZodSchema => (isEditing ? updateStudentSchema : createStudentSchema),
     [isEditing],
@@ -105,6 +111,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const [fullName, setFullName] = useState('');
   const [rollNumber, setRollNumber] = useState('');
   const [admissionNumber, setAdmissionNumber] = useState('');
+  const [monthlyFeeDiscount, setMonthlyFeeDiscount] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [cnicOrBForm, setCnicOrBForm] = useState('');
@@ -196,6 +203,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         photographUrl: string | null;
         rollNumber?: string | null;
         admissionNumber?: string | null;
+        monthlyFeeDiscount?: number | null;
         branchId: string;
         programId?: string | null;
         batchId?: string | null;
@@ -210,6 +218,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
     setFullName(editingStudent.fullName ?? '');
     setRollNumber(editingStudent.rollNumber ?? '');
     setAdmissionNumber(editingStudent.admissionNumber ?? '');
+    setMonthlyFeeDiscount(
+      editingStudent.monthlyFeeDiscount && editingStudent.monthlyFeeDiscount > 0
+        ? String(editingStudent.monthlyFeeDiscount)
+        : '',
+    );
     setPhone(editingStudent.phone ?? '');
     setEmail(editingStudent.email ?? '');
     setCnicOrBForm(editingStudent.cnicOrBForm ?? '');
@@ -299,7 +312,7 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
       }),
     onSuccess: async (created) => {
       if (isEditing) created = { id: studentId! };
-      if (photoFile) {
+      if (photoFile && !feeFieldsOnly) {
         try {
           const url = await uploadStudentPhoto(photoFile, created.id, token!);
           await apiClient(`/students/${created.id}`, {
@@ -431,12 +444,26 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   };
 
   const buildPayload = () => {
+    if (feeFieldsOnly) {
+      return {
+        ...(monthlyFeeDiscount.trim() !== ''
+          ? { monthlyFeeDiscount: Number(monthlyFeeDiscount) }
+          : { monthlyFeeDiscount: 0 }),
+        ...(programId ? { programId } : {}),
+        ...(batchId ? { batchId } : {}),
+      };
+    }
     const guardians = buildGuardians();
     const base: Record<string, unknown> = {
       fullName: fullName.trim(),
       statusId,
       ...(rollNumber.trim() ? { rollNumber: rollNumber.trim() } : {}),
       ...(admissionNumber.trim() ? { admissionNumber: admissionNumber.trim() } : {}),
+      ...(monthlyFeeDiscount.trim() !== ''
+        ? { monthlyFeeDiscount: Number(monthlyFeeDiscount) }
+        : isEditing
+          ? { monthlyFeeDiscount: 0 }
+          : {}),
       ...(phone.trim() ? { phone: normalizePakistanPhone(phone.trim()) } : {}),
       ...(email.trim() ? { email: email.trim() } : {}),
       ...(cnicOrBForm.trim() ? { cnicOrBForm: cnicOrBForm.trim() } : {}),
@@ -497,6 +524,18 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload = buildPayload();
+    if (feeFieldsOnly) {
+      if (
+        monthlyFeeDiscount.trim() !== '' &&
+        (Number.isNaN(Number(monthlyFeeDiscount)) || Number(monthlyFeeDiscount) < 0)
+      ) {
+        setFieldError('monthlyFeeDiscount', 'Enter a valid discount amount');
+        toast.error('Enter a valid discount amount');
+        return;
+      }
+      createMutation.mutate(payload);
+      return;
+    }
     const schemaResult = validateSchema(schema, payload);
     const schemaErrors = schemaResult.success
       ? ({} as Record<string, string>)
@@ -552,15 +591,17 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </Link>
               <ChevronRight className="h-3.5 w-3.5 text-[var(--text-soft-400,#868C98)]" />
               <span className="font-medium text-[var(--text-main-900)]">
-                {isEditing ? 'Edit Student' : 'Add Student'}
+                {feeFieldsOnly ? 'Edit fee settings' : isEditing ? 'Edit Student' : 'Add Student'}
               </span>
             </nav>
             <p className="mt-1 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)]">
-              {isEditing
-                ? 'Update this student record.'
-                : inquiryId
-                  ? 'Admit student from admission inquiry.'
-                  : 'Create a new student record.'}
+              {feeFieldsOnly
+                ? 'Update monthly discount, program, and batch only.'
+                : isEditing
+                  ? 'Update this student record.'
+                  : inquiryId
+                    ? 'Admit student from admission inquiry.'
+                    : 'Create a new student record.'}
             </p>
           </div>
         </div>
@@ -609,6 +650,67 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
 
       <div className="flex items-start gap-8">
         <form ref={formRef} onSubmit={handleSubmit} noValidate className="min-w-0 flex-1 space-y-5">
+          {feeFieldsOnly ? (
+            <AdmitStudentSection
+              id="academic-information"
+              title="Fee settings"
+              description="Monthly discount and class placement used for fee billing."
+            >
+              <AdmitFieldGrid>
+                <div>
+                  <FormFieldLabel>Monthly fee discount (Rs)</FormFieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className={fieldClassName('monthlyFeeDiscount', modalFieldClassName)}
+                    placeholder="e.g. 2000"
+                    value={monthlyFeeDiscount}
+                    onChange={(e) => {
+                      setMonthlyFeeDiscount(e.target.value);
+                      clearField('monthlyFeeDiscount');
+                    }}
+                  />
+                  <p className="mt-1 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                    Fixed amount off monthly tuition on every new monthly invoice.
+                  </p>
+                  <FormFieldError message={errors.monthlyFeeDiscount} />
+                </div>
+                <div>
+                  <FormFieldLabel>Program</FormFieldLabel>
+                  <SelectDropdown
+                    fullWidth
+                    aria-label="Program"
+                    placeholder="Select program"
+                    value={programId}
+                    onValueChange={(value) => {
+                      setProgramId(value);
+                      setBatchId('');
+                    }}
+                    options={[
+                      { value: '', label: 'Select program' },
+                      ...(programs?.data.map((p) => ({ value: p.id, label: p.name })) ?? []),
+                    ]}
+                  />
+                </div>
+                <div>
+                  <FormFieldLabel>Batch</FormFieldLabel>
+                  <SelectDropdown
+                    fullWidth
+                    aria-label="Batch"
+                    placeholder="Select batch"
+                    value={batchId}
+                    onValueChange={setBatchId}
+                    options={[
+                      { value: '', label: 'Select batch' },
+                      ...(batches?.data.map((b) => ({ value: b.id, label: b.name })) ?? []),
+                    ]}
+                  />
+                </div>
+              </AdmitFieldGrid>
+            </AdmitStudentSection>
+          ) : (
+            <>
           <AdmitStudentSection
             id="student-information"
             title="Basic Information"
@@ -715,6 +817,25 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   value={admissionNumber}
                   onChange={(e) => setAdmissionNumber(e.target.value)}
                 />
+              </div>
+              <div>
+                <FormFieldLabel>Monthly fee discount (Rs)</FormFieldLabel>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  className={fieldClassName('monthlyFeeDiscount', modalFieldClassName)}
+                  placeholder="e.g. 2000"
+                  value={monthlyFeeDiscount}
+                  onChange={(e) => {
+                    setMonthlyFeeDiscount(e.target.value);
+                    clearField('monthlyFeeDiscount');
+                  }}
+                />
+                <p className="mt-1 text-xs text-[var(--base-muted-foreground,#71717A)]">
+                  Fixed amount off monthly tuition on every new monthly invoice.
+                </p>
+                <FormFieldError message={errors.monthlyFeeDiscount} />
               </div>
               <div>
                 <FormFieldLabel>Gender</FormFieldLabel>
@@ -1000,6 +1121,8 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
               </div>
             </AdmitFieldGrid>
           </AdmitStudentSection>
+            </>
+          )}
 
           <div className="flex justify-end gap-3 pb-6">
             <button
@@ -1032,11 +1155,13 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
           </div>
         </form>
 
-        <AdmitStudentSideNav
-          activeSection={activeSection}
-          completedSections={completedSections}
-          onNavigate={scrollToSection}
-        />
+        {!feeFieldsOnly ? (
+          <AdmitStudentSideNav
+            activeSection={activeSection}
+            completedSections={completedSections}
+            onNavigate={scrollToSection}
+          />
+        ) : null}
       </div>
     </div>
   );
