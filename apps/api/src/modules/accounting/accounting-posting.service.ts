@@ -3,8 +3,14 @@ import { PrismaService } from '../../prisma/prisma.module';
 
 const DEFAULT_SYSTEM_ACCOUNTS = [
   { code: '1000', name: 'Cash', type: 'asset' },
+  { code: '1100', name: 'Bank', type: 'asset' },
+  { code: '1600', name: 'Fixed Assets', type: 'asset' },
+  { code: '2000', name: 'Accounts Payable', type: 'liability' },
   { code: '4000', name: 'Fee Income', type: 'income' },
   { code: '5000', name: 'Salary Expense', type: 'expense' },
+  { code: '5100', name: 'Operating Expense', type: 'expense' },
+  { code: '5200', name: 'Utilities Expense', type: 'expense' },
+  { code: '5300', name: 'Maintenance Expense', type: 'expense' },
 ] as const;
 
 /**
@@ -175,6 +181,60 @@ export class AccountingPostingService implements OnModuleInit {
           create: [
             { accountId: salaryExpense.id, debit: totalNet, credit: 0 },
             { accountId: cash.id, debit: 0, credit: totalNet },
+          ],
+        },
+      },
+      include: {
+        lines: { include: { account: { select: { id: true, code: true, name: true } } } },
+      },
+    });
+  }
+
+  async postDoubleEntry(opts: {
+    branchId: string;
+    voucherType: 'receipt' | 'payment' | 'journal';
+    sourceType: string;
+    sourceId: string;
+    narration: string;
+    debitAccountCode: string;
+    creditAccountCode: string;
+    amount: number;
+    userId?: string;
+    voucherDate?: Date;
+  }) {
+    if (opts.amount <= 0) {
+      throw new BadRequestException('Amount must be positive');
+    }
+
+    const existing = await this.prisma.journalVoucher.findFirst({
+      where: { sourceType: opts.sourceType, sourceId: opts.sourceId, status: 'posted' },
+    });
+    if (existing) return existing;
+
+    const [debitAccount, creditAccount] = await Promise.all([
+      this.getSystemAccount(opts.debitAccountCode),
+      this.getSystemAccount(opts.creditAccountCode),
+    ]);
+
+    const now = opts.voucherDate ?? new Date();
+    const voucherNo = await this.nextVoucherNo(opts.branchId, opts.voucherType);
+
+    return this.prisma.journalVoucher.create({
+      data: {
+        branchId: opts.branchId,
+        voucherType: opts.voucherType,
+        voucherNo,
+        voucherDate: now,
+        narration: opts.narration,
+        status: 'posted',
+        sourceType: opts.sourceType,
+        sourceId: opts.sourceId,
+        postedAt: new Date(),
+        createdById: opts.userId,
+        lines: {
+          create: [
+            { accountId: debitAccount.id, debit: opts.amount, credit: 0 },
+            { accountId: creditAccount.id, debit: 0, credit: opts.amount },
           ],
         },
       },

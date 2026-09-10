@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Download, FileBarChart } from 'lucide-react';
+import { BookOpen, Building2, ChevronRight, Download, FileBarChart, Wallet } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -18,24 +19,16 @@ import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { PaginationBar } from '@/components/layout/pagination-bar';
-import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
-import type { PaginatedResponse, ReportsOverviewResponse } from '@eims/types';
+import { metricRowClass } from '@/components/layout/status-badge';
+import type { ReportsOverviewResponse } from '@eims/types';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { catalogCounts, REPORT_GROUP_META, type ReportGroup } from '@/lib/report-catalog';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
-
-interface FeeDefaulter {
-  id: string;
-  student: { fullName: string; phone: string | null };
-  feeType: { name: string } | null;
-  netAmount: number;
-  dueDate: string | null;
-}
 
 interface CorrelationStudent {
   studentId: string;
@@ -44,6 +37,12 @@ interface CorrelationStudent {
   averagePercentage: number;
 }
 
+const HUB_CARDS: Array<{ group: ReportGroup; icon: typeof BookOpen }> = [
+  { group: 'academic', icon: BookOpen },
+  { group: 'finance', icon: Wallet },
+  { group: 'administration', icon: Building2 },
+];
+
 export default function ReportsPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
@@ -51,8 +50,6 @@ export default function ReportsPage() {
   const canViewReports = can(PERMISSIONS.REPORTS_VIEW);
   const canViewAnalytics = can(PERMISSIONS.ANALYTICS_READ);
   const [correlationBatchId, setCorrelationBatchId] = useState('');
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(8);
 
   const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
 
@@ -63,17 +60,6 @@ export default function ReportsPage() {
         token,
       }),
     enabled: !!token && canViewReports,
-  });
-
-  const { data: defaulters, isLoading: defaultersLoading } = useQuery({
-    queryKey: queryKeys.reportsFeeDefaulters({ scopeKey, page, limit }),
-    queryFn: () =>
-      apiClient<PaginatedResponse<FeeDefaulter>>(
-        withBranchScope('/reports/fee-defaulters', effectiveScope, { page, limit }),
-        { token },
-      ),
-    enabled: !!token && canViewReports,
-    placeholderData: (previous) => previous,
   });
 
   const { data: batches } = useBatches(token, singleBranchId ?? '', undefined, !!canViewAnalytics);
@@ -117,7 +103,7 @@ export default function ReportsPage() {
   if (!canViewReports) {
     return (
       <div className="space-y-6 font-[family-name:var(--font-inter)]">
-        <PageHeader icon={FileBarChart} title="Reports" description="Institutional reports and exports" />
+        <PageHeader icon={FileBarChart} title="Reports" description="Named report catalogs and insights" />
         <p className="text-sm text-[var(--text-sub-500)]">You do not have permission to view reports.</p>
       </div>
     );
@@ -128,11 +114,42 @@ export default function ReportsPage() {
       <PageHeader
         icon={FileBarChart}
         title="Reports"
-        description="Overview, fee collection, and performance insights"
+        description="Named catalogs for academics, finance, and administration"
       />
 
       <div className="flex justify-end">
         <PageBranchScopeControl />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {HUB_CARDS.map(({ group, icon: Icon }) => {
+          const meta = REPORT_GROUP_META[group];
+          const counts = catalogCounts(group);
+          return (
+            <ContentPanel
+              key={group}
+              title={
+                <span className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-[var(--palette-teal)]" strokeWidth={1.75} />
+                  {meta.title}
+                </span>
+              }
+            >
+              <div className="space-y-4 px-5 py-5">
+                <p className="text-sm text-[var(--text-sub-500)]">{meta.description}</p>
+                <p className="text-sm font-medium text-[var(--text-main-900)]">
+                  {counts.ready} ready / {counts.comingSoon} coming soon
+                </p>
+                <Button size="sm" asChild>
+                  <Link href={meta.href}>
+                    Open catalog
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </ContentPanel>
+          );
+        })}
       </div>
 
       <MainStatsSection
@@ -232,81 +249,6 @@ export default function ReportsPage() {
         </ContentPanel>
       )}
 
-      <ContentPanel
-        title={`Fee defaulters (${defaulters?.meta.total ?? 0})`}
-        actions={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!defaulters?.data.length}
-            onClick={() =>
-              downloadCsv(
-                'fee-defaulters.csv',
-                ['Student', 'Phone', 'Fee type', 'Amount', 'Due date'],
-                (defaulters?.data ?? []).map((inv) => [
-                  inv.student.fullName,
-                  inv.student.phone ?? '',
-                  inv.feeType?.name ?? '',
-                  inv.netAmount,
-                  inv.dueDate ?? '',
-                ]),
-              )
-            }
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </Button>
-        }
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className={thClass}>Student</th>
-                <th className={thClass}>Phone</th>
-                <th className={thClass}>Fee type</th>
-                <th className={thClass}>Amount</th>
-                <th className={thClass}>Due date</th>
-              </tr>
-            </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {defaultersLoading ? (
-                <DataTableSkeletonRows columns={5} rows={limit} />
-              ) : defaulters?.data.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                    No overdue invoices
-                  </td>
-                </tr>
-              ) : (
-                defaulters?.data.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-[var(--neutral-50)]/50">
-                    <td className={tdClass}>{inv.student.fullName}</td>
-                    <td className={tdClass}>{inv.student.phone ?? '—'}</td>
-                    <td className={tdClass}>{inv.feeType?.name ?? 'Fee'}</td>
-                    <td className={tdClass}>{formatCurrency(inv.netAmount)}</td>
-                    <td className={tdClass}>{inv.dueDate ?? '—'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {defaulters?.meta && (
-          <PaginationBar
-            page={page}
-            totalPages={defaulters.meta.totalPages}
-            limit={limit}
-            onPageChange={setPage}
-            onLimitChange={(next) => {
-              setLimit(next);
-              setPage(1);
-            }}
-          />
-        )}
-      </ContentPanel>
-
       {canViewAnalytics && (
         <ContentPanel
           title="Attendance vs performance correlation"
@@ -388,7 +330,7 @@ export default function ReportsPage() {
                   )}
                   {!correlationLoading &&
                     topCorrelationStudents.map((s) => (
-                      <tr key={s.studentId} className="hover:bg-[var(--neutral-50)]/50">
+                      <tr key={s.studentId} className={metricRowClass(s.averagePercentage)}>
                         <td className={tdClass}>{s.fullName}</td>
                         <td className={cn(tdClass, 'text-right')}>{s.attendanceRate}%</td>
                         <td className={cn(tdClass, 'text-right')}>{s.averagePercentage}%</td>

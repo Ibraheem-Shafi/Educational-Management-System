@@ -3,11 +3,13 @@ import { allBranchScope, selectedBranchScope } from '@eims/shared';
 import type { BranchScope } from '@eims/shared';
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import { paginatedResult } from '../../common/utils/pagination.util';
@@ -28,15 +30,19 @@ import type {
   UpdateAssessmentSeriesInput,
 } from '@eims/shared';
 import type { Assessment, AssessmentType } from '@prisma/client';
+import { assertTeacherAssignedBatch } from '../../common/utils/teacher-assignment.util';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class AssessmentsService {
+  private readonly logger = new Logger(AssessmentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
+    private readonly communications: CommunicationsService,
   ) {}
 
   async getStats(scope: BranchScope): Promise<AssessmentsStatsResponse> {
@@ -417,6 +423,18 @@ export class AssessmentsService {
       newValue: assessment,
     });
 
+    void this.communications
+      .sendResultAlerts(
+        { id: assessment.id, name: assessment.name, branchId: assessment.branchId },
+        user,
+      )
+      .catch((err) => {
+        this.logger.error(
+          `Failed to queue result alerts for ${assessment.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+      });
+
     return this.findOne(assessment.id, scope);
   }
 
@@ -450,7 +468,10 @@ export class AssessmentsService {
     return this.findOne(assessment.id, scope);
   }
 
-  async getMarksSheet(id: string, query: MarksSheetQuery, scope: BranchScope) {
+  async getMarksSheet(id: string, query: MarksSheetQuery, scope: BranchScope, user?: AuthUser) {
+    if (user) {
+      await assertTeacherAssignedBatch(this.prisma, user, query.batchId);
+    }
     const assessment = await this.findOne(id, scope);
     const batch = await this.prisma.batch.findFirst({
       where: { id: query.batchId, branchId: assessment.branchId, deletedAt: null },
@@ -543,6 +564,7 @@ export class AssessmentsService {
   }
 
   async bulkMarks(id: string, input: BulkMarksInput, user: AuthUser, scope: BranchScope) {
+    await assertTeacherAssignedBatch(this.prisma, user, input.batchId);
     const assessment = await this.prisma.assessment.findFirst({
       where: { id, ...prismaBranchFilter(scope) },
     });

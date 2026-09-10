@@ -26,6 +26,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { metricRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 interface ReviewRow {
@@ -163,14 +165,10 @@ export function UserReviewsSection({
                 </td>
               </tr>
             ) : reviews.length === 0 ? (
-              <tr>
-                <td colSpan={canManage ? 5 : 4} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                  No performance reviews
-                </td>
-              </tr>
+              <EmptyStateCell colSpan={canManage ? 5 : 4} title="No performance reviews" />
             ) : (
               reviews.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={metricRowClass(r.score)}>
                   <td className={dataTableTdClass}>{r.periodLabel}</td>
                   <td className={dataTableTdClass}>{r.reviewedAt}</td>
                   <td className={dataTableTdClass}>{r.score ?? '—'}</td>

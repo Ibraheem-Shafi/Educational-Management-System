@@ -8,6 +8,31 @@ export function todayYmd(now = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Current local month as `YYYY-MM`. */
+export function currentYearMonth(now = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+/** Format a stored calendar day (YYYY-MM-DD or ISO noon-UTC) without shifting the day. */
+export function formatCalendarDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const ymd = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString();
+  }
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 /** Extract `YYYY-MM-DD` from a date or datetime-local value. */
 export function toYmd(value: string): string {
   if (!value) return '';

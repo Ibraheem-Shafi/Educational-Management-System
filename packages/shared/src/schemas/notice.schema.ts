@@ -21,7 +21,11 @@ export type CreateNoticeInput = z.infer<typeof createNoticeSchema>;
 export const updateNoticeSchema = createNoticeSchema
   .omit({ branchId: true })
   .partial()
-  .extend({ isPublished: z.boolean().optional() });
+  .extend({
+    isPublished: z.boolean().optional(),
+    /** When publishing, queue WhatsApp/SMS alerts (default true). */
+    notifyFamilies: z.boolean().optional(),
+  });
 
 export type UpdateNoticeInput = z.infer<typeof updateNoticeSchema>;
 

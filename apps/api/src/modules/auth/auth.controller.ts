@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthService, PortalService } from './auth.service';
+import { PortalTeacherService } from './portal-teacher.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser, Public, SkipMfa } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
@@ -92,7 +93,10 @@ export class AuthController {
 @Controller('portal')
 @UseGuards(AuthGuard)
 export class PortalController {
-  constructor(private readonly portalService: PortalService) {}
+  constructor(
+    private readonly portalService: PortalService,
+    private readonly portalTeacherService: PortalTeacherService,
+  ) {}
 
   @Get('student/stats')
   studentStats(@CurrentUser() user: AuthUser) {
@@ -361,5 +365,55 @@ export class PortalController {
   @Get('parent/leave/:id/attachment/signed-url')
   parentLeaveAttachmentSignedUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.portalService.getParentLeaveAttachmentSignedUrl(user, id);
+  }
+
+  @Get('teacher/home')
+  teacherHome(@CurrentUser() user: AuthUser) {
+    return this.portalTeacherService.getHome(user);
+  }
+
+  @Get('teacher/batches')
+  teacherBatches(@CurrentUser() user: AuthUser) {
+    return this.portalTeacherService.getBatches(user);
+  }
+
+  @Get('teacher/students')
+  teacherStudents(
+    @CurrentUser() user: AuthUser,
+    @Query('search') search?: string,
+    @Query('batchId') batchId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.portalTeacherService.getStudents(user, {
+      search,
+      batchId,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get('teacher/parents')
+  teacherParents(
+    @CurrentUser() user: AuthUser,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.portalTeacherService.getParents(user, {
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get('teacher/notices')
+  teacherNotices(@CurrentUser() user: AuthUser) {
+    return this.portalTeacherService.getNotices(user);
+  }
+
+  @Get('teacher/timetable')
+  teacherTimetable(@CurrentUser() user: AuthUser) {
+    return this.portalTeacherService.getTimetable(user);
   }
 }

@@ -21,6 +21,7 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
+import { statusRowClass } from '@/components/layout/status-badge';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
@@ -28,7 +29,6 @@ import { ContactIcon } from '@/components/layout/contact-icon';
 import { AddParentDialog } from '@/components/features/parents/add-parent-dialog';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -199,7 +199,13 @@ export default function ParentsPage() {
                 data?.data.map((parent) => (
                   <tr
                     key={parent.id}
-                    className={cn('cursor-pointer transition-colors', dataTableRowHoverClass)}
+                    className={cn(
+                      'cursor-pointer transition-colors',
+                      statusRowClass(
+                        parent.students.length > 0 ? 'active' : 'pending',
+                        parent.students.length > 0 ? 'Linked' : 'Unlinked',
+                      ),
+                    )}
                     onClick={() => router.push(`/dashboard/parents/${parent.id}`)}
                   >
                     <td className={cn(dataTableTdClass, 'font-mono text-xs text-[var(--text-sub-500,#525866)]')}>

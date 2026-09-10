@@ -10,7 +10,7 @@ const GLOBAL_THRESHOLDS = {
   assessments: 8,
   feeInvoices: 90,
   notices: 7,
-  users: 11,
+  users: 13,
 };
 
 const PER_BRANCH_MIN = {

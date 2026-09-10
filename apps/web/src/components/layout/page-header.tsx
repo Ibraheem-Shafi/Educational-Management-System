@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Plus } from 'lucide-react';
+import { accentForLabel, paletteColor, paletteSoft } from '@/lib/ui-palette';
 import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
@@ -31,6 +32,8 @@ export function PageHeaderActionIcon({ className }: { className?: string }) {
 }
 
 export function PageHeader({ title, description, actions, className, icon: Icon }: PageHeaderProps) {
+  const accent = accentForLabel(title);
+
   return (
     <div
       className={cn(
@@ -40,11 +43,14 @@ export function PageHeader({ title, description, actions, className, icon: Icon 
     >
       <div className="flex min-w-0 items-center gap-3">
         {Icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--stroke-soft-200)] bg-neutral-0">
-            <Icon
-              className="h-[18px] w-[18px] text-[var(--text-main-900)]"
-              strokeWidth={1.5}
-            />
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+            style={{
+              backgroundColor: paletteSoft(accent),
+              color: paletteColor(accent),
+            }}
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </div>
         )}
         <div className="min-w-0">

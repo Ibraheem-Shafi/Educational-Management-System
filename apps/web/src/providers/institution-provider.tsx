@@ -32,7 +32,7 @@ export function useInstitution() {
     () => ({
       name: ctx?.name ?? process.env.NEXT_PUBLIC_INSTITUTION_NAME ?? 'Institution',
       logoUrl: ctx?.logoUrl ?? null,
-      primaryColor: ctx?.primaryColor ?? '#2563eb',
+      primaryColor: ctx?.primaryColor ?? '#0d9b8a',
       terminology: ctx?.terminology ?? {
         batch: 'Batch',
         program: 'Program',

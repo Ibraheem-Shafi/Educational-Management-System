@@ -13,7 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, categoryRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -22,7 +22,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -163,7 +162,7 @@ export function AccountsPanel({ branchId }: { branchId: string }) {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
+                    <tr key={row.id} className={categoryRowClass(row.type)}>
                       <td className={dataTableTdClass}>{row.code}</td>
                       <td className={dataTableTdClass}>{row.name}</td>
                       <td className={dataTableTdClass}>

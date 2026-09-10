@@ -3,6 +3,7 @@ import { AuthController, PortalController } from './auth.controller';
 import { LeaveRequestsController } from './leave-requests.controller';
 import { AuthService, PortalService } from './auth.service';
 import { PortalSectionsService } from './portal-sections.service';
+import { PortalTeacherService } from './portal-teacher.service';
 import { AuditModule } from '../audit/audit.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { AssessmentsModule } from '../assessments/assessments.module';
@@ -26,6 +27,6 @@ import { AiInsightsModule } from '../ai-insights/ai-insights.module';
     AiInsightsModule,
   ],
   controllers: [AuthController, PortalController, LeaveRequestsController],
-  providers: [AuthService, PortalService, PortalSectionsService],
+  providers: [AuthService, PortalService, PortalSectionsService, PortalTeacherService],
 })
 export class AuthModule {}

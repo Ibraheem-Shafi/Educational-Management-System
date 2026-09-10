@@ -33,18 +33,19 @@ function buildPageItems(page: number, totalPages: number): Array<number | 'ellip
 const chevronBtnClass = cn(
   'flex h-8 w-8 items-center justify-center rounded-md border-0 bg-transparent p-0',
   'text-black transition-colors',
-  'hover:bg-[var(--neutral-50)]',
+  'hover:bg-[var(--palette-teal-soft)]',
   'disabled:cursor-not-allowed disabled:text-[var(--text-sub-500,#525866)] disabled:opacity-60 disabled:hover:bg-transparent',
 );
 
 const pageBtnClass = cn(
   'flex h-8 w-8 items-center justify-center rounded-md border border-[var(--stroke-soft-200,#E2E4E9)] p-1.5',
   'text-sm font-medium leading-5 tracking-[-0.006em] text-center',
-  'transition-colors hover:bg-[var(--neutral-50)]',
+  'transition-colors hover:bg-[var(--palette-teal-soft)]',
 );
 
 const pageBtnInactiveClass = 'bg-white text-[var(--text-sub-500,#525866)]';
-const pageBtnActiveClass = 'bg-[#F8F8F8] text-[var(--text-main-900,#0A0D14)]';
+const pageBtnActiveClass =
+  'border-[var(--palette-teal)]/30 bg-[var(--palette-teal-soft)] text-[var(--palette-navy)]';
 const chevronIconClass = 'h-4 w-4';
 
 /** App-wide pagination control (page label, page numbers, optional rows-per-page). */

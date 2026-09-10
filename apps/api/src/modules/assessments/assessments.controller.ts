@@ -199,8 +199,9 @@ export class AssessmentsController {
     @Param('id') id: string,
     @Query(createZodPipe(marksSheetQuerySchema)) query: MarksSheetQuery,
     @BranchScopeParam() scope: BranchScope,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.assessmentsService.getMarksSheet(id, query, scope);
+    return this.assessmentsService.getMarksSheet(id, query, scope, user);
   }
 
   @Get('assessments/:id/export.csv')

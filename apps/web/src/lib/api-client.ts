@@ -49,7 +49,7 @@ export async function apiClient<T>(
     body: serializedBody,
     cache: 'no-store',
     headers: {
-      'Content-Type': 'application/json',
+      ...(serializedBody !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...fetchOptions.headers,
     },

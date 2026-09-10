@@ -31,7 +31,9 @@ import { FilterBar } from '@/components/layout/filter-bar';
 import { Tabs } from '@/components/ui/tabs';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, seedRowClass, statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { CreateBatchDialog } from '@/components/features/academic/create-batch-dialog';
@@ -53,7 +55,7 @@ const CURRENT_FILTER_OPTIONS = [
 ];
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -396,15 +398,16 @@ export default function AcademicPage() {
                 {programsLoading ? (
                   <DataTableSkeletonRows columns={4} rows={limit} />
                 ) : (programs?.data.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No programs found
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={4} title="No programs found" />
                 ) : (
-                  programs?.data.map((p) => (
-                    <tr key={p.id} className="hover:bg-[var(--neutral-50)]/50">
-                      <td className={tdClass}>{p.name}</td>
+                  programs?.data.map((p, index) => (
+                    <tr key={p.id} className={seedRowClass(p.id, index)}>
+                      <td className={tdClass}>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={p.name} seed={p.id} size="sm" />
+                          {p.name}
+                        </div>
+                      </td>
                       <td className={tdClass}>{p.code ?? '—'}</td>
                       <td className={tdClass}>
                         {p.batches.length
@@ -504,15 +507,16 @@ export default function AcademicPage() {
                 {batchesLoading ? (
                   <DataTableSkeletonRows columns={3} rows={limit} />
                 ) : (batches?.data.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No batches found
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={3} title="No batches found" />
                 ) : (
-                  batches?.data.map((b) => (
-                    <tr key={b.id} className="hover:bg-[var(--neutral-50)]/50">
-                      <td className={tdClass}>{b.name}</td>
+                  batches?.data.map((b, index) => (
+                    <tr key={b.id} className={seedRowClass(b.id, index)}>
+                      <td className={tdClass}>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={b.name} seed={b.id} size="sm" />
+                          {b.name}
+                        </div>
+                      </td>
                       <td className={tdClass}>{b.program?.name ?? '—'}</td>
                       <td className={cn(tdClass, 'text-right')}>
                         {canManage ? (
@@ -592,14 +596,16 @@ export default function AcademicPage() {
                 {sessionsLoading ? (
                   <DataTableSkeletonRows columns={4} rows={limit} />
                 ) : (sessions?.data.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No sessions found
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={4} title="No sessions found" />
                 ) : (
                   sessions?.data.map((s) => (
-                    <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+                    <tr
+                      key={s.id}
+                      className={statusRowClass(
+                        s.isCurrent ? 'active' : 'inactive',
+                        s.isCurrent ? 'Current' : 'Inactive',
+                      )}
+                    >
                       {editSessionId === s.id ? (
                         <>
                           <td className={tdClass}>
@@ -771,15 +777,16 @@ export default function AcademicPage() {
                 {subjectsLoading ? (
                   <DataTableSkeletonRows columns={3} rows={limit} />
                 ) : (subjects?.data.length ?? 0) === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No subjects found
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={3} title="No subjects found" />
                 ) : (
-                  subjects?.data.map((s) => (
-                    <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
-                      <td className={tdClass}>{s.name}</td>
+                  subjects?.data.map((s, index) => (
+                    <tr key={s.id} className={seedRowClass(s.id, index)}>
+                      <td className={tdClass}>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={s.name} seed={s.id} size="sm" />
+                          {s.name}
+                        </div>
+                      </td>
                       <td className={tdClass}>{s.code ?? '—'}</td>
                       <td className={cn(tdClass, 'text-right')}>
                         {canManage ? (

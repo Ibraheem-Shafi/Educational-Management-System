@@ -10,10 +10,9 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -117,7 +116,10 @@ export function PunchLogPanel({ branchId }: { branchId: string }) {
                 </tr>
               ) : (
                 rows.map((row) => (
-                  <tr key={row.id} className={dataTableRowHoverClass}>
+                  <tr
+                    key={row.id}
+                    className={statusRowClass(matchedBadgeCode(row.matched), row.matched ? 'Matched' : 'Unmatched')}
+                  >
                     <td className={dataTableTdClass}>{formatDateTime(row.punchedAt)}</td>
                     <td className={dataTableTdClass}>
                       <code className="text-xs">{row.externalPersonId}</code>

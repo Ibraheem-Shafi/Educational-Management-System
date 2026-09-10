@@ -12,6 +12,8 @@ import { FilterBar } from '@/components/layout/filter-bar';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import {
   dataTableClass,
   dataTableTdClass,
@@ -314,14 +316,10 @@ function ReportTable({
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr>
-                <td colSpan={headers.length} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
-                  No data for selected filters.
-                </td>
-              </tr>
+              <EmptyStateCell colSpan={headers.length} title="No data for selected filters." />
             ) : (
               rows.map((row, index) => (
-                <tr key={index}>
+                <tr key={index} className={seedRowClass(String(row[0] ?? index), index)}>
                   {row.map((cell, cellIndex) => (
                     <td key={cellIndex} className={dataTableTdClass}>
                       {cell}

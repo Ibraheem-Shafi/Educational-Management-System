@@ -16,9 +16,10 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -101,16 +102,12 @@ export function BudgetsPanel({ branchId }: { branchId: string }) {
                   {isLoading ? (
                     <DataTableSkeletonRows columns={canManage ? 5 : 4} rows={limit} />
                   ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={canManage ? 5 : 4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
-                      No budgets found.
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={canManage ? 5 : 4} title="No budgets found." />
                 ) : (
-                  rows.map((row) => {
+                  rows.map((row, index) => {
                     const total = row.lines.reduce((sum, line) => sum + line.amount, 0);
                     return (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
+                      <tr key={row.id} className={seedRowClass(row.id, index)}>
                         <td className={dataTableTdClass}>{row.year}</td>
                         <td className={dataTableTdClass}>{row.name}</td>
                         <td className={dataTableTdClass}>{row.lines.length}</td>

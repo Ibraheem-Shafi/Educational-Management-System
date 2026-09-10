@@ -3,7 +3,7 @@
 Single reference for database seeding, demo logins, and what data is created for client presentations.
 
 **Institution:** Nexium Academy Pakistan (Pakistani coaching center)  
-**Demo version:** `nexium-v1.5`  
+**Demo version:** `nexium-v1.6`  
 **Config files:** [`templates/nexium.institution.json`](templates/nexium.institution.json) (foundation) · [`templates/nexium.demo.json`](templates/nexium.demo.json) (transactional data)  
 **Logo:** `apps/web/public/logo.png` — temporary asset until a new Nexium logo is provided (filename stays the same).
 
@@ -50,6 +50,8 @@ Defined in `nexium.institution.json` → `demo.password` and synced to Supabase 
 | lahore.teacher@nexium.edu.pk | Nexium@2026! | Dr. Farah Siddiqui | Teacher | LAHORE | `/dashboard` |
 | lahore.fees@nexium.edu.pk | Nexium@2026! | Imran Qureshi | Accountant | LAHORE | `/dashboard` |
 | lahore.reception@nexium.edu.pk | Nexium@2026! | Nadia Sheikh | Receptionist | LAHORE | `/dashboard` |
+| shahwali.fees@nexium.edu.pk | Nexium@2026! | Sana Iqbal | Fee Collector | Shahwali (SWC) | `/dashboard` |
+| shahwali.hr@nexium.edu.pk | Nexium@2026! | Bilal Hussain | HR & Finance Officer | Shahwali (SWC) | `/dashboard` |
 | rashid.ahmad@nexium.edu.pk | Nexium@2026! | Rashid Ahmad Khan | Parent | — | `/portal/parent` |
 | ali.khan@nexium.edu.pk | Nexium@2026! | Muhammad Ali Khan | Student | — | `/portal/student` |
 
@@ -58,6 +60,7 @@ Defined in `nexium.institution.json` → `demo.password` and synced to Supabase 
 - **Parent** (`rashid.ahmad@nexium.edu.pk`) is linked to **Ali Khan** and **Zainab Hussain** (sibling discount demo).
 - **Student** (`ali.khan@nexium.edu.pk`) must match the student record email in the database.
 - Staff accounts use the main login page; parent/student use the same login and are routed to their portal by role.
+- **Shahwali (SWC):** fee collection (`shahwali.fees@nexium.edu.pk`) is separate from HR, payroll, and accounting (`shahwali.hr@nexium.edu.pk`). MAIN and LAHORE accountants still have the built-in Accountant template (fees + payroll + accounting).
 - **Learning:** demo seed creates published notes, materials, syllabus, resources, homework, and online classes **for each campus** (titles prefixed with `[MAIN]` / `[LAHORE]`).
 
 ### MFA
@@ -95,7 +98,7 @@ npm run db:seed:demo -- --force-demo
 npm run db:seed:auth
 ```
 
-A version bump (for example `nexium-v1.4` → `nexium-v1.5`) also cleans and re-applies Phase 2 automatically on the next `db:seed` / `db:seed:demo`.
+A version bump (for example `nexium-v1.5` → `nexium-v1.6`) also cleans and re-applies Phase 2 automatically on the next `db:seed` / `db:seed:demo`.
 
 ---
 
@@ -124,7 +127,7 @@ Both **MAIN** and **LAHORE** receive representative operational data.
 | Students | 49 (36 MAIN / 13 LAHORE; mixed statuses) |
 | Parents | 48 (institution-wide) |
 | Batches | 6 (4 MAIN + 2 LAHORE) |
-| Staff accounts | Teacher, accountant, receptionist per branch (+ branch admins + super admin) |
+| Staff accounts | Teacher, accountant, receptionist per MAIN/LAHORE campus; Shahwali fee collector + HR & finance officer |
 | Attendance | ~20 weekdays per active student **and** staff/teacher attendance samples |
 | Assessments | 8 (5 MAIN + 3 LAHORE) with marks |
 | Fee structures | Per-branch monthly/admission (and MAIN test fee) |
@@ -166,7 +169,7 @@ Both **MAIN** and **LAHORE** receive representative operational data.
 `npm run db:seed:verify` checks:
 
 1. Global totals (students, batches, parents, attendance, assessments, invoices, notices, users)
-2. `terminology._demoSeedVersion` = `nexium-v1.5`
+2. `terminology._demoSeedVersion` = `nexium-v1.6`
 3. **Per-branch matrix** for MAIN and LAHORE (students, fees, assessments, learning, FO, library, transport, payroll, biometric, HR/leave, accounting, AI OCR, …)
 4. Cross-branch integrity (invoice/student, assessment/student, timetable/batch must share a branch)
 
@@ -181,6 +184,8 @@ Both **MAIN** and **LAHORE** receive representative operational data.
 | Lahore campus | `lahore.admin@nexium.edu.pk` |
 | Students, attendance, assessments | `ahmed.teacher@nexium.edu.pk` or `lahore.teacher@nexium.edu.pk` |
 | Fees, reports, accounting, payroll | `fees@nexium.edu.pk` or `lahore.fees@nexium.edu.pk` |
+| Shahwali fee collection | `shahwali.fees@nexium.edu.pk` |
+| Shahwali HR / payroll / accounting | `shahwali.hr@nexium.edu.pk` |
 | Front office, communications | `reception@nexium.edu.pk` or `lahore.reception@nexium.edu.pk` |
 | Learning + online classes | Campus teacher or admin |
 | Library / transport / biometric | Branch admin |

@@ -41,6 +41,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { SearchInput } from '@/components/layout/search-input';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { accentForSeed, paletteColor, paletteSoft } from '@/lib/ui-palette';
 import { cn } from '@/lib/utils';
 import type { TimetableStatsResponse } from '@eims/types';
 
@@ -608,7 +609,7 @@ export default function TimetablePage() {
             <button
               type="button"
               onClick={() => shiftRangeByWeek(-1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--palette-teal-soft)]"
               aria-label="Previous week"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
@@ -618,7 +619,7 @@ export default function TimetablePage() {
               <button
                 type="button"
                 onClick={openRangePicker}
-                className="flex min-w-[200px] items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+                className="flex min-w-[200px] items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-[var(--text-main-900)] hover:bg-[var(--palette-teal-soft)]"
                 aria-label="Select date range"
                 aria-expanded={rangePickerOpen}
               >
@@ -707,7 +708,7 @@ export default function TimetablePage() {
             <button
               type="button"
               onClick={() => shiftRangeByWeek(1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-main-900)] hover:bg-[var(--palette-teal-soft)]"
               aria-label="Next week"
             >
               <ChevronRight className="h-4 w-4" strokeWidth={2} />
@@ -773,7 +774,7 @@ export default function TimetablePage() {
       {isLoading && (
         <div className="grid gap-4 lg:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-40 animate-pulse rounded-xl bg-[var(--neutral-50)]" />
+            <div key={i} className="h-40 animate-pulse rounded-xl bg-[var(--palette-navy-soft)]" />
           ))}
         </div>
       )}
@@ -783,6 +784,7 @@ export default function TimetablePage() {
           {!isLoading &&
             visibleDates.map((dayDate) => {
               const dow = dayOfWeekFromIso(dayDate);
+              const isToday = dayDate === todayIso();
               const daySlots = grouped.get(dow) ?? [];
               const isPast = isPastDate(dayDate);
               const isDropTarget = canManage && !isPast && dragOverDate === dayDate;
@@ -816,6 +818,7 @@ export default function TimetablePage() {
                   className={cn(
                     'rounded-xl',
                     isPast && 'opacity-70',
+                    isToday && 'ring-2 ring-[var(--palette-teal)]',
                     isDropTarget && 'ring-2 ring-[var(--midnight-blue-950,#01366C)]',
                   )}
                 >
@@ -824,11 +827,14 @@ export default function TimetablePage() {
                   >
                     <div className="space-y-2 px-5 py-4">
                       {daySlots.length === 0 && (
-                        <p className="text-sm text-[var(--text-sub-500)]">No classes</p>
+                        <div className="rounded-lg border border-dashed border-[var(--palette-yellow)]/50 bg-[var(--palette-yellow-soft)] px-3 py-6 text-center text-sm text-[var(--text-sub-500)]">
+                          No classes
+                        </div>
                       )}
                       {daySlots.map((slot) => {
                         const isPending = pendingSlotIds.has(slot.id);
                         const canDragSlot = canManage && !isPast && !isPending;
+                        const accent = accentForSeed(slot.subjectId);
 
                         return (
                           <div
@@ -853,14 +859,22 @@ export default function TimetablePage() {
                                 : undefined
                             }
                             className={cn(
-                              'flex items-start justify-between gap-3 rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] p-3 text-sm',
+                              'flex items-start justify-between gap-3 rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] border-l-[3px] p-3 text-sm',
                               canDragSlot && 'cursor-grab active:cursor-grabbing',
                               draggingSlotId === slot.id && !isPending && 'opacity-50',
                               isPending &&
-                                'border-[var(--midnight-blue-950,#01366C)] bg-[var(--neutral-50)]',
+                                'border-[var(--midnight-blue-950,#01366C)] bg-[var(--palette-navy-soft)]',
                               highlightedSlotId === slot.id &&
                                 'ring-2 ring-amber-500 border-amber-400',
                             )}
+                            style={
+                              isPending
+                                ? undefined
+                                : {
+                                    backgroundColor: paletteSoft(accent),
+                                    borderLeftColor: paletteColor(accent),
+                                  }
+                            }
                           >
                             <div className="flex items-start gap-2">
                               {canManage && !isPast && (

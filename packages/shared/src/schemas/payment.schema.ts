@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   MSG,
+  calendarDateSchema,
   requiredId,
   requiredPositiveNumber,
   requiredString,
@@ -23,7 +24,7 @@ export const recordFeePaymentSchema = z
   .object({
     amount: requiredPositiveNumber('Amount'),
     method: paymentMethodSchema,
-    paidAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    paidAt: calendarDateSchema.optional(),
     /** Bank UTR / online transaction id */
     providerRef: z
       .string()

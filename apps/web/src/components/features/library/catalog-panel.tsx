@@ -13,7 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +23,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -199,7 +198,13 @@ export function CatalogPanel({ branchId }: { branchId: string }) {
                       const copies = book.copies ?? [];
                       const available = copies.filter((c) => c.status === 'available').length;
                       return (
-                        <tr key={book.id} className={dataTableRowHoverClass}>
+                        <tr
+                          key={book.id}
+                          className={statusRowClass(
+                            available > 0 ? 'available' : 'inactive',
+                            available > 0 ? 'Available' : 'Unavailable',
+                          )}
+                        >
                           <td className={dataTableTdClass}>{book.title}</td>
                           <td className={dataTableTdClass}>{book.author}</td>
                           <td className={dataTableTdClass}>{book.category?.name ?? '—'}</td>

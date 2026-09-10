@@ -3,6 +3,7 @@
  *
  * Usage (repo root):
  *   npm run db:import:shahwali -w @eims/database -- --dry-run
+ *   npm run db:import:shahwali -w @eims/database -- --catalog-only
  *   npm run db:import:shahwali -w @eims/database -- --apply
  *   npm run db:import:shahwali -w @eims/database -- --verify
  *
@@ -43,12 +44,33 @@ const SESSION_LABEL = '2026-2027';
 const SESSION_START = new Date(Date.UTC(2026, 3, 1));
 const SESSION_END = new Date(Date.UTC(2027, 2, 31));
 
+/** Shahwali income heads (client catalog) plus extra heads used by the Excel register. */
 const FEE_TYPES: Array<{ code: string; name: string }> = [
+  { code: 'monthly', name: 'Tuition Fee' },
   { code: 'admission', name: 'Admission Fee' },
-  { code: 'security', name: 'Security Fee' },
+  { code: 'readmission', name: 'Re-Admission Fee' },
   { code: 'registration', name: 'Registration Fee' },
   { code: 'annual', name: 'Annual Charges' },
-  { code: 'monthly', name: 'Monthly Fee' },
+  { code: 'late_fee', name: 'Late Fee Charges' },
+  { code: 'toppers_discount', name: 'Toppers Discount' },
+  { code: 'siblings_discount', name: 'Siblings Discount' },
+  { code: 'staff_child_discount', name: 'Staff Child Discount' },
+  { code: 'referral_discount', name: 'Referral Discount' },
+  { code: 'fee_discount', name: 'Fee Discount' },
+  { code: 'fee_waiver', name: 'Fee Waive Off' },
+  { code: 'annual_waiver', name: 'Annual Charges Waive Off' },
+  { code: 'orphans_discount', name: 'Orphans Discount' },
+  { code: 'board_registration', name: 'Board Registration Fee' },
+  { code: 'board_admission', name: 'Board Admission Fee' },
+  { code: 'sports', name: 'Sports Charges' },
+  { code: 'annual_function', name: 'Annual Function Charges' },
+  { code: 'id_card', name: 'ID Card Charges' },
+  { code: 'fees_card', name: 'Fees Card Charges' },
+  { code: 'trip', name: 'Trip Charges' },
+  { code: 'uniform', name: 'Uniform Charges' },
+  { code: 'copies', name: 'Copies Charges' },
+  { code: 'diary', name: 'Diary Charges' },
+  { code: 'security', name: 'Security Fee' },
   { code: 'party', name: 'Party Charges' },
 ];
 
@@ -353,15 +375,12 @@ async function ensureCatalog() {
 
   const feeTypeMap = new Map<string, string>();
   for (const ft of FEE_TYPES) {
-    const existing = await prisma.feeType.findUnique({ where: { code: ft.code } });
-    if (existing) {
-      feeTypeMap.set(ft.code, existing.id);
-    } else {
-      const created = await prisma.feeType.create({
-        data: { name: ft.name, code: ft.code, isActive: true },
-      });
-      feeTypeMap.set(ft.code, created.id);
-    }
+    const row = await prisma.feeType.upsert({
+      where: { code: ft.code },
+      create: { name: ft.name, code: ft.code, isActive: true },
+      update: { name: ft.name, isActive: true },
+    });
+    feeTypeMap.set(ft.code, row.id);
   }
 
   const studentActive = await prisma.lookupStatus.findFirst({
@@ -735,7 +754,7 @@ async function importStudent(
           amount: number;
           feeTypeCode: string | null;
         }> = [
-          { code: 'monthly', label: 'Monthly Fee', amount: month.tuition, feeTypeCode: 'monthly' },
+          { code: 'monthly', label: 'Tuition Fee', amount: month.tuition, feeTypeCode: 'monthly' },
           { code: 'arrears', label: 'Arrears', amount: month.previous, feeTypeCode: null },
           { code: 'annual', label: 'Annual Charges', amount: month.annual, feeTypeCode: 'annual' },
           { code: 'party', label: 'Party Charges', amount: month.party, feeTypeCode: 'party' },
@@ -946,12 +965,30 @@ async function runVerify(students: ParsedStudent[]) {
   }
 }
 
+async function runCatalogOnly() {
+  log('Connecting to database…');
+  await prisma.$connect();
+  log('Upserting Shahwali income heads (fee types)…');
+  const catalog = await withDbRetry('catalog', () => ensureCatalog());
+  log(`Catalog ready. ${catalog.feeTypeMap.size} fee types on branch ${BRANCH_CODE}.`);
+  for (const ft of FEE_TYPES) {
+    console.log(`  ${ft.code}\t${ft.name}`);
+  }
+}
+
 async function main() {
-  const dryRun = argFlag('--dry-run') || (!argFlag('--apply') && !argFlag('--verify'));
+  const catalogOnly = argFlag('--catalog-only');
+  const dryRun = argFlag('--dry-run') || (!argFlag('--apply') && !argFlag('--verify') && !catalogOnly);
   const apply = argFlag('--apply');
   const verify = argFlag('--verify');
   const limitRaw = argValue('--limit');
   const limit = limitRaw ? Number(limitRaw) : null;
+
+  if (catalogOnly) {
+    await runCatalogOnly();
+    return;
+  }
+
   const filePath = path.resolve(argValue('--file') ?? defaultExcelPath());
 
   if (!fs.existsSync(filePath)) {

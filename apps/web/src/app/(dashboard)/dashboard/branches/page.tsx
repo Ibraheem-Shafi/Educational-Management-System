@@ -26,7 +26,7 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { ContactIcon } from '@/components/layout/contact-icon';
@@ -41,7 +41,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -371,7 +371,10 @@ export default function BranchesPage() {
                   {!isLoading &&
                     !error &&
                     data?.data.map((branch) => (
-                      <tr key={branch.id} className="transition-colors hover:bg-[var(--neutral-50)]/50">
+                      <tr
+                        key={branch.id}
+                        className={cn('transition-colors', activeRowClass(branch.isActive))}
+                      >
                         <td className={cn(tdClass, 'whitespace-nowrap')}>{formatBranchId(branch.code)}</td>
                         <td className={cn(tdClass, 'font-medium')}>{branch.name}</td>
                         <td className={tdClass}>{branch.addressLabel}</td>

@@ -72,7 +72,7 @@ export function DashboardHeader() {
         <div className="w-9 shrink-0 lg:hidden" aria-hidden />
         <div className="hidden min-w-0 flex-1 lg:block" />
         {showBranchControl ? (
-          <AppBranchScopeControl className="hidden max-w-[220px] shrink-0 lg:block" size="sm" />
+          <AppBranchScopeControl className="hidden max-w-[280px] shrink-0 lg:block" size="sm" />
         ) : null}
       </div>
       {showBranchControl ? (

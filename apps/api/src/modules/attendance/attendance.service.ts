@@ -23,6 +23,7 @@ import type {
   BulkStaffAttendanceInput,
 } from '@eims/shared';
 import { ATTENDANCE_ENTITY_STUDENT } from '@eims/shared';
+import { assertTeacherAssignedBatch } from '../../common/utils/teacher-assignment.util';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
@@ -189,7 +190,10 @@ export class AttendanceService {
     return result;
   }
 
-  async getSheet(query: AttendanceSheetQuery, scope: BranchScope) {
+  async getSheet(query: AttendanceSheetQuery, scope: BranchScope, user?: AuthUser) {
+    if (user) {
+      await assertTeacherAssignedBatch(this.prisma, user, query.batchId);
+    }
     const effectiveBranchId = getSingleBranchId(scope) ?? query.branchId;
     if (!effectiveBranchId) {
       throw new BadRequestException('A single branchId is required');
@@ -316,6 +320,7 @@ export class AttendanceService {
   }
 
   async bulkMark(input: BulkAttendanceInput, user: AuthUser) {
+    await assertTeacherAssignedBatch(this.prisma, user, input.batchId);
     const date = parseDateOnly(input.date);
 
     const studentIds = input.records.map((r) => r.studentId);
@@ -398,7 +403,7 @@ export class AttendanceService {
               branchId: input.branchId,
               date: input.date,
               studentIds: absentStudentIds,
-              channel: input.notifyChannel ?? 'sms',
+              channel: input.notifyChannel ?? 'whatsapp',
             },
             user,
           );

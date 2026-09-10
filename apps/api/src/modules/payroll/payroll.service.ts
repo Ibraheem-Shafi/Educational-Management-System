@@ -19,6 +19,7 @@ import type {
   ExportPayrollRunQuery,
   ListPayrollRunsQuery,
   ListSalaryStructuresQuery,
+  MarkPayrollPaidInput,
   UpdateSalaryStructureInput,
 } from '@eims/shared';
 
@@ -39,16 +40,77 @@ function monthRange(year: number, month: number): { from: Date; to: Date } {
   };
 }
 
+function utcDateKey(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function isUtcWeekday(value: Date): boolean {
+  const day = value.getUTCDay();
+  return day !== 0 && day !== 6;
+}
+
 function weekdaysInMonth(year: number, month: number): number {
   const { from, to } = monthRange(year, month);
   let count = 0;
   const cursor = new Date(from);
   while (cursor <= to) {
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) count++;
+    if (isUtcWeekday(cursor)) count++;
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return count;
+}
+
+function weekdayKeysInMonth(year: number, month: number): string[] {
+  const { from, to } = monthRange(year, month);
+  const keys: string[] = [];
+  const cursor = new Date(from);
+  while (cursor <= to) {
+    if (isUtcWeekday(cursor)) keys.push(utcDateKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return keys;
+}
+
+function paidLeaveKeysForMonth(
+  leaves: Array<{ fromDate: Date; toDate: Date }>,
+  year: number,
+  month: number,
+): Set<string> {
+  const weekdays = weekdayKeysInMonth(year, month);
+  const keys = new Set<string>();
+  for (const leave of leaves) {
+    const fromKey = utcDateKey(leave.fromDate);
+    const toKey = utcDateKey(leave.toDate);
+    for (const key of weekdays) {
+      if (key >= fromKey && key <= toKey) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+const STATUTORY_KINDS = new Set(['tax', 'eobi', 'provident_fund']);
+const LWP_NAME = 'Leave without pay';
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function resolveComponentAmount(
+  percentOfBasic: number | null,
+  amount: number,
+  fullBasic: number,
+): number {
+  if (percentOfBasic != null) {
+    return roundMoney((fullBasic * percentOfBasic) / 100);
+  }
+  return roundMoney(amount);
+}
+
+function componentGroup(kind: string, name: string): 'allowance' | 'deduction' | 'statutory' | 'lwp' {
+  if (name === LWP_NAME) return 'lwp';
+  if (kind === 'allowance') return 'allowance';
+  if (STATUTORY_KINDS.has(kind)) return 'statutory';
+  return 'deduction';
 }
 
 function decimal(value: number): Prisma.Decimal {
@@ -126,28 +188,35 @@ export class PayrollService {
 
   async createStructure(input: CreateSalaryStructureInput, user: AuthUser) {
     await this.assertUserInBranch(input.userId, input.branchId);
+    const isActive = input.isActive ?? true;
 
-    const structure = await this.prisma.salaryStructure.create({
-      data: {
-        userId: input.userId,
-        branchId: input.branchId,
-        basicSalary: decimal(input.basicSalary),
-        effectiveFrom: parseDate(input.effectiveFrom, 'effectiveFrom'),
-        effectiveTo: input.effectiveTo ? parseDate(input.effectiveTo, 'effectiveTo') : null,
-        isActive: input.isActive ?? true,
-        components: {
-          create: input.components.map((c) => ({
-            kind: c.kind,
-            name: c.name,
-            amount: decimal(c.amount),
-            percentOfBasic: c.percentOfBasic != null ? decimal(c.percentOfBasic) : null,
-          })),
+    const structure = await this.prisma.$transaction(async (tx) => {
+      if (isActive) {
+        await this.deactivateOtherActiveStructures(tx, input.userId, input.branchId);
+      }
+
+      return tx.salaryStructure.create({
+        data: {
+          userId: input.userId,
+          branchId: input.branchId,
+          basicSalary: decimal(input.basicSalary),
+          effectiveFrom: parseDate(input.effectiveFrom, 'effectiveFrom'),
+          effectiveTo: input.effectiveTo ? parseDate(input.effectiveTo, 'effectiveTo') : null,
+          isActive,
+          components: {
+            create: input.components.map((c) => ({
+              kind: c.kind,
+              name: c.name,
+              amount: decimal(c.amount),
+              percentOfBasic: c.percentOfBasic != null ? decimal(c.percentOfBasic) : null,
+            })),
+          },
         },
-      },
-      include: {
-        user: { select: { id: true, fullName: true } },
-        components: true,
-      },
+        include: {
+          user: { select: { id: true, fullName: true } },
+          components: true,
+        },
+      });
     });
 
     await this.audit.log({
@@ -174,6 +243,11 @@ export class PayrollService {
     if (!existing) throw new NotFoundException('Salary structure not found');
 
     const structure = await this.prisma.$transaction(async (tx) => {
+      const willBeActive = input.isActive ?? existing.isActive;
+      if (willBeActive) {
+        await this.deactivateOtherActiveStructures(tx, existing.userId, existing.branchId, id);
+      }
+
       if (input.components !== undefined) {
         await tx.salaryComponent.deleteMany({ where: { structureId: id } });
       }
@@ -257,7 +331,11 @@ export class PayrollService {
       ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.year !== undefined ? { year: query.year } : {}),
       ...(query.month !== undefined ? { month: query.month } : {}),
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status
+        ? { status: query.status }
+        : query.excludeFinalized
+          ? { status: { not: 'finalized' } }
+          : {}),
     };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
@@ -352,35 +430,87 @@ export class PayrollService {
         OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
       },
       include: { components: true },
+      orderBy: { effectiveFrom: 'desc' },
     });
+
+    const structuresByUser = new Map<string, (typeof structures)[number]>();
+    for (const structure of structures) {
+      if (!structuresByUser.has(structure.userId)) {
+        structuresByUser.set(structure.userId, structure);
+      }
+    }
+    const uniqueStructures = [...structuresByUser.values()];
+    const userIds = uniqueStructures.map((s) => s.userId);
 
     const lines = await this.prisma.$transaction(async (tx) => {
       await tx.payrollLine.deleteMany({ where: { runId: id } });
 
+      const [attendanceRecords, leaveRequests] = userIds.length
+        ? await Promise.all([
+            tx.attendanceRecord.findMany({
+              where: {
+                branchId: run.branchId,
+                entityId: { in: userIds },
+                entityType: { in: [...STAFF_ENTITY_TYPES] },
+                date: { gte: from, lte: to },
+              },
+              select: { entityId: true, statusId: true, date: true },
+            }),
+            tx.leaveRequest.findMany({
+              where: {
+                kind: 'employee',
+                status: 'approved',
+                userId: { in: userIds },
+                fromDate: { lte: to },
+                toDate: { gte: from },
+              },
+              select: { userId: true, fromDate: true, toDate: true },
+            }),
+          ])
+        : [[], []];
+
+      const attendanceByUser = new Map<string, typeof attendanceRecords>();
+      for (const record of attendanceRecords) {
+        const list = attendanceByUser.get(record.entityId) ?? [];
+        list.push(record);
+        attendanceByUser.set(record.entityId, list);
+      }
+
+      const leavesByUser = new Map<string, typeof leaveRequests>();
+      for (const leave of leaveRequests) {
+        if (!leave.userId) continue;
+        const list = leavesByUser.get(leave.userId) ?? [];
+        list.push(leave);
+        leavesByUser.set(leave.userId, list);
+      }
+
       const created = [];
-      for (const structure of structures) {
-        const attendanceRecords = await tx.attendanceRecord.findMany({
-          where: {
-            branchId: run.branchId,
-            entityId: structure.userId,
-            entityType: { in: [...STAFF_ENTITY_TYPES] },
-            date: { gte: from, lte: to },
-          },
-          select: { statusId: true },
-        });
+      for (const structure of uniqueStructures) {
+        const records = attendanceByUser.get(structure.userId) ?? [];
+        const paidLeaveDateKeys = paidLeaveKeysForMonth(
+          leavesByUser.get(structure.userId) ?? [],
+          run.year,
+          run.month,
+        );
+        const paidLeaveDays = paidLeaveDateKeys.size;
+        const attendanceNotMarked = records.length === 0;
 
         let presentDays = 0;
-        let absentDays = 0;
-        for (const record of attendanceRecords) {
-          if (presentId && record.statusId === presentId) presentDays++;
-          else if (absentId && record.statusId === absentId) absentDays++;
+        let unpaidAbsentDays = 0;
+        if (!attendanceNotMarked) {
+          for (const record of records) {
+            if (presentId && record.statusId === presentId) presentDays++;
+            if (absentId && record.statusId === absentId && isUtcWeekday(record.date)) {
+              const key = utcDateKey(record.date);
+              if (!paidLeaveDateKeys.has(key)) unpaidAbsentDays++;
+            }
+          }
         }
 
-        const trackedDays = presentDays + absentDays;
-        const workingDays = trackedDays > 0 ? trackedDays : calendarWeekdays;
-        const basic = toNumber(structure.basicSalary);
-        const attendanceRatio = workingDays > 0 ? presentDays / workingDays : 0;
-        const proratedBasic = basic * attendanceRatio;
+        const workingDays = calendarWeekdays;
+        const fullBasic = toNumber(structure.basicSalary);
+        const lwpAmount =
+          workingDays > 0 ? roundMoney((fullBasic * unpaidAbsentDays) / workingDays) : 0;
 
         let allowancesTotal = 0;
         let deductionsTotal = 0;
@@ -389,47 +519,59 @@ export class PayrollService {
           name: string;
           amount: number;
           percentOfBasic: number | null;
+          group: 'allowance' | 'deduction' | 'statutory' | 'lwp';
         }> = [];
 
         for (const component of structure.components) {
-          const baseAmount =
-            component.percentOfBasic != null
-              ? (proratedBasic * toNumber(component.percentOfBasic)) / 100
-              : toNumber(component.amount) * attendanceRatio;
-
-          const rounded = Math.round(baseAmount * 100) / 100;
+          const percent =
+            component.percentOfBasic != null ? toNumber(component.percentOfBasic) : null;
+          const amount = resolveComponentAmount(percent, toNumber(component.amount), fullBasic);
+          const group = componentGroup(component.kind, component.name);
           breakdown.push({
             kind: component.kind,
             name: component.name,
-            amount: rounded,
-            percentOfBasic:
-              component.percentOfBasic != null ? toNumber(component.percentOfBasic) : null,
+            amount,
+            percentOfBasic: percent,
+            group,
           });
-
-          if (component.kind === 'allowance') allowancesTotal += rounded;
-          else deductionsTotal += rounded;
+          if (group === 'allowance') allowancesTotal += amount;
+          else deductionsTotal += amount;
         }
 
-        allowancesTotal = Math.round(allowancesTotal * 100) / 100;
-        deductionsTotal = Math.round(deductionsTotal * 100) / 100;
-        const netPay = Math.round((proratedBasic + allowancesTotal - deductionsTotal) * 100) / 100;
+        if (lwpAmount > 0) {
+          breakdown.push({
+            kind: 'deduction',
+            name: LWP_NAME,
+            amount: lwpAmount,
+            percentOfBasic: null,
+            group: 'lwp',
+          });
+          deductionsTotal += lwpAmount;
+        }
+
+        allowancesTotal = roundMoney(allowancesTotal);
+        deductionsTotal = roundMoney(deductionsTotal);
+        const netPay = roundMoney(fullBasic + allowancesTotal - deductionsTotal);
 
         const line = await tx.payrollLine.create({
           data: {
             runId: id,
             userId: structure.userId,
-            basicSalary: decimal(proratedBasic),
+            basicSalary: decimal(fullBasic),
             allowancesTotal: decimal(allowancesTotal),
             deductionsTotal: decimal(deductionsTotal),
             adjustmentsTotal: decimal(0),
             netPay: decimal(netPay),
             attendancePresentDays: presentDays,
-            attendanceAbsentDays: absentDays,
+            attendanceAbsentDays: unpaidAbsentDays,
             workingDays,
             breakdown: {
               components: breakdown,
-              fullBasicSalary: basic,
-              attendanceRatio,
+              fullBasicSalary: fullBasic,
+              unpaidAbsentDays,
+              paidLeaveDays,
+              lwpAmount,
+              attendanceNotMarked,
             },
           },
         });
@@ -530,6 +672,29 @@ export class PayrollService {
     return this.toRunSummary(updated);
   }
 
+  async sendBackToDraft(id: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
+    if (run.status !== 'pending_approval') {
+      throw new BadRequestException('Only pending approval runs can be sent back to draft');
+    }
+
+    const updated = await this.prisma.payrollRun.update({
+      where: { id },
+      data: { status: 'draft', approvedById: null },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'payroll.run.sent_back',
+      entityType: 'PayrollRun',
+      entityId: id,
+      previousValue: run,
+      newValue: updated,
+    });
+
+    return this.toRunSummary(updated);
+  }
+
   async approveRun(id: string, user: AuthUser, scope: BranchScope) {
     const run = await this.getRunOrThrow(id, scope);
     if (run.status !== 'pending_approval') {
@@ -573,6 +738,32 @@ export class PayrollService {
     await this.audit.log({
       userId: user.id,
       action: 'payroll.run.finalized',
+      entityType: 'PayrollRun',
+      entityId: id,
+      previousValue: run,
+      newValue: updated,
+    });
+
+    return this.toRunSummary(updated);
+  }
+
+  async markPaid(id: string, input: MarkPayrollPaidInput, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
+    if (run.status !== 'finalized') {
+      throw new BadRequestException('Only finalized runs can be marked as paid');
+    }
+    if (run.paidAt) {
+      throw new BadRequestException('This payroll run is already marked as paid');
+    }
+
+    const updated = await this.prisma.payrollRun.update({
+      where: { id },
+      data: { paidAt: new Date(), paymentMethod: input.paymentMethod },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'payroll.run.paid',
       entityType: 'PayrollRun',
       entityId: id,
       previousValue: run,
@@ -655,10 +846,7 @@ export class PayrollService {
       select: { name: true, logoUrl: true, address: true },
     });
 
-    const breakdown =
-      line.breakdown && typeof line.breakdown === 'object' && !Array.isArray(line.breakdown)
-        ? (line.breakdown as { components?: Array<{ kind: string; name: string; amount: number }> })
-        : {};
+    const breakdown = this.parseBreakdown(line.breakdown);
 
     return {
       line: this.toLineResponse(line),
@@ -666,13 +854,21 @@ export class PayrollService {
         year: line.run.year,
         month: line.run.month,
         status: line.run.status,
+        paidAt: line.run.paidAt?.toISOString() ?? null,
+        paymentMethod: line.run.paymentMethod,
       },
       employee: {
         ...line.user,
         staffCode: formatStaffCode(line.user.id),
       },
       institution: institution ?? { name: 'Institution', logoUrl: null, address: null },
-      components: breakdown.components ?? [],
+      components: breakdown.components,
+      fullBasicSalary: breakdown.fullBasicSalary,
+      unpaidAbsentDays: breakdown.unpaidAbsentDays,
+      paidLeaveDays: breakdown.paidLeaveDays,
+      lwpAmount: breakdown.lwpAmount,
+      adjustmentReason: breakdown.adjustmentReason,
+      attendanceNotMarked: breakdown.attendanceNotMarked,
       printLayout: await this.resolvePrintLayout(line.run.branchId),
     };
   }
@@ -698,6 +894,88 @@ export class PayrollService {
       headerText: row?.headerText ?? null,
       footerText: row?.footerText ?? null,
       name: row?.name ?? DEFAULT_PRINT_TEMPLATE_NAMES.salary_slip,
+    };
+  }
+
+  private async deactivateOtherActiveStructures(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    branchId: string,
+    exceptId?: string,
+  ) {
+    await tx.salaryStructure.updateMany({
+      where: {
+        userId,
+        branchId,
+        isActive: true,
+        deletedAt: null,
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+      data: { isActive: false },
+    });
+  }
+
+  private parseBreakdown(value: Prisma.JsonValue | null | undefined) {
+    const empty = {
+      components: [] as Array<{
+        kind: string;
+        name: string;
+        amount: number;
+        percentOfBasic: number | null;
+        group?: string;
+      }>,
+      fullBasicSalary: null as number | null,
+      unpaidAbsentDays: null as number | null,
+      paidLeaveDays: null as number | null,
+      lwpAmount: null as number | null,
+      adjustmentReason: null as string | null,
+      attendanceNotMarked: false,
+    };
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;
+    const raw = value as Record<string, unknown>;
+    let components = empty.components;
+    if (Array.isArray(raw.components)) {
+      components = raw.components
+        .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+        .map((c) => ({
+          kind: String(c.kind ?? 'deduction'),
+          name: String(c.name ?? ''),
+          amount: Number(c.amount) || 0,
+          percentOfBasic: c.percentOfBasic != null ? Number(c.percentOfBasic) : null,
+          group: typeof c.group === 'string' ? c.group : undefined,
+        }));
+    } else {
+      const allowances = Array.isArray(raw.allowances) ? raw.allowances : [];
+      const deductions = Array.isArray(raw.deductions) ? raw.deductions : [];
+      components = [
+        ...allowances
+          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+          .map((c) => ({
+            kind: 'allowance',
+            name: String(c.name ?? ''),
+            amount: Number(c.amount) || 0,
+            percentOfBasic: null,
+            group: 'allowance',
+          })),
+        ...deductions
+          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+          .map((c) => ({
+            kind: 'deduction',
+            name: String(c.name ?? ''),
+            amount: Number(c.amount) || 0,
+            percentOfBasic: null,
+            group: 'deduction',
+          })),
+      ];
+    }
+    return {
+      components,
+      fullBasicSalary: typeof raw.fullBasicSalary === 'number' ? raw.fullBasicSalary : null,
+      unpaidAbsentDays: typeof raw.unpaidAbsentDays === 'number' ? raw.unpaidAbsentDays : null,
+      paidLeaveDays: typeof raw.paidLeaveDays === 'number' ? raw.paidLeaveDays : null,
+      lwpAmount: typeof raw.lwpAmount === 'number' ? raw.lwpAmount : null,
+      adjustmentReason: typeof raw.adjustmentReason === 'string' ? raw.adjustmentReason : null,
+      attendanceNotMarked: raw.attendanceNotMarked === true,
     };
   }
 
@@ -771,6 +1049,8 @@ export class PayrollService {
     status: string;
     approvedById: string | null;
     finalizedAt: Date | null;
+    paidAt?: Date | null;
+    paymentMethod?: string | null;
     notes: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -784,6 +1064,8 @@ export class PayrollService {
       status: run.status,
       approvedById: run.approvedById,
       finalizedAt: run.finalizedAt?.toISOString() ?? null,
+      paidAt: run.paidAt?.toISOString() ?? null,
+      paymentMethod: run.paymentMethod ?? null,
       notes: run.notes,
       lineCount: run._count?.lines ?? undefined,
       createdAt: run.createdAt.toISOString(),
@@ -835,6 +1117,8 @@ export class PayrollService {
     status: string;
     approvedById: string | null;
     finalizedAt: Date | null;
+    paidAt?: Date | null;
+    paymentMethod?: string | null;
     notes: string | null;
     createdAt: Date;
     updatedAt: Date;

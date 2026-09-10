@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
   HttpCode,
@@ -13,14 +14,28 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { AccessService } from '../access/access.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
+import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
-import { listUsersQuerySchema, createInvitationSchema, updateUserSchema } from '@eims/shared';
+import {
+  listUsersQuerySchema,
+  createInvitationSchema,
+  updateUserSchema,
+  updateUserRoleSchema,
+  updateUserAccessSchema,
+} from '@eims/shared';
 import type { AuthUser } from '@eims/types';
-import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
+import type {
+  ListUsersQuery,
+  CreateInvitationInput,
+  UpdateUserInput,
+  UpdateUserRoleInput,
+  UpdateUserAccessInput,
+} from '@eims/shared';
 import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util';
 
 @ApiTags('users')
@@ -28,7 +43,10 @@ import { assertStaffCatalogAccess } from '../../common/utils/staff-catalog.util'
 @Controller('users')
 @UseGuards(AuthGuard, BranchGuard, PermissionsGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly accessService: AccessService,
+  ) {}
 
   @Get()
   @Permissions('users.manage')
@@ -85,6 +103,34 @@ export class UsersController {
       role,
       ...(Number.isFinite(limit) ? { limit } : {}),
     });
+  }
+
+  @Get(':id/access')
+  @UseGuards(SuperAdminGuard)
+  getAccess(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.accessService.getUserAccess(id, scope);
+  }
+
+  @Put(':id/access')
+  @UseGuards(SuperAdminGuard)
+  updateAccess(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateUserAccessSchema)) body: UpdateUserAccessInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.accessService.updateUserAccess(id, body, user, scope);
+  }
+
+  @Patch(':id/role')
+  @UseGuards(SuperAdminGuard)
+  updateRole(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateUserRoleSchema)) body: UpdateUserRoleInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.accessService.updateUserRole(id, body, user, scope);
   }
 
   @Get(':id')

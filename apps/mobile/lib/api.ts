@@ -33,7 +33,6 @@ export async function apiClient<T>(
   } = {},
 ): Promise<T> {
   const { token, body, ...fetchOptions } = options;
-
   const serializedBody =
     body === undefined || body === null
       ? undefined
@@ -41,22 +40,27 @@ export async function apiClient<T>(
         ? body
         : JSON.stringify(body);
 
+  const headers: Record<string, string> = {
+    ...(fetchOptions.headers as Record<string, string> | undefined),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (serializedBody && !(serializedBody instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${API_URL}/api/v1${path}`, {
     ...fetchOptions,
     body: serializedBody,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(fetchOptions.headers as Record<string, string> | undefined),
-    },
+    headers,
   });
 
   if (!response.ok) {
     const error = (await response.json().catch(() => ({
       statusCode: response.status,
       message: response.statusText,
-    }))) as { message?: string; statusCode?: number; details?: Record<string, string[]> };
-    throw new ApiError(error.message ?? 'Request failed', error.statusCode ?? response.status, error.details);
+    }))) as { message?: string | string[]; statusCode?: number; details?: Record<string, string[]> };
+    const message = Array.isArray(error.message) ? error.message.join(', ') : (error.message ?? 'Request failed');
+    throw new ApiError(message, error.statusCode ?? response.status, error.details);
   }
 
   if (response.status === 204) return undefined as T;

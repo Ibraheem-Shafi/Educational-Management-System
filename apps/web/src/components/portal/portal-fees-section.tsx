@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { currencyStat, formatCurrency, PERMISSIONS } from '@eims/shared';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
   dataTableClass,
@@ -105,7 +105,10 @@ export function PortalFeesSection({
                     (!inv.status?.code || PAYABLE_STATUSES.has(inv.status.code));
 
                   return (
-                    <tr key={inv.id}>
+                    <tr
+                      key={inv.id}
+                      className={statusRowClass(inv.status?.code, inv.status?.label ?? '')}
+                    >
                       <td className={dataTableTdClass}>{inv.feeType?.name ?? 'Fee'}</td>
                       <td className={dataTableTdClass}>{formatCurrency(inv.netAmount)}</td>
                       <td className={dataTableTdClass}>
@@ -128,7 +131,7 @@ export function PortalFeesSection({
                             type="button"
                             disabled={checkoutMutation.isPending}
                             onClick={() => checkoutMutation.mutate(inv.id)}
-                            className="rounded-lg bg-[var(--primary-base,#2563EB)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            className="rounded-lg bg-[var(--institution-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                           >
                             Pay online
                           </button>

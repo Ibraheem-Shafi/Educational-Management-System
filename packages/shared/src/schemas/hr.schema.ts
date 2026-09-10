@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   MSG,
+  optionalEmail,
+  optionalPhone,
   optionalString,
   requiredId,
   requiredString,
@@ -38,10 +40,13 @@ export const updateContractSchema = refineEndAfterStart(
 
 export type UpdateContractInput = z.infer<typeof updateContractSchema>;
 
+export const applicantStages = ['applied', 'interview', 'offer', 'hired', 'rejected'] as const;
+
 export const listContractsQuerySchema = z
   .object({
-    userId: z.string().min(1),
+    userId: z.string().optional(),
     branchId: z.string().optional(),
+    status: z.enum(contractStatuses).optional(),
   })
   .merge(paginationQuerySchema);
 
@@ -73,3 +78,26 @@ export const listReviewsQuerySchema = z
   .merge(paginationQuerySchema);
 
 export type ListReviewsQuery = z.infer<typeof listReviewsQuerySchema>;
+
+export const createApplicantSchema = z.object({
+  branchId: requiredId('Branch'),
+  fullName: requiredString('Full name'),
+  email: optionalEmail(),
+  phone: optionalPhone(),
+  roleApplied: requiredString('Role applied', 1, 100),
+  stage: z.enum(applicantStages, { errorMap: () => ({ message: MSG.select('stage') }) }).optional(),
+  appliedAt: requiredId('Applied date'),
+  hiredUserId: z.string().optional().nullable(),
+  notes: optionalString(2000).nullable(),
+});
+export type CreateApplicantInput = z.infer<typeof createApplicantSchema>;
+export const updateApplicantSchema = createApplicantSchema.omit({ branchId: true }).partial();
+export type UpdateApplicantInput = z.infer<typeof updateApplicantSchema>;
+export const listApplicantsQuerySchema = z
+  .object({
+    branchId: z.string().optional(),
+    search: z.string().optional(),
+    stage: z.enum(applicantStages).optional(),
+  })
+  .merge(paginationQuerySchema);
+export type ListApplicantsQuery = z.infer<typeof listApplicantsQuerySchema>;

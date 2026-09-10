@@ -6,13 +6,18 @@ import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '@eims/types';
 import type {
+  CreateApplicantInput,
   CreateContractInput,
   UpdateContractInput,
+  ListApplicantsQuery,
   ListContractsQuery,
   CreateReviewInput,
   UpdateReviewInput,
   ListReviewsQuery,
+  UpdateApplicantInput,
 } from '@eims/shared';
+import { containsSearch, parseYmd, toIso, toYmd } from '../../common/ops/date.util';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class HrService {
@@ -23,8 +28,9 @@ export class HrService {
 
   async findContracts(query: ListContractsQuery, scope: BranchScope) {
     const where = {
-      userId: query.userId,
       deletedAt: null,
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...prismaBranchFilter(narrowScope(scope, query.branchId)),
     };
     const page = query.page ?? 1;
@@ -36,6 +42,7 @@ export class HrService {
         orderBy: { startDate: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: { user: { select: { id: true, fullName: true } } },
       }),
       this.prisma.employmentContract.count({ where }),
     ]);
@@ -46,6 +53,7 @@ export class HrService {
   async findContract(id: string, scope: BranchScope) {
     const contract = await this.prisma.employmentContract.findFirst({
       where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+      include: { user: { select: { id: true, fullName: true } } },
     });
     if (!contract) throw new NotFoundException('Contract not found');
     return this.toContractResponse(contract);
@@ -265,6 +273,99 @@ export class HrService {
     return { success: true };
   }
 
+  async findApplicants(query: ListApplicantsQuery, scope: BranchScope) {
+    const where: Prisma.ApplicantWhereInput = {
+      deletedAt: null,
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
+      ...(query.stage ? { stage: query.stage } : {}),
+      ...containsSearch(query.search, ['fullName', 'email', 'phone', 'roleApplied', 'notes']),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 8;
+    const [rows, total] = await Promise.all([
+      this.prisma.applicant.findMany({
+        where,
+        orderBy: { appliedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { hiredUser: { select: { id: true, fullName: true } } },
+      }),
+      this.prisma.applicant.count({ where }),
+    ]);
+    return paginatedResult(rows.map((row) => this.toApplicant(row)), total, page, limit);
+  }
+
+  async createApplicant(input: CreateApplicantInput, user: AuthUser) {
+    const row = await this.prisma.applicant.create({
+      data: {
+        branchId: input.branchId,
+        fullName: input.fullName,
+        email: input.email ?? null,
+        phone: input.phone ?? null,
+        roleApplied: input.roleApplied,
+        stage: input.stage ?? 'applied',
+        appliedAt: parseYmd(input.appliedAt, 'appliedAt'),
+        hiredUserId: input.hiredUserId ?? null,
+        notes: input.notes ?? null,
+      },
+      include: { hiredUser: { select: { id: true, fullName: true } } },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'hr.applicant.created',
+      entityType: 'Applicant',
+      entityId: row.id,
+      newValue: row,
+    });
+    return this.toApplicant(row);
+  }
+
+  async updateApplicant(id: string, input: UpdateApplicantInput, user: AuthUser, scope: BranchScope) {
+    const existing = await this.prisma.applicant.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!existing) throw new NotFoundException('Applicant not found');
+    const row = await this.prisma.applicant.update({
+      where: { id },
+      data: {
+        ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.roleApplied !== undefined ? { roleApplied: input.roleApplied } : {}),
+        ...(input.stage !== undefined ? { stage: input.stage } : {}),
+        ...(input.appliedAt !== undefined ? { appliedAt: parseYmd(input.appliedAt, 'appliedAt') } : {}),
+        ...(input.hiredUserId !== undefined ? { hiredUserId: input.hiredUserId } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      },
+      include: { hiredUser: { select: { id: true, fullName: true } } },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'hr.applicant.updated',
+      entityType: 'Applicant',
+      entityId: id,
+      previousValue: existing,
+      newValue: row,
+    });
+    return this.toApplicant(row);
+  }
+
+  async removeApplicant(id: string, user: AuthUser, scope: BranchScope) {
+    const existing = await this.prisma.applicant.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!existing) throw new NotFoundException('Applicant not found');
+    await this.prisma.applicant.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.audit.log({
+      userId: user.id,
+      action: 'hr.applicant.deleted',
+      entityType: 'Applicant',
+      entityId: id,
+      previousValue: existing,
+    });
+    return { success: true };
+  }
+
   private async assertUserInBranch(userId: string, branchId: string) {
     const target = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null, branchId },
@@ -292,6 +393,7 @@ export class HrService {
     documentPath: string | null;
     createdAt: Date;
     updatedAt: Date;
+    user?: { id: string; fullName: string };
   }) {
     return {
       id: contract.id,
@@ -303,6 +405,7 @@ export class HrService {
       salaryNote: contract.salaryNote,
       status: contract.status,
       documentPath: contract.documentPath,
+      user: contract.user,
       createdAt: contract.createdAt.toISOString(),
       updatedAt: contract.updatedAt.toISOString(),
     };
@@ -333,6 +436,38 @@ export class HrService {
       reviewedBy: review.reviewedBy,
       createdAt: review.createdAt.toISOString(),
       updatedAt: review.updatedAt.toISOString(),
+    };
+  }
+
+  private toApplicant(row: {
+    id: string;
+    branchId: string;
+    fullName: string;
+    email: string | null;
+    phone: string | null;
+    roleApplied: string;
+    stage: string;
+    appliedAt: Date;
+    hiredUserId: string | null;
+    notes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    hiredUser: { id: string; fullName: string } | null;
+  }) {
+    return {
+      id: row.id,
+      branchId: row.branchId,
+      fullName: row.fullName,
+      email: row.email,
+      phone: row.phone,
+      roleApplied: row.roleApplied,
+      stage: row.stage,
+      appliedAt: toYmd(row.appliedAt),
+      hiredUserId: row.hiredUserId,
+      notes: row.notes,
+      hiredUser: row.hiredUser,
+      createdAt: toIso(row.createdAt),
+      updatedAt: toIso(row.updatedAt),
     };
   }
 }

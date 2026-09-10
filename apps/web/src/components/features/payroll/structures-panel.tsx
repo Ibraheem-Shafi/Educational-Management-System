@@ -13,7 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +22,6 @@ import {
 } from '@/components/layout/page-header';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -191,7 +190,7 @@ export function StructuresPanel({
                 </tr>
               ) : (
                 rows.map((row) => (
-                  <tr key={row.id} className={dataTableRowHoverClass}>
+                  <tr key={row.id} className={activeRowClass(row.isActive)}>
                     <td className={dataTableTdClass}>
                       <p className="font-medium text-[var(--text-main-900)]">
                         {row.user?.fullName ?? '—'}

@@ -4,7 +4,8 @@ export type ComingSoonFeatureId =
   | 'ai-attendance'
   | 'transport-gps'
   | 'biometric-integration'
-  | 'portal-insights';
+  | 'portal-insights'
+  | 'catalog-reports';
 
 export type ComingSoonFeature = {
   id: ComingSoonFeatureId;
@@ -17,7 +18,7 @@ export const comingSoonFeatures: Record<ComingSoonFeatureId, ComingSoonFeature> 
     id: 'communications',
     title: 'Coming soon',
     description:
-      'SMS and WhatsApp delivery is demo-only for now. You can explore the UI; real provider delivery is not live yet.',
+      'WhatsApp Business template delivery requires the institution’s Twilio keys. Event alerts are queued and logged until TWILIO_WHATSAPP_FROM is set; the family portal still shows notices.',
   },
   'ai-insights': {
     id: 'ai-insights',
@@ -48,6 +49,12 @@ export const comingSoonFeatures: Record<ComingSoonFeatureId, ComingSoonFeature> 
     title: 'Coming soon',
     description:
       'AI performance summaries are demo content for now. Treat figures and recommendations as illustrative only.',
+  },
+  'catalog-reports': {
+    id: 'catalog-reports',
+    title: 'Coming soon',
+    description:
+      'Named reports stay listed even when a module has no rows yet. Generate exports stored records as CSV.',
   },
 };
 

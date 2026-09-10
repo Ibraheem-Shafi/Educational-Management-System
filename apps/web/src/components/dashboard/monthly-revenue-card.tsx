@@ -15,6 +15,11 @@ import type { DashboardMonthlyRevenueResponse } from '@eims/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip as AppTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import {
+  PaletteChartGradients,
+  paletteChartActiveDot,
+  paletteChartDot,
+} from './palette-chart';
 
 function formatTrend(changePercent: number | null): string | null {
   if (changePercent === null) return null;
@@ -81,7 +86,7 @@ export function MonthlyRevenueCard({
             <p
               className={cn(
                 'mt-0.5 inline-flex items-center justify-end gap-1 text-xs font-medium leading-4',
-                isPositiveTrend ? 'text-[#16A34A]' : 'text-[#DC2626]',
+                isPositiveTrend ? 'text-success-text' : 'text-error-text',
               )}
             >
               {isPositiveTrend && <TrendingUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />}
@@ -95,10 +100,7 @@ export function MonthlyRevenueCard({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -12, bottom: 0 }}>
             <defs>
-              <linearGradient id="dashboardRevenueGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#00A5FF" stopOpacity={0.6} />
-                <stop offset="100%" stopColor="#CEF0FF" stopOpacity={0.09} />
-              </linearGradient>
+              <PaletteChartGradients id="dashboardRevenue" />
             </defs>
             <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--stroke-soft-200, #E2E4E9)" />
             <XAxis
@@ -131,11 +133,11 @@ export function MonthlyRevenueCard({
             <Area
               type="monotone"
               dataKey="amountLakh"
-              stroke="#003E73"
+              stroke="url(#dashboardRevenue-stroke)"
               strokeWidth={2.5}
-              fill="url(#dashboardRevenueGradient)"
-              dot={false}
-              activeDot={{ r: 4, fill: '#003E73' }}
+              fill="url(#dashboardRevenue-fill)"
+              dot={paletteChartDot}
+              activeDot={paletteChartActiveDot}
             />
           </AreaChart>
         </ResponsiveContainer>

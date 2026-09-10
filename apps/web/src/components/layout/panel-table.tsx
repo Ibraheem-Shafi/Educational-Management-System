@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import type { ComponentProps, ReactNode } from 'react';
+import { EmptyState } from '@/components/layout/empty-state';
+import { seedRowClass } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './user-avatar';
 
@@ -27,7 +29,7 @@ export function PanelTable({
 }) {
   return (
     <div>
-      <div className="hidden bg-neutral-50 px-5 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)]">
+      <div className="hidden bg-[var(--palette-teal-soft)] px-5 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)]">
         {columns.map((col) => (
           <span
             key={col.key}
@@ -42,24 +44,26 @@ export function PanelTable({
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-text-sub-500">{emptyMessage}</p>
+        <div className="px-5 py-4">
+          <EmptyState title={emptyMessage} />
+        </div>
       ) : (
         <div>
           {rows.map((row, index) => {
             const content = (
               <div className="flex items-center gap-3 px-5 py-3">
-                <UserAvatar name={row.name} size="sm" />
+                <UserAvatar name={row.name} seed={row.id} size="sm" />
                 <span className="truncate text-sm font-medium text-text-main-900">{row.name}</span>
                 {row.cells}
               </div>
             );
 
             return (
-              <div key={row.id}>
+              <div key={row.id} className={seedRowClass(row.id, index)}>
                 {row.href ? (
                   <Link
                     href={row.href}
-                    className="block transition-colors hover:bg-neutral-50/80"
+                    className="block transition-colors hover:bg-[var(--palette-teal-soft)]/50"
                   >
                     {content}
                   </Link>

@@ -11,11 +11,10 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -129,7 +128,10 @@ export function GpsPanel({ branchId }: { branchId: string }) {
                     </tr>
                   ) : (
                     rows.map((row) => (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
+                      <tr
+                        key={row.id}
+                        className={statusRowClass(statusBadgeCode(row.status), formatLabel(row.status))}
+                      >
                         <td className={dataTableTdClass}>
                           <div className="flex items-center gap-2">
                             <MapPin className="h-4 w-4 text-[var(--text-sub-500)]" />

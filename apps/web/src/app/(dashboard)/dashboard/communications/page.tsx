@@ -2,14 +2,14 @@
 
 import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, Radio } from 'lucide-react';
+import { Info, MessageSquare } from 'lucide-react';
 import { PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
-import type { CommunicationsStatsResponse, PaginatedResponse } from '@eims/types';
+import type { CommunicationLog, CommunicationsProviderConfig, CommunicationsStatsResponse, PaginatedResponse } from '@eims/types';
 import {
   PageHeader,
   PageHeaderActionIcon,
@@ -20,31 +20,20 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { SendMessageDialog } from '@/components/features/communications/send-message-dialog';
-import { BroadcastDialog } from '@/components/features/communications/broadcast-dialog';
 import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
-import { ComingSoonFrame } from '@/components/coming-soon';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-
-interface CommunicationLog {
-  id: string;
-  channel: string;
-  recipient: string;
-  status: string;
-  createdAt: string;
-}
 
 function formatCount(value: number): string {
   return value.toLocaleString('en-US');
@@ -61,7 +50,6 @@ export default function CommunicationsPage() {
   const token = session?.access_token;
   const canSend = can(PERMISSIONS.COMMUNICATIONS_SEND);
   const [sendOpen, setSendOpen] = useState(false);
-  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -83,6 +71,12 @@ export default function CommunicationsPage() {
         { token },
       ),
     enabled: !!token,
+  });
+
+  const { data: providerConfig } = useQuery({
+    queryKey: ['communications-config'],
+    queryFn: () => apiClient<CommunicationsProviderConfig>('/communications/config', { token }),
+    enabled: !!token && canSend,
   });
 
   const queryParams = new URLSearchParams({
@@ -123,38 +117,37 @@ export default function CommunicationsPage() {
       <PageHeader
         icon={MessageSquare}
         title="Communications"
-        description="SMS and WhatsApp messaging (Twilio)"
+        description="Alerts sent when staff publish notices, mark absences, remind fees, or publish results"
         actions={
           canSend ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setBroadcastOpen(true)}
-                className={cn(
-                  pageHeaderActionClassName,
-                  'border border-[var(--stroke-soft-200,#E2E4E9)] bg-white text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]',
-                )}
-              >
-                <Radio className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                Broadcast
-              </button>
-              <button
-                type="button"
-                onClick={() => setSendOpen(true)}
-                className={pageHeaderActionClassName}
-              >
-                <PageHeaderActionIcon />
-                Send message
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setSendOpen(true)}
+              className={pageHeaderActionClassName}
+            >
+              <PageHeaderActionIcon />
+              Send message
+            </button>
           ) : undefined
         }
       />
 
       <SendMessageDialog open={sendOpen} onOpenChange={setSendOpen} />
-      <BroadcastDialog open={broadcastOpen} onOpenChange={setBroadcastOpen} />
 
-      <ComingSoonFrame featureId="communications">
+      {canSend && providerConfig && !providerConfig.whatsappConfigured ? (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-[10px] border border-[var(--palette-yellow)]/35 border-l-[4px] border-l-[var(--palette-yellow)] bg-[var(--palette-yellow-soft)] px-4 py-4"
+        >
+          <Info className="h-4 w-4 shrink-0 text-[var(--midnight-blue-950,#01366C)]" aria-hidden />
+          <p className="text-sm text-[var(--text-sub-500)]">
+            WhatsApp is not configured. The institution must set <code>TWILIO_WHATSAPP_FROM</code> and
+            template content SIDs on the API. Until then, alerts are logged here and families still see
+            notices in the portal.
+          </p>
+        </div>
+      ) : null}
+
       <MainStatsSection
         isLoading={statsLoading}
         stats={[
@@ -189,12 +182,12 @@ export default function CommunicationsPage() {
           {
             label: 'SMS',
             rate: channelShare(smsTotal, channelTotal),
-            color: '#003E73',
+            color: 'var(--palette-teal)',
           },
           {
             label: 'WhatsApp',
             rate: channelShare(whatsappTotal, channelTotal),
-            color: '#25D366',
+            color: 'var(--palette-green)',
           },
         ]}
       />
@@ -225,9 +218,12 @@ export default function CommunicationsPage() {
           }}
           options={[
             { value: '', label: 'All statuses' },
-            { value: 'sent', label: 'Sent' },
-            { value: 'failed', label: 'Failed' },
             { value: 'queued', label: 'Queued' },
+            { value: 'sent', label: 'Sent' },
+            { value: 'delivered', label: 'Delivered' },
+            { value: 'read', label: 'Read' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'fallback_sms', label: 'SMS fallback' },
           ]}
         />
         <PageBranchScopeControl />
@@ -253,16 +249,17 @@ export default function CommunicationsPage() {
               <tr>
                 <th className={dataTableThClass}>Channel</th>
                 <th className={dataTableThClass}>Recipient</th>
+                <th className={dataTableThClass}>Template</th>
                 <th className={dataTableThClass}>Status</th>
                 <th className={dataTableThClass}>Sent at</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
-              {isLoading && <DataTableSkeletonRows columns={4} rows={logLimit} />}
+              {isLoading && <DataTableSkeletonRows columns={5} rows={logLimit} />}
 
               {error && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-red-600">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-600">
                     Failed to load messages
                   </td>
                 </tr>
@@ -271,7 +268,7 @@ export default function CommunicationsPage() {
               {!isLoading && !error && filteredLogs.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                   >
                     No messages found
@@ -282,12 +279,18 @@ export default function CommunicationsPage() {
               {!isLoading &&
                 !error &&
                 filteredLogs.map((log) => (
-                  <tr key={log.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={log.id}
+                    className={cn('transition-colors', statusRowClass(log.status, log.status))}
+                  >
                     <td className={cn(dataTableTdClass, 'uppercase')}>{log.channel}</td>
                     <td className={dataTableTdClass}>{log.recipient}</td>
                     <td className={dataTableTdClass}>
+                      {(log.templateKey ?? log.campaign?.templateKey ?? log.subject ?? '—').replaceAll('_', ' ')}
+                    </td>
+                    <td className={dataTableTdClass}>
                       <StatusBadge
-                        label={log.status.charAt(0).toUpperCase() + log.status.slice(1)}
+                        label={log.status.replaceAll('_', ' ')}
                         code={log.status}
                       />
                     </td>
@@ -313,7 +316,6 @@ export default function CommunicationsPage() {
           />
         )}
       </div>
-      </ComingSoonFrame>
     </div>
   );
 }

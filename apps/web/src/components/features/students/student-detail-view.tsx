@@ -30,6 +30,10 @@ export interface StudentDetailData {
   dateOfBirth: string | null;
   photographUrl: string | null;
   monthlyFeeDiscount?: number | null;
+  monthlyFeeWaived?: boolean;
+  annualChargeMode?: string;
+  annualDeferredUntil?: string | null;
+  annualInstallmentCount?: number;
   batch?: { name: string };
   program?: { name: string };
   status?: { code: string; label: string };
@@ -195,6 +199,22 @@ export function StudentDetailView({
                 student.monthlyFeeDiscount && student.monthlyFeeDiscount > 0
                   ? `Rs ${Number(student.monthlyFeeDiscount).toLocaleString('en-PK')}`
                   : '—'
+              }
+            />
+            <InfoField
+              label="Monthly fee"
+              value={student.monthlyFeeWaived ? 'Waived' : 'Charged'}
+            />
+            <InfoField
+              label="Annual charges"
+              value={
+                student.annualChargeMode === 'installments'
+                  ? `Installments (${student.annualInstallmentCount ?? 12})`
+                  : student.annualChargeMode === 'waived'
+                    ? 'Waived'
+                    : student.annualChargeMode === 'deferred'
+                      ? `Deferred${student.annualDeferredUntil ? ` until ${student.annualDeferredUntil.slice(0, 10)}` : ''}`
+                      : 'Full'
               }
             />
           </div>

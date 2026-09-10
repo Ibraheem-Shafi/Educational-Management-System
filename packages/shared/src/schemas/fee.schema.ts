@@ -1,11 +1,25 @@
 import { z } from 'zod';
 import {
   MSG,
+  billingPeriodSchema,
+  calendarDateSchema,
   optionalString,
   requiredId,
   requiredPositiveNumber,
   requiredString,
 } from '../validation/messages';
+
+export const annualChargeModes = ['full', 'installments', 'waived', 'deferred'] as const;
+export type AnnualChargeMode = (typeof annualChargeModes)[number];
+
+export const feeIncrementScopes = [
+  'all_campuses',
+  'branch',
+  'program',
+  'batch',
+  'student',
+] as const;
+export type FeeIncrementScope = (typeof feeIncrementScopes)[number];
 import { paginationQuerySchema } from './common.schema';
 
 export const createFeeInvoiceSchema = z.object({
@@ -17,10 +31,7 @@ export const createFeeInvoiceSchema = z.object({
   fine: z.coerce.number().min(0).optional(),
   dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
   remarks: optionalString(500),
-  billingPeriod: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM')
-    .optional(),
+  billingPeriod: billingPeriodSchema.optional(),
   voucherNo: optionalString(120),
 });
 
@@ -32,11 +43,7 @@ export const updateFeeInvoiceSchema = z.object({
   fine: z.coerce.number().min(0).optional(),
   dueDate: z.string().datetime({ message: MSG.invalidDate }).nullable().optional(),
   remarks: optionalString(500),
-  billingPeriod: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM')
-    .nullable()
-    .optional(),
+  billingPeriod: billingPeriodSchema.nullable().optional(),
   voucherNo: optionalString(120),
 });
 
@@ -72,7 +79,7 @@ export const recordPaymentSchema = z
         errorMap: () => ({ message: MSG.select('payment method') }),
       })
       .optional(),
-    paidAt: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    paidAt: calendarDateSchema.optional(),
     providerRef: z
       .string()
       .trim()
@@ -184,6 +191,7 @@ export const generateBulkInvoicesSchema = z
     feeTypeId: requiredId('Fee type').optional(),
     feeStructureIds: z.array(requiredId('Fee structure')).optional(),
     dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    billingPeriod: billingPeriodSchema.optional(),
     lines: z.array(bulkInvoiceLineSchema).min(1).optional(),
   })
   .superRefine((data, ctx) => {
@@ -275,7 +283,7 @@ export const feeChallanLineInputSchema = z.object({
 export const createFeeChallanSchema = z.object({
   branchId: requiredId('Branch'),
   studentId: requiredId('Student'),
-  billingPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM'),
+  billingPeriod: billingPeriodSchema,
   challanNo: optionalString(80),
   dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
   sessionLabel: optionalString(40),
@@ -292,3 +300,54 @@ export const updateFeeChallanSchema = z.object({
 });
 
 export type UpdateFeeChallanInput = z.infer<typeof updateFeeChallanSchema>;
+
+export const incrementFeeRatesSchema = z
+  .object({
+    dryRun: z.boolean().optional(),
+    scope: z.enum(feeIncrementScopes),
+    branchId: z.string().optional(),
+    programId: z.string().optional(),
+    batchId: z.string().optional(),
+    studentId: z.string().optional(),
+    feeTypeId: requiredId('Fee type'),
+    mode: z.enum(['percent', 'amount']),
+    value: z.coerce.number().positive(MSG.positiveNumber('Increment')),
+    effectiveFrom: billingPeriodSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.scope === 'branch' && !data.branchId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: MSG.required('Branch'), path: ['branchId'] });
+    }
+    if (data.scope === 'program' && !data.programId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: MSG.required('Program'), path: ['programId'] });
+    }
+    if (data.scope === 'batch' && !data.batchId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: MSG.required('Batch'), path: ['batchId'] });
+    }
+    if (data.scope === 'student' && !data.studentId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: MSG.required('Student'), path: ['studentId'] });
+    }
+  });
+
+export type IncrementFeeRatesInput = z.infer<typeof incrementFeeRatesSchema>;
+
+export const updateStudentFeePolicySchema = z
+  .object({
+    monthlyFeeDiscount: z.coerce.number().min(0).optional(),
+    monthlyFeeAmount: z.coerce.number().min(0).nullable().optional(),
+    monthlyFeeWaived: z.boolean().optional(),
+    annualChargeMode: z.enum(annualChargeModes).optional(),
+    annualDeferredUntil: calendarDateSchema.nullable().optional(),
+    annualInstallmentCount: z.coerce.number().int().min(1).max(24).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.annualChargeMode === 'deferred' && !data.annualDeferredUntil) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Defer until date'),
+        path: ['annualDeferredUntil'],
+      });
+    }
+  });
+
+export type UpdateStudentFeePolicyInput = z.infer<typeof updateStudentFeePolicySchema>;

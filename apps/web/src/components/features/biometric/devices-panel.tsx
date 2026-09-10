@@ -13,7 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -21,7 +21,6 @@ import {
 } from '@/components/layout/page-header';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -159,7 +158,7 @@ export function DevicesPanel({ branchId }: { branchId: string }) {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
+                    <tr key={row.id} className={activeRowClass(row.isActive)}>
                       <td className={dataTableTdClass}>{row.name}</td>
                       <td className={dataTableTdClass}>
                         <code className="text-xs">{row.deviceCode}</code>

@@ -11,14 +11,15 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, riskRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -107,14 +108,10 @@ export default function AiInsightsPage() {
                 {isLoading ? (
                   <DataTableSkeletonRows columns={3} rows={limit} />
                 ) : stats.total === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No at-risk students detected
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={3} title="No at-risk students detected" />
                 ) : (
                   atRisk?.data.map((s) => (
-                  <tr key={s.studentId} className="hover:bg-[var(--neutral-50)]/50">
+                  <tr key={s.studentId} className={riskRowClass(s.riskLevel)}>
                     <td className={tdClass}>
                       <p className="font-medium">{s.fullName}</p>
                       <p className="text-xs text-[var(--text-sub-500)]">{s.reasons.join(' · ')}</p>

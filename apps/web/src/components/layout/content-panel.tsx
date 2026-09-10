@@ -15,12 +15,12 @@ export function ContentPanel({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border border-stroke-soft-200 bg-neutral-0',
+        'overflow-hidden rounded-xl border border-stroke-soft-200 border-l-[3px] border-l-[var(--palette-teal)] bg-neutral-0',
         className,
       )}
     >
       {(title || actions) && (
-        <div className="flex flex-col gap-3 border-b border-stroke-soft-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-stroke-soft-200 bg-[var(--palette-navy-soft)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           {title && (
             <div className="text-base font-medium leading-6 text-text-main-900">{title}</div>
           )}

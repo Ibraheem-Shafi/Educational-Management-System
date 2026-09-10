@@ -11,7 +11,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -20,7 +20,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -130,7 +129,10 @@ export function RoutesPanel({ branchId }: { branchId: string }) {
                     </tr>
                   ) : (
                     rows.map((row) => (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
+                      <tr
+                        key={row.id}
+                        className={activeRowClass(row.isActive)}
+                      >
                         <td className={dataTableTdClass}>{row.name}</td>
                         <td className={dataTableTdClass}>{row.code ?? '—'}</td>
                         <td className={dataTableTdClass}>{row.stops?.length ?? 0}</td>

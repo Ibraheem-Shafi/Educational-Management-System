@@ -4,9 +4,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const RING_COLORS = {
-  students: 'var(--midnight-blue-950, #01366C)',
-  teachersAndStaff: '#16A34A',
-  overall: '#F59E0B',
+  students: 'var(--palette-teal)',
+  teachersAndStaff: 'var(--palette-orange)',
+  overall: 'var(--palette-purple)',
 } as const;
 
 function formatCount(value: number): string {

@@ -267,7 +267,7 @@ export async function setupMockStaffApi(page: Page, options: MockApiOptions = {}
       return route.fulfill({
         json: {
           name: 'Test Institution',
-          primaryColor: '#2563eb',
+          primaryColor: '#0d9b8a',
           terminology: { batch: 'Batch', program: 'Program' },
           featureFlags: {},
         },

@@ -76,7 +76,7 @@ export function SelectDropdown({
     minWidth: isSm ? 120 : undefined,
   });
 
-  const selected = options.find((o) => o.value === value);
+  const selected = (options ?? []).find((o) => o.value === value);
   const displayLabel = selected?.label ?? placeholder;
 
   return (
@@ -107,7 +107,7 @@ export function SelectDropdown({
         className={cn(
           'flex w-full items-center justify-between bg-white',
           'font-[family-name:var(--font-inter)] text-sm font-normal',
-          'hover:bg-[var(--neutral-50)]',
+          'hover:bg-[var(--palette-teal-soft)]',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--institution-primary)] focus-visible:ring-offset-1',
           isSm
             ? 'h-8 gap-1 rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] py-1.5 pl-3 pr-1.5 leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]'
@@ -145,7 +145,7 @@ export function SelectDropdown({
             onPointerDown={(event) => event.stopPropagation()}
             onTouchMove={(event) => event.stopPropagation()}
           >
-            {options.map((option) => {
+            {(options ?? []).map((option) => {
               const isSelected = option.value === value;
               return (
                 <li key={option.value || '__empty'} role="option" aria-selected={isSelected}>
@@ -160,8 +160,8 @@ export function SelectDropdown({
                     className={cn(
                       'flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm leading-5 whitespace-nowrap',
                       'text-[var(--base-foreground,#18181B)]',
-                      'hover:bg-[var(--neutral-50)]',
-                      isSelected && 'bg-[var(--neutral-50)] font-medium',
+                      'hover:bg-[var(--palette-teal-soft)]',
+                      isSelected && 'bg-[var(--palette-teal-soft)] font-medium',
                     )}
                   >
                     <span>{option.label}</span>

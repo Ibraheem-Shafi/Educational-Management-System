@@ -29,11 +29,11 @@ import {
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -251,14 +251,16 @@ export default function FormFieldsPage() {
               {isLoading ? (
                 <DataTableSkeletonRows columns={6} rows={limit} />
               ) : pageFields.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                    No active fields
-                  </td>
-                </tr>
+                <EmptyStateCell colSpan={6} title="No active fields" />
               ) : (
                 pageFields.map((f) => (
-                  <tr key={f.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={f.id}
+                    className={statusRowClass(
+                      f.isRequired ? 'active' : 'pending',
+                      f.isRequired ? 'Required' : 'Optional',
+                    )}
+                  >
                     <td className={dataTableTdClass}>{f.label}</td>
                     <td className={dataTableTdClass}>{f.code}</td>
                     <td className={dataTableTdClass}>{f.fieldType}</td>

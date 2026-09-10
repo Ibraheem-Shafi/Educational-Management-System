@@ -10,9 +10,10 @@ import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { withBranchScope } from '@/lib/branch-scope';
+import { paletteCssAt } from '@/lib/ui-palette';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { ContactIcon } from '@/components/layout/contact-icon';
 import { cn } from '@/lib/utils';
@@ -21,15 +22,15 @@ function formatStudentCount(value: number): string {
   return value.toLocaleString('en-US');
 }
 
-function AttendanceCell({ rate }: { rate: number }) {
+function AttendanceCell({ rate, accent }: { rate: number; accent: string }) {
   const clamped = Math.max(0, Math.min(rate, 100));
 
   return (
     <div className="flex min-w-[112px] items-center gap-2">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E4E9]">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--stroke-soft-200)]">
         <div
-          className="h-full rounded-full bg-[#003E73]"
-          style={{ width: `${clamped}%` }}
+          className="h-full rounded-full"
+          style={{ width: `${clamped}%`, backgroundColor: accent }}
         />
       </div>
       <span className="w-9 shrink-0 text-right text-sm font-medium text-text-main-900">
@@ -119,7 +120,7 @@ export function BranchPerformanceCard({
       <div className="overflow-x-auto">
         <table className="min-w-[960px] w-full border-collapse">
           <thead>
-            <tr className="bg-[#F8F8F8]">
+            <tr className="bg-[var(--palette-teal-soft)]">
               {[
                 'Branch Name',
                 'Address',
@@ -154,9 +155,21 @@ export function BranchPerformanceCard({
               branches.map((branch, index) => (
                 <tr
                   key={branch.id}
-                  className={cn(index < branches.length - 1 && 'border-b border-stroke-soft-200')}
+                  className={cn(
+                    activeRowClass(branch.isActive),
+                    index < branches.length - 1 && 'border-b border-stroke-soft-200',
+                  )}
                 >
-                  <td className="px-5 py-4 text-sm font-medium text-text-main-900">{branch.name}</td>
+                  <td className="px-5 py-4 text-sm font-medium text-text-main-900">
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: paletteCssAt(index) }}
+                        aria-hidden
+                      />
+                      {branch.name}
+                    </span>
+                  </td>
                   <td className="px-5 py-4 text-sm text-text-sub-500">{branch.addressLabel}</td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
@@ -175,7 +188,7 @@ export function BranchPerformanceCard({
                     {formatStudentCount(branch.studentCount)}
                   </td>
                   <td className="px-5 py-4">
-                    <AttendanceCell rate={branch.attendanceRate} />
+                    <AttendanceCell rate={branch.attendanceRate} accent={paletteCssAt(index)} />
                   </td>
                   <td className="px-5 py-4">
                     <StatusBadge

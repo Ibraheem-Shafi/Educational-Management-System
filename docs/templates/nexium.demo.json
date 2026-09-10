@@ -1,5 +1,5 @@
 {
-  "version": "nexium-v1.5",
+  "version": "nexium-v1.6",
   "institution": {
     "siblingDiscountPercent": 10,
     "lateFeeAmount": 500,
@@ -85,6 +85,24 @@
       "phone": "+923558889900",
       "gender": "female",
       "cnic": "35202-3334455-6"
+    },
+    {
+      "email": "shahwali.fees@nexium.edu.pk",
+      "fullName": "Sana Iqbal",
+      "role": "fee_collector",
+      "branchCode": "SWC",
+      "phone": "+923334445566",
+      "gender": "female",
+      "cnic": "37405-1112233-4"
+    },
+    {
+      "email": "shahwali.hr@nexium.edu.pk",
+      "fullName": "Bilal Hussain",
+      "role": "hr_finance",
+      "branchCode": "SWC",
+      "phone": "+923335556677",
+      "gender": "male",
+      "cnic": "37405-2223344-5"
     },
     {
       "email": "rashid.ahmad@nexium.edu.pk",

@@ -11,6 +11,7 @@ import { StudentsModule } from './modules/students/students.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AcademicModule } from './modules/academic/academic.module';
 import { UsersModule } from './modules/users/users.module';
+import { AccessModule } from './modules/access/access.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { FeesModule } from './modules/fees/fees.module';
@@ -39,6 +40,9 @@ import { SmsModule } from './common/sms/sms.module';
 import { EmailModule } from './common/email/email.module';
 import { DeviceTokensModule } from './modules/device-tokens/device-tokens.module';
 import { PrintTemplatesModule } from './modules/print-templates/print-templates.module';
+import { AcademicOpsModule } from './modules/academic-ops/academic-ops.module';
+import { FinanceOpsModule } from './modules/finance-ops/finance-ops.module';
+import { CampusOpsModule } from './modules/campus-ops/campus-ops.module';
 
 @Module({
   imports: [
@@ -56,6 +60,7 @@ import { PrintTemplatesModule } from './modules/print-templates/print-templates.
     StudentsModule,
     AcademicModule,
     UsersModule,
+    AccessModule,
     AttendanceModule,
     AssessmentsModule,
     AccountingModule,
@@ -82,6 +87,9 @@ import { PrintTemplatesModule } from './modules/print-templates/print-templates.
     PayrollModule,
     DeviceTokensModule,
     PrintTemplatesModule,
+    AcademicOpsModule,
+    FinanceOpsModule,
+    CampusOpsModule,
   ],
 })
 export class AppModule {}

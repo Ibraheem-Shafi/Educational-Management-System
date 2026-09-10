@@ -16,6 +16,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { categoryRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 export function PortalDocumentsSection({
@@ -81,14 +83,10 @@ export function PortalDocumentsSection({
               </thead>
               <tbody className="[&>tr:last-child>td]:border-b-0">
                 {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
-                      No documents available
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={4} title="No documents available" />
                 ) : (
                   items.map((doc) => (
-                    <tr key={doc.id}>
+                    <tr key={doc.id} className={categoryRowClass(doc.category)}>
                       <td className={dataTableTdClass}>
                         <div className="flex items-center gap-2">
                           <FileStack className="h-4 w-4 text-icon-primary" />

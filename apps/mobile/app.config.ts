@@ -1,23 +1,31 @@
 import type { ExpoConfig } from 'expo/config';
 
-const role = process.env.APP_ROLE === 'student' ? 'student' : 'parent';
-
 const config: ExpoConfig = {
-  name: role === 'student' ? 'Nexium Student' : 'Nexium Parent',
-  slug: role === 'student' ? 'nexium-student' : 'nexium-parent',
-  scheme: role === 'student' ? 'nexium-student' : 'nexium-parent',
+  name: 'Nexium Academy',
+  slug: 'nexium-academy',
+  scheme: 'nexium',
   version: '1.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
+  icon: './assets/logo.png',
+  splash: {
+    image: './assets/logo.png',
+    backgroundColor: '#0b1f3a',
+    resizeMode: 'contain',
+  },
   android: {
-    package: role === 'student' ? 'pk.edu.nexium.student' : 'pk.edu.nexium.parent',
+    package: 'pk.edu.nexium.app',
     adaptiveIcon: {
-      backgroundColor: '#1e40af',
+      foregroundImage: './assets/logo.png',
+      backgroundColor: '#0b1f3a',
     },
   },
+  ios: {
+    bundleIdentifier: 'pk.edu.nexium.app',
+    supportsTablet: true,
+  },
   extra: {
-    appRole: role,
     apiUrl: process.env.EXPO_PUBLIC_API_URL,
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
@@ -25,7 +33,12 @@ const config: ExpoConfig = {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
     },
   },
-  plugins: ['expo-router', 'expo-secure-store', 'expo-notifications'],
+  plugins: [
+    'expo-router',
+    'expo-secure-store',
+    'expo-notifications',
+    'expo-document-picker',
+  ],
 };
 
 export default config;

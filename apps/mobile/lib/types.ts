@@ -1,4 +1,4 @@
-export type AppRole = 'parent' | 'student';
+export type { AppRole } from './role';
 
 export interface AuthUser {
   id: string;
@@ -74,12 +74,18 @@ export interface PortalNoticeItem {
 }
 
 export interface PortalTimetableSlot {
+  id?: string;
   dayOfWeek: number;
+  dayName?: string;
   startTime: string;
   endTime: string;
   room: string | null;
   subjectName: string | null;
-  teacherName: string | null;
+  teacherName?: string | null;
+  batchName?: string | null;
+  batchId?: string;
+  branchId?: string;
+  subjectId?: string;
 }
 
 export interface PortalTimetableResponse {
@@ -94,6 +100,7 @@ export interface PortalDocumentItem {
   mimeType: string | null;
   sizeBytes: number | null;
   createdAt: string;
+  student?: { fullName?: string } | null;
 }
 
 export interface LearningResourceItem {
@@ -101,8 +108,15 @@ export interface LearningResourceItem {
   title: string;
   type: string;
   dueDate?: string | null;
+  dueAt?: string | null;
   subjectName?: string | null;
   description?: string | null;
+  body?: string | null;
+  meetingUrl?: string | null;
+  isPublished?: boolean;
+  attachments?: Array<{ id: string; fileName: string }>;
+  batch?: { id: string; name: string } | null;
+  subject?: { id: string; name: string } | null;
 }
 
 export interface PortalStudentInsightsResponse {
@@ -115,18 +129,22 @@ export interface PortalStudentInsightsResponse {
 
 export interface LeaveRequestItem {
   id: string;
-  studentId: string;
-  studentName: string;
+  studentId?: string | null;
+  studentName?: string;
   fromDate: string;
   toDate: string;
   reason: string;
   status: string;
   createdAt: string;
+  attachmentFileName?: string | null;
 }
 
 export interface ParentChildData {
   student: { id: string; fullName: string };
   relationshipCode: string;
+  attendance?: PortalAttendanceRecord[];
+  fees?: { outstanding: number };
+  assessments?: Array<{ percentage: number | null }>;
 }
 
 export interface ParentPortalData {
@@ -145,18 +163,41 @@ export interface StudentPortalData {
   message?: string;
 }
 
+export interface Metric {
+  value: number;
+  changePercent: number | null;
+}
+
 export interface PortalStudentStatsResponse {
-  attendanceRate: { value: number; changePercent: number | null };
-  outstandingFees: { value: number; changePercent: number | null };
-  averageGrade: { value: number; changePercent: number | null };
-  upcomingClasses: { value: number; changePercent: number | null };
+  attendanceRate: Metric;
+  outstandingFees: Metric;
+  averageGrade: Metric;
+  upcomingClasses: Metric;
 }
 
 export interface PortalParentStatsResponse {
-  childrenCount: { value: number; changePercent: number | null };
-  aggregateAttendance: { value: number; changePercent: number | null };
-  totalOutstanding: { value: number; changePercent: number | null };
-  recentNotices: { value: number; changePercent: number | null };
+  childrenCount: Metric;
+  aggregateAttendance: Metric;
+  totalOutstanding: Metric;
+  recentNotices: Metric;
+}
+
+export interface PortalAssessmentsResponse {
+  averagePercentage: number | null;
+  bySubject: Array<{ subjectName: string; averagePercentage: number | null }>;
+  records: PaginatedResponse<{
+    id: string;
+    assessmentName?: string;
+    subjectName?: string;
+    percentage: number | null;
+    grade?: string | null;
+  }>;
+}
+
+export interface PortalCalendarEvent {
+  date: string;
+  title: string;
+  type: string;
 }
 
 export interface PortalProfileResponse {
@@ -185,6 +226,55 @@ export interface PortalProfileResponse {
     address: string | null;
   } | null;
   children?: Array<{ id: string; fullName: string; relationshipCode: string }>;
+}
+
+export interface TeacherHomeResponse {
+  stats: {
+    students: number;
+    classes: number;
+    todayAttendance: {
+      present: number;
+      absent: number;
+      late: number;
+      unmarked: number;
+      total: number;
+      rate: number;
+    };
+  };
+  todaySlots: PortalTimetableSlot[];
+  unmarkedBatches: Array<{
+    id: string;
+    name: string;
+    branchId: string;
+    marked: number;
+    total: number;
+  }>;
+}
+
+export interface TeacherBatch {
+  id: string;
+  name: string;
+  branchId: string;
+  programName: string | null;
+  programId: string | null;
+  studentCount: number;
+}
+
+export interface TeacherStudent {
+  id: string;
+  fullName: string;
+  rollNumber: string | null;
+  admissionNumber: string | null;
+  batchId: string | null;
+  branchId: string;
+  batchName: string | null;
+  programName: string | null;
+}
+
+export interface LookupStatus {
+  id: string;
+  code: string;
+  label: string;
 }
 
 export const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;

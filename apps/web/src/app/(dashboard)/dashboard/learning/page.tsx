@@ -25,12 +25,11 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -269,7 +268,13 @@ export default function LearningPage() {
               {!isLoading &&
                 !error &&
                 rows.map((row) => (
-                  <tr key={row.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      'transition-colors',
+                      statusRowClass(row.isPublished ? 'active' : 'draft', row.isPublished ? 'Published' : 'Draft'),
+                    )}
+                  >
                     <td className={dataTableTdClass}>
                       <div className="min-w-0">
                         <p>{row.title}</p>

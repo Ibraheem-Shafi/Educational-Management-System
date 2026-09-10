@@ -21,8 +21,8 @@ export function ComingSoonBanner({
     <div
       role="status"
       className={cn(
-        'relative overflow-hidden rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)]',
-        'flex min-h-[88px] items-center gap-3 bg-[var(--neutral-50,#F7F8FA)] px-4 py-5',
+        'relative overflow-hidden rounded-[10px] border border-[var(--palette-yellow)]/35',
+        'flex min-h-[88px] items-center gap-3 border-l-[4px] border-l-[var(--palette-yellow)] bg-[var(--palette-yellow-soft)] px-4 py-5',
         showRibbon && 'pr-20',
         className,
       )}

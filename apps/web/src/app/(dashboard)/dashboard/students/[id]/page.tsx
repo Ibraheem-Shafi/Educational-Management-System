@@ -27,6 +27,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { categoryRowClass, seedRowClass, statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 interface StudentDetail {
@@ -282,14 +284,10 @@ export default function StudentDetailPage() {
                 </thead>
                 <tbody>
                   {(studentParents?.data.length ?? 0) === 0 && (
-                    <tr>
-                      <td colSpan={4} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                        No parents linked
-                      </td>
-                    </tr>
+                    <EmptyStateCell colSpan={4} title="No parents linked" />
                   )}
-                  {studentParents?.data.map((parent) => (
-                    <tr key={parent.linkId}>
+                  {studentParents?.data.map((parent, index) => (
+                    <tr key={parent.linkId} className={seedRowClass(parent.id, index)}>
                       <td className={dataTableTdClass}>
                         <Link
                           href={`/dashboard/parents/${parent.id}`}
@@ -339,14 +337,10 @@ export default function StudentDetailPage() {
                 </thead>
                 <tbody>
                   {(documents?.data.length ?? 0) === 0 && (
-                    <tr>
-                      <td colSpan={3} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                        No documents uploaded
-                      </td>
-                    </tr>
+                    <EmptyStateCell colSpan={3} title="No documents uploaded" />
                   )}
                   {documents?.data.map((doc) => (
-                    <tr key={doc.id}>
+                    <tr key={doc.id} className={categoryRowClass(doc.category)}>
                       <td className={dataTableTdClass}>{doc.title}</td>
                       <td className={dataTableTdClass}>{doc.category}</td>
                       <td className={dataTableTdClass}>
@@ -425,7 +419,7 @@ export default function StudentDetailPage() {
                 </thead>
                 <tbody>
                   {attendanceHistory?.records.map((r) => (
-                    <tr key={r.date}>
+                    <tr key={r.date} className={statusRowClass(r.status?.label, r.status?.label)}>
                       <td className={dataTableTdClass}>{r.date}</td>
                       <td className={dataTableTdClass}>{r.status?.label ?? '—'}</td>
                     </tr>

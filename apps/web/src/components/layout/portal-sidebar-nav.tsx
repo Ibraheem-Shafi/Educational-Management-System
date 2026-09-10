@@ -25,6 +25,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
+import { accentForHref, paletteColor } from '@/lib/ui-palette';
 import { cn } from '@/lib/utils';
 import { useSidebar } from './sidebar-context';
 import { UserAvatar } from './user-avatar';
@@ -182,7 +183,7 @@ function isNavItemActive(pathname: string, item: PortalNavItem): boolean {
 function SidebarSeparator() {
   return (
     <div className="flex justify-center" aria-hidden>
-      <div className="h-px w-[80%] bg-stroke-soft-200" />
+      <div className="h-px w-[80%] bg-white/10" />
     </div>
   );
 }
@@ -224,7 +225,7 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
           height={40}
           className="h-10 w-10 shrink-0 rounded object-contain"
         />
-        <span className="truncate text-base font-medium leading-6 tracking-[-0.006em] text-text-main-900">
+        <span className="truncate text-base font-medium leading-6 tracking-[-0.006em] text-white">
           {name}
         </span>
       </div>
@@ -255,7 +256,7 @@ function CollapseButton() {
       type="button"
       onClick={toggleCollapsed}
       aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-text-soft-400 transition-colors hover:bg-neutral-50 hover:text-text-sub-500"
+      className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
     >
       {collapsed ? (
         <PanelLeft className="h-5 w-5" strokeWidth={1.75} />
@@ -298,12 +299,12 @@ function ProfileFooter({
   };
 
   return (
-    <div ref={menuRef} className="relative px-3 pb-4 pt-3">
+    <div ref={menuRef} className="relative bg-[var(--sidebar-bg-footer)] px-3 pb-4 pt-3">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-neutral-50',
+          'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/10',
           collapsed && 'justify-center px-0',
         )}
         aria-expanded={open}
@@ -313,12 +314,12 @@ function ProfileFooter({
         {!collapsed && (
           <>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900">
+              <p className="truncate text-sm font-medium leading-5 tracking-[-0.006em] text-white">
                 {user?.fullName}
               </p>
-              <p className="truncate text-xs leading-4 text-text-sub-500">{user?.email}</p>
+              <p className="truncate text-xs leading-4 text-white/60">{user?.email}</p>
             </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-white/40" />
           </>
         )}
       </button>
@@ -388,7 +389,7 @@ export function PortalSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 overflow-y-auto px-5 py-4">
         {!collapsed && (
-          <p className="mb-2 px-3 text-xs font-medium uppercase leading-4 tracking-[0.04em] text-text-soft-400">
+          <p className="mb-2 px-3 text-xs font-medium uppercase leading-4 tracking-[0.04em] text-white/45">
             Portal
           </p>
         )}
@@ -410,21 +411,25 @@ export function PortalSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 }
                 aria-label={item.badge === 'soon' ? `${item.label}, coming soon` : undefined}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900 transition-colors',
+                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-white/90 transition-colors',
                   collapsed && 'justify-center px-2',
-                  active ? 'bg-neutral-50' : 'hover:bg-neutral-50/60',
+                  active ? 'bg-[var(--sidebar-active)] text-white' : 'hover:bg-white/10',
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                <Icon
+                  className="h-4 w-4 shrink-0"
+                  strokeWidth={1.5}
+                  style={active ? undefined : { color: paletteColor(accentForHref(item.href)) }}
+                />
                 {!collapsed && (
                   <>
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
                     {item.badge === 'soon' ? (
-                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-sub-500)] ring-1 ring-inset ring-[var(--stroke-soft-200,#E2E4E9)]">
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/70 ring-1 ring-inset ring-white/20">
                         Soon
                       </span>
                     ) : null}
-                    {active && <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />}
+                    {active && <ChevronRight className="h-4 w-4 shrink-0 text-white/80" />}
                   </>
                 )}
               </Link>

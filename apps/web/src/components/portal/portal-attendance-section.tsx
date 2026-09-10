@@ -1,7 +1,7 @@
 'use client';
 
 import { ContentPanel } from '@/components/layout/content-panel';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
@@ -45,16 +45,16 @@ export function PortalAttendanceSection({
         title="Attendance mix"
         subtitle={subtitle}
         segments={[
-          { label: 'Present', rate: rates.presentRate, color: '#38C793' },
+          { label: 'Present', rate: rates.presentRate, color: 'var(--palette-teal)' },
           {
             label: 'Absent',
             rate: Math.round((rates.absent / Math.max(rates.present + rates.absent + rates.late + rates.other, 1)) * 100),
-            color: '#EF4444',
+            color: 'var(--palette-coral)',
           },
           {
             label: 'Late',
             rate: Math.round((rates.late / Math.max(rates.present + rates.absent + rates.late + rates.other, 1)) * 100),
-            color: '#F59E0B',
+            color: 'var(--palette-yellow)',
           },
         ]}
       />
@@ -77,7 +77,10 @@ export function PortalAttendanceSection({
                 </tr>
               ) : (
                 records.map((row, i) => (
-                  <tr key={`${row.date}-${i}`}>
+                  <tr
+                    key={`${row.date}-${i}`}
+                    className={statusRowClass(row.status?.code, row.status?.label ?? '')}
+                  >
                     <td className={dataTableTdClass}>{row.date}</td>
                     <td className={dataTableTdClass}>
                       <StatusBadge label={row.status?.label ?? '—'} code={row.status?.code} />

@@ -20,29 +20,45 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { BranchId, BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  createApplicantSchema,
   createContractSchema,
   updateContractSchema,
+  listApplicantsQuerySchema,
   listContractsQuerySchema,
   createReviewSchema,
   updateReviewSchema,
   listReviewsQuerySchema,
+  updateApplicantSchema,
+  createStaffTrainingSchema,
+  updateStaffTrainingSchema,
+  listStaffTrainingsQuerySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
+  CreateApplicantInput,
   CreateContractInput,
   UpdateContractInput,
+  ListApplicantsQuery,
   ListContractsQuery,
   CreateReviewInput,
   UpdateReviewInput,
   ListReviewsQuery,
+  UpdateApplicantInput,
+  CreateStaffTrainingInput,
+  UpdateStaffTrainingInput,
+  ListStaffTrainingsQuery,
 } from '@eims/shared';
+import { AcademicOpsService } from '../academic-ops/academic-ops.service';
 
 @ApiTags('hr')
 @ApiBearerAuth()
 @Controller('hr')
 @UseGuards(AuthGuard, BranchGuard, PermissionsGuard)
 export class HrController {
-  constructor(private readonly hrService: HrService) {}
+  constructor(
+    private readonly hrService: HrService,
+    private readonly academicOps: AcademicOpsService,
+  ) {}
 
   @Get('contracts')
   @Permissions('hr.read')
@@ -134,5 +150,85 @@ export class HrController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.hrService.removeReview(id, user, scope);
+  }
+
+  @Get('applicants')
+  @Permissions('hr.read')
+  findApplicants(
+    @Query(createZodPipe(listApplicantsQuerySchema)) query: ListApplicantsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.hrService.findApplicants(query, scope);
+  }
+
+  @Post('applicants')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('hr.manage')
+  createApplicant(
+    @Body(createZodPipe(createApplicantSchema)) body: CreateApplicantInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.hrService.createApplicant(body, user);
+  }
+
+  @Patch('applicants/:id')
+  @Permissions('hr.manage')
+  updateApplicant(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateApplicantSchema)) body: UpdateApplicantInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.hrService.updateApplicant(id, body, user, scope);
+  }
+
+  @Delete('applicants/:id')
+  @Permissions('hr.manage')
+  removeApplicant(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.hrService.removeApplicant(id, user, scope);
+  }
+
+  @Get('trainings')
+  @Permissions('hr.read')
+  findTrainings(
+    @Query(createZodPipe(listStaffTrainingsQuerySchema)) query: ListStaffTrainingsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.academicOps.listTrainings(query, scope);
+  }
+
+  @Post('trainings')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('hr.manage')
+  createTraining(
+    @Body(createZodPipe(createStaffTrainingSchema)) body: CreateStaffTrainingInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.academicOps.createTraining(body, user);
+  }
+
+  @Patch('trainings/:id')
+  @Permissions('hr.manage')
+  updateTraining(
+    @Param('id') id: string,
+    @Body(createZodPipe(updateStaffTrainingSchema)) body: UpdateStaffTrainingInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.academicOps.updateTraining(id, body, user, scope);
+  }
+
+  @Delete('trainings/:id')
+  @Permissions('hr.manage')
+  removeTraining(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.academicOps.removeTraining(id, user, scope);
   }
 }

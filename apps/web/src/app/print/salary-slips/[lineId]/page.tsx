@@ -8,6 +8,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { printQueryUiState } from '@/components/print/print-shell';
+import { formatPeriod, parsePayrollBreakdown } from '@/components/features/payroll/types';
 
 interface PrintData {
   line: {
@@ -19,8 +20,15 @@ interface PrintData {
     attendancePresentDays: number;
     attendanceAbsentDays: number;
     workingDays: number;
+    breakdown: unknown;
   };
-  run: { year: number; month: number; status: string };
+  run: {
+    year: number;
+    month: number;
+    status: string;
+    paidAt?: string | null;
+    paymentMethod?: string | null;
+  };
   employee: {
     fullName: string;
     staffCode: string;
@@ -33,23 +41,14 @@ interface PrintData {
     logoUrl: string | null;
     address: string | null;
   };
-  components: Array<{ kind: string; name: string; amount: number }>;
+  components: Array<{ kind: string; name: string; amount: number; group?: string }>;
+  fullBasicSalary?: number | null;
+  unpaidAbsentDays?: number | null;
+  paidLeaveDays?: number | null;
+  lwpAmount?: number | null;
+  adjustmentReason?: string | null;
+  attendanceNotMarked?: boolean;
 }
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 
 export default function PrintSalarySlipPage() {
   const { lineId } = useParams<{ lineId: string }>();
@@ -89,9 +88,27 @@ export default function PrintSalarySlipPage() {
     return <p className="p-8 text-center text-sm text-red-600">Unable to load salary slip</p>;
   }
 
-  const period = `${MONTH_NAMES[data.run.month - 1] ?? data.run.month} ${data.run.year}`;
-  const allowances = data.components.filter((c) => c.kind === 'allowance');
-  const deductions = data.components.filter((c) => c.kind === 'deduction');
+  const period = formatPeriod(data.run.year, data.run.month);
+  const breakdown = parsePayrollBreakdown(data.line.breakdown);
+  const components = data.components.length > 0 ? data.components : breakdown.components;
+  const allowances = components.filter((c) => c.kind === 'allowance');
+  const lwpItems = components.filter((c) => c.group === 'lwp' || c.name === 'Leave without pay');
+  const statutory = components.filter((c) =>
+    ['tax', 'eobi', 'provident_fund'].includes(c.kind),
+  );
+  const otherDeductions = components.filter(
+    (c) =>
+      c.kind === 'deduction' &&
+      c.group !== 'lwp' &&
+      c.name !== 'Leave without pay',
+  );
+  const lwpAmount = data.lwpAmount ?? breakdown.lwpAmount ?? lwpItems.reduce((s, c) => s + c.amount, 0);
+  const fullBasic = data.fullBasicSalary ?? breakdown.fullBasicSalary ?? data.line.basicSalary;
+  const attendanceNotMarked = data.attendanceNotMarked ?? breakdown.attendanceNotMarked;
+  const paidLeaveDays = data.paidLeaveDays ?? breakdown.paidLeaveDays ?? 0;
+  const unpaidAbsentDays = data.unpaidAbsentDays ?? breakdown.unpaidAbsentDays ?? data.line.attendanceAbsentDays;
+  const adjustmentReason = data.adjustmentReason ?? breakdown.adjustmentReason;
+  const gross = fullBasic + data.line.allowancesTotal;
 
   return (
     <>
@@ -139,8 +156,14 @@ export default function PrintSalarySlipPage() {
                 Salary slip
               </p>
               <p className="mt-1 text-base font-semibold text-[var(--midnight-blue-950,#01366C)]">
-                {period}
+                For the month of {period}
               </p>
+              {data.run.paidAt ? (
+                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-emerald-700">
+                  Paid
+                  {data.run.paymentMethod ? ` · ${data.run.paymentMethod}` : ''}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -164,8 +187,15 @@ export default function PrintSalarySlipPage() {
           </div>
 
           <div className="mt-6 rounded-[10px] bg-[#F8F8F8] px-4 py-3 text-sm">
-            Attendance: {data.line.attendancePresentDays} present / {data.line.workingDays} working
-            days ({data.line.attendanceAbsentDays} absent)
+            {attendanceNotMarked ? (
+              <>Attendance was not marked this month — full salary paid ({data.line.workingDays} working days)</>
+            ) : (
+              <>
+                Attendance: {data.line.attendancePresentDays} present / {data.line.workingDays}{' '}
+                working days · {unpaidAbsentDays} unpaid absence
+                {paidLeaveDays ? ` · ${paidLeaveDays} paid leave` : ''}
+              </>
+            )}
           </div>
 
           <div className="mt-6 space-y-4">
@@ -175,9 +205,7 @@ export default function PrintSalarySlipPage() {
                 <tbody>
                   <tr>
                     <td className="py-1 text-[var(--text-sub-500)]">Basic salary</td>
-                    <td className="py-1 text-right font-medium">
-                      {formatCurrency(data.line.basicSalary)}
-                    </td>
+                    <td className="py-1 text-right font-medium">{formatCurrency(fullBasic)}</td>
                   </tr>
                   {allowances.map((c) => (
                     <tr key={c.name}>
@@ -186,10 +214,8 @@ export default function PrintSalarySlipPage() {
                     </tr>
                   ))}
                   <tr className="border-t border-[var(--stroke-soft-200,#E2E4E9)]">
-                    <td className="py-2 font-medium">Total allowances</td>
-                    <td className="py-2 text-right font-medium">
-                      {formatCurrency(data.line.allowancesTotal)}
-                    </td>
+                    <td className="py-2 font-medium">Gross</td>
+                    <td className="py-2 text-right font-medium">{formatCurrency(gross)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -199,18 +225,38 @@ export default function PrintSalarySlipPage() {
               <p className="mb-2 text-sm font-medium text-[var(--text-main-900)]">Deductions</p>
               <table className="w-full text-sm">
                 <tbody>
-                  {deductions.length === 0 ? (
+                  {lwpAmount > 0 && (
+                    <tr>
+                      <td className="py-1 text-[var(--text-sub-500)]">Leave without pay</td>
+                      <td className="py-1 text-right">{formatCurrency(lwpAmount)}</td>
+                    </tr>
+                  )}
+                  {otherDeductions.map((c) => (
+                    <tr key={c.name}>
+                      <td className="py-1 text-[var(--text-sub-500)]">{c.name}</td>
+                      <td className="py-1 text-right">{formatCurrency(c.amount)}</td>
+                    </tr>
+                  ))}
+                  {statutory.length > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={2} className="pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-[var(--text-sub-500)]">
+                          Statutory
+                        </td>
+                      </tr>
+                      {statutory.map((c) => (
+                        <tr key={c.name}>
+                          <td className="py-1 text-[var(--text-sub-500)]">{c.name}</td>
+                          <td className="py-1 text-right">{formatCurrency(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
+                  {lwpAmount <= 0 && otherDeductions.length === 0 && statutory.length === 0 && (
                     <tr>
                       <td className="py-1 text-[var(--text-sub-500)]">—</td>
                       <td className="py-1 text-right">{formatCurrency(0)}</td>
                     </tr>
-                  ) : (
-                    deductions.map((c) => (
-                      <tr key={c.name}>
-                        <td className="py-1 text-[var(--text-sub-500)]">{c.name}</td>
-                        <td className="py-1 text-right">{formatCurrency(c.amount)}</td>
-                      </tr>
-                    ))
                   )}
                   <tr className="border-t border-[var(--stroke-soft-200,#E2E4E9)]">
                     <td className="py-2 font-medium">Total deductions</td>
@@ -224,7 +270,9 @@ export default function PrintSalarySlipPage() {
 
             {data.line.adjustmentsTotal !== 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-[var(--text-sub-500)]">Adjustments</span>
+                <span className="text-[var(--text-sub-500)]">
+                  Adjustments{adjustmentReason ? ` (${adjustmentReason})` : ''}
+                </span>
                 <span className="font-medium">{formatCurrency(data.line.adjustmentsTotal)}</span>
               </div>
             )}

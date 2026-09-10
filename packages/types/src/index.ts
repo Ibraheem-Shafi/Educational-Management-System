@@ -15,6 +15,7 @@ export * from './api/branches/detail.response';
 export * from './api/users/stats.response';
 export * from './api/users/list.response';
 export * from './api/users/detail.response';
+export * from './api/access/access.response';
 export * from './api/dashboard/stats.response';
 export * from './api/dashboard/today-attendance.response';
 export * from './api/dashboard/monthly-revenue.response';

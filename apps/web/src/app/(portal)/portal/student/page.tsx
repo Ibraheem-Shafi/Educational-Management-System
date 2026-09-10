@@ -119,9 +119,9 @@ export default function StudentPortalHomePage() {
               title="Attendance mix"
               subtitle="Last 30 days"
               segments={[
-                { label: 'Present', rate: rates.present, color: '#38C793' },
-                { label: 'Absent', rate: rates.absent, color: '#EF4444' },
-                { label: 'Late', rate: rates.late, color: '#F59E0B' },
+                { label: 'Present', rate: rates.present, color: 'var(--palette-teal)' },
+                { label: 'Absent', rate: rates.absent, color: 'var(--palette-coral)' },
+                { label: 'Late', rate: rates.late, color: 'var(--palette-yellow)' },
               ]}
             />
             <TrendAreaChart

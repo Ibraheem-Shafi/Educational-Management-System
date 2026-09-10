@@ -23,12 +23,18 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { UserAvatar } from '@/components/layout/user-avatar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { ContactIcon } from '@/components/layout/contact-icon';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+import {
+  dataTableClass,
+  dataTableTdClass,
+  dataTableThClass,
+  dataTableWrapperClass,
+} from '@/components/layout/data-table-styles';
 
 interface StudentRow {
   id: string;
@@ -67,10 +73,8 @@ function formatGender(gender: string | null): string {
   return gender.charAt(0).toUpperCase() + gender.slice(1);
 }
 
-const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
-const tdClass =
-  'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
+const thClass = dataTableThClass;
+const tdClass = dataTableTdClass;
 
 export default function StudentsPage() {
   const { session } = useAuth();
@@ -216,9 +220,9 @@ export default function StudentsPage() {
         <PageBranchScopeControl />
       </FilterBar>
 
-      <div className="bg-white">
+      <div className={dataTableWrapperClass}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] border-separate border-spacing-0">
+          <table className={dataTableClass}>
             <thead>
               <tr>
                 <th className={thClass}>Student ID</th>
@@ -268,7 +272,10 @@ export default function StudentsPage() {
                 data?.data.map((student) => (
                   <tr
                     key={student.id}
-                    className="transition-colors hover:bg-[var(--neutral-50)]/50"
+                    className={cn(
+                      'transition-colors',
+                      statusRowClass(student.status?.code, student.status?.label ?? ''),
+                    )}
                   >
                     <td className={cn(tdClass, 'whitespace-nowrap')}>
                       {formatStudentId(student)}

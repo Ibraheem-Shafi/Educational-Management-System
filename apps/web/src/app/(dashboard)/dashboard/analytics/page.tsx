@@ -19,10 +19,11 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
 import type { AnalyticsDashboardKpisResponse } from '@eims/types';
+import { metricRowClass } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -249,7 +250,7 @@ export default function AnalyticsPage() {
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
                         <td colSpan={2} className={tdClass}>
-                          <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                          <div className="h-4 w-full animate-pulse rounded bg-[var(--palette-teal-soft)]" />
                         </td>
                       </tr>
                     ))}
@@ -262,7 +263,7 @@ export default function AnalyticsPage() {
                   )}
                   {!performanceLoading &&
                     performanceRows.slice(0, 10).map((s, i) => (
-                      <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                      <tr key={i} className={metricRowClass(s.overallPercentage)}>
                         <td className={tdClass}>{s.fullName}</td>
                         <td className={cn(tdClass, 'text-right')}>{s.overallPercentage}%</td>
                       </tr>
@@ -299,7 +300,7 @@ export default function AnalyticsPage() {
                     Array.from({ length: 4 }).map((_, i) => (
                       <tr key={i}>
                         <td colSpan={3} className={tdClass}>
-                          <div className="h-4 w-full animate-pulse rounded bg-[var(--neutral-50)]" />
+                          <div className="h-4 w-full animate-pulse rounded bg-[var(--palette-teal-soft)]" />
                         </td>
                       </tr>
                     ))}
@@ -312,7 +313,7 @@ export default function AnalyticsPage() {
                   )}
                   {!weakLoading &&
                     weak?.alerts.map((a, i) => (
-                      <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                      <tr key={i} className={metricRowClass(a.averagePercentage)}>
                         <td className={tdClass}>{a.fullName}</td>
                         <td className={tdClass}>{a.subjectName}</td>
                         <td className={cn(tdClass, 'text-right text-red-600')}>{a.averagePercentage}%</td>
@@ -358,7 +359,7 @@ export default function AnalyticsPage() {
             {rankingsLoading && (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-16 animate-pulse rounded bg-[var(--neutral-50)]" />
+                  <div key={i} className="h-16 animate-pulse rounded bg-[var(--palette-navy-soft)]" />
                 ))}
               </div>
             )}
@@ -384,7 +385,7 @@ export default function AnalyticsPage() {
                       </thead>
                       <tbody className="[&>tr:last-child>td]:border-b-0">
                         {block.topStudents.slice(0, 5).map((s, i) => (
-                          <tr key={i} className="hover:bg-[var(--neutral-50)]/50">
+                          <tr key={i} className={metricRowClass(s.percentage)}>
                             <td className={tdClass}>#{s.rank}</td>
                             <td className={tdClass}>{s.fullName}</td>
                             <td className={cn(tdClass, 'text-right')}>{s.percentage ?? '—'}%</td>
