@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import { assertTeacherAssignedBatch } from '../../common/utils/teacher-assignment.util';
 import type {
   AuthUser,
   LearningResourceResponse,
@@ -91,11 +92,11 @@ export class LearningService implements OnModuleInit {
     if (!user.permissions.includes('learning.publish')) {
       throw new ForbiddenException('Missing learning.publish permission');
     }
-    // Teachers: allow any batch in their branch (v1); tighten via timetable later if needed
     if (!user.branchId) {
       throw new ForbiddenException('Teachers must be assigned to a branch to publish');
     }
     if (batchId) {
+      await assertTeacherAssignedBatch(this.prisma, user, batchId);
       const batch = await this.prisma.batch.findFirst({
         where: { id: batchId, branchId: user.branchId, deletedAt: null },
       });

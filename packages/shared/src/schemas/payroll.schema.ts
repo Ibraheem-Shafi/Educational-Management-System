@@ -8,13 +8,24 @@ import {
 import { refineEndAfterStart } from '../validation/date-range';
 import { paginationQuerySchema } from './common.schema';
 
-export const salaryComponentKinds = ['allowance', 'deduction'] as const;
+export const salaryComponentKinds = [
+  'allowance',
+  'deduction',
+  'tax',
+  'eobi',
+  'provident_fund',
+] as const;
 export const payrollRunStatuses = [
   'draft',
   'pending_approval',
   'approved',
   'finalized',
 ] as const;
+export const payrollPaymentMethods = ['cash', 'bank'] as const;
+export type SalaryComponentKind = (typeof salaryComponentKinds)[number];
+export type PayrollPaymentMethod = (typeof payrollPaymentMethods)[number];
+
+export const STATUTORY_COMPONENT_KINDS = ['tax', 'eobi', 'provident_fund'] as const;
 
 export const salaryComponentSchema = z.object({
   kind: z.enum(salaryComponentKinds, { errorMap: () => ({ message: MSG.select('component kind') }) }),
@@ -87,10 +98,22 @@ export const listPayrollRunsQuerySchema = z
     year: z.coerce.number().int().optional(),
     month: z.coerce.number().int().min(1).max(12).optional(),
     status: z.enum(payrollRunStatuses).optional(),
+    excludeFinalized: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
   })
   .merge(paginationQuerySchema);
 
 export type ListPayrollRunsQuery = z.infer<typeof listPayrollRunsQuerySchema>;
+
+export const markPayrollPaidSchema = z.object({
+  paymentMethod: z.enum(payrollPaymentMethods, {
+    errorMap: () => ({ message: MSG.select('payment method') }),
+  }),
+});
+
+export type MarkPayrollPaidInput = z.infer<typeof markPayrollPaidSchema>;
 
 export const exportPayrollRunQuerySchema = z.object({
   format: z.enum(['csv', 'json']).optional().default('csv'),

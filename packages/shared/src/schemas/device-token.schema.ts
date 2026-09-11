@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const DEVICE_PLATFORMS = ['android', 'ios'] as const;
-export const DEVICE_APP_ROLES = ['parent', 'student'] as const;
+export const DEVICE_APP_ROLES = ['parent', 'student', 'teacher'] as const;
 
 export const registerDeviceTokenSchema = z.object({
   token: z.string().min(1),

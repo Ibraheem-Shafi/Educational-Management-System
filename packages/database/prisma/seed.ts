@@ -208,24 +208,37 @@ async function main() {
       const permissionId = permissionMap.get(permCode);
       if (!permissionId) continue;
       allowedPermissionIds.add(permissionId);
-      await prisma.rolePermission.upsert({
-        where: {
-          roleId_permissionId: { roleId: role.id, permissionId },
-        },
-        create: { roleId: role.id, permissionId },
-        update: {},
-      });
     }
 
-    // Revoke permissions removed from DEFAULT_ROLE_PERMISSIONS for this role.
-    await prisma.rolePermission.deleteMany({
-      where: {
-        roleId: role.id,
-        ...(allowedPermissionIds.size > 0
-          ? { permissionId: { notIn: [...allowedPermissionIds] } }
-          : {}),
-      },
-    });
+    // Super Admin is always the full permission set. Other templates are
+    // seeded once, then left for the admin UI to edit.
+    if (code === 'super_admin') {
+      for (const permissionId of allowedPermissionIds) {
+        await prisma.rolePermission.upsert({
+          where: { roleId_permissionId: { roleId: role.id, permissionId } },
+          create: { roleId: role.id, permissionId },
+          update: {},
+        });
+      }
+      await prisma.rolePermission.deleteMany({
+        where: {
+          roleId: role.id,
+          ...(allowedPermissionIds.size > 0
+            ? { permissionId: { notIn: [...allowedPermissionIds] } }
+            : {}),
+        },
+      });
+      continue;
+    }
+
+    const existingCount = await prisma.rolePermission.count({ where: { roleId: role.id } });
+    if (existingCount > 0) continue;
+
+    for (const permissionId of allowedPermissionIds) {
+      await prisma.rolePermission.create({
+        data: { roleId: role.id, permissionId },
+      });
+    }
   }
 
   const branchMap = new Map<string, string>();

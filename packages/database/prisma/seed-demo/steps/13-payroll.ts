@@ -1,5 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
-import { configuredBranchCodes, staffEmail } from '../branch-helpers';
+import {
+  configuredBranchCodes,
+  staffEmail,
+  swcFinanceDummyBranchCodes,
+} from '../branch-helpers';
 import type { DemoContext } from '../types';
 
 export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
@@ -10,16 +14,30 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
   const currentYear = now.getFullYear();
   const effectiveFrom = new Date(Date.UTC(priorYear, priorMonth - 1, 1));
 
-  for (const branchCode of configuredBranchCodes(ctx)) {
-    const branchId = ctx.branchMap.get(branchCode)!;
-    const emails = [
-      staffEmail(branchCode, 'teacher'),
-      staffEmail(branchCode, 'accountant'),
-    ].filter((e): e is string => !!e && ctx.userIds.has(e));
+  const jobs: { branchCode: string; emails: { email: string; basic: number }[] }[] = [
+    ...configuredBranchCodes(ctx).map((branchCode) => ({
+      branchCode,
+      emails: [
+        { email: staffEmail(branchCode, 'teacher'), basic: 80000 },
+        { email: staffEmail(branchCode, 'accountant'), basic: 75000 },
+      ].filter((row): row is { email: string; basic: number } => !!row.email && ctx.userIds.has(row.email)),
+    })),
+    ...swcFinanceDummyBranchCodes(ctx).map((branchCode) => ({
+      branchCode,
+      emails: [
+        { email: staffEmail(branchCode, 'fee_collector'), basic: 75000 },
+        { email: staffEmail(branchCode, 'hr_finance'), basic: 85000 },
+      ].filter((row): row is { email: string; basic: number } => !!row.email && ctx.userIds.has(row.email)),
+    })),
+  ];
+
+  for (const { branchCode, emails } of jobs) {
+    const branchId = ctx.branchMap.get(branchCode);
+    if (!branchId || emails.length === 0) continue;
 
     const structures: { userId: string; basic: number }[] = [];
 
-    for (const email of emails) {
+    for (const { email, basic } of emails) {
       const userId = ctx.userIds.get(email);
       if (!userId) continue;
 
@@ -31,16 +49,21 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
           data: {
             userId,
             branchId,
-            basicSalary: email.includes('teacher') ? 80000 : 75000,
+            basicSalary: basic,
             effectiveFrom,
             isActive: true,
             components: {
               create: [
                 { kind: 'allowance', name: 'Transport', amount: 5000 },
-                { kind: 'deduction', name: 'Tax', amount: 2000 },
+                { kind: 'tax', name: 'Tax', amount: 2000 },
               ],
             },
           },
+        });
+      } else {
+        await prisma.salaryComponent.updateMany({
+          where: { structureId: structure.id, name: 'Tax', kind: 'deduction' },
+          data: { kind: 'tax' },
         });
       }
       structures.push({ userId, basic: Number(structure.basicSalary) });
@@ -62,8 +85,15 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
           month: priorMonth,
           status: 'finalized',
           finalizedAt: new Date(),
+          paidAt: new Date(),
+          paymentMethod: 'bank',
           notes: `Demo payroll run (${branchCode})`,
         },
+      });
+    } else if (!finalized.paidAt) {
+      finalized = await prisma.payrollRun.update({
+        where: { id: finalized.id },
+        data: { paidAt: finalized.finalizedAt ?? new Date(), paymentMethod: 'bank' },
       });
     }
 
@@ -88,14 +118,20 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
           attendanceAbsentDays: 2,
           workingDays: 22,
           breakdown: {
-            allowances: [{ name: 'Transport', amount: allowances }],
-            deductions: [{ name: 'Tax', amount: deductions }],
+            components: [
+              { kind: 'allowance', name: 'Transport', amount: allowances, percentOfBasic: null, group: 'allowance' },
+              { kind: 'tax', name: 'Tax', amount: deductions, percentOfBasic: null, group: 'statutory' },
+            ],
+            fullBasicSalary: s.basic,
+            unpaidAbsentDays: 2,
+            paidLeaveDays: 0,
+            lwpAmount: 0,
+            attendanceNotMarked: false,
           },
         },
       });
     }
 
-    // Current-month draft run so approve/submit can be demoed
     let draft = await prisma.payrollRun.findUnique({
       where: {
         branchId_year_month: { branchId, year: currentYear, month: currentMonth },
@@ -134,8 +170,15 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
           attendanceAbsentDays: 1,
           workingDays: 15,
           breakdown: {
-            allowances: [{ name: 'Transport', amount: allowances }],
-            deductions: [{ name: 'Tax', amount: deductions }],
+            components: [
+              { kind: 'allowance', name: 'Transport', amount: allowances, percentOfBasic: null, group: 'allowance' },
+              { kind: 'tax', name: 'Tax', amount: deductions, percentOfBasic: null, group: 'statutory' },
+            ],
+            fullBasicSalary: s.basic,
+            unpaidAbsentDays: 1,
+            paidLeaveDays: 0,
+            lwpAmount: 0,
+            attendanceNotMarked: false,
           },
         },
       });

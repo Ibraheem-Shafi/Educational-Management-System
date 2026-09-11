@@ -34,8 +34,10 @@ function isDropdownLayerTarget(target: EventTarget | null) {
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    tone?: 'default' | 'destructive';
+  }
+>(({ className, children, tone = 'default', onPointerDownOutside, onInteractOutside, onFocusOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -60,6 +62,13 @@ const DialogContent = React.forwardRef<
       }}
       {...props}
     >
+      <div
+        aria-hidden
+        className={cn(
+          'h-1 w-full shrink-0 -mb-4',
+          tone === 'destructive' ? 'bg-[var(--palette-coral)]' : 'bg-[var(--palette-teal)]',
+        )}
+      />
       {children}
     </DialogPrimitive.Content>
   </DialogPortal>

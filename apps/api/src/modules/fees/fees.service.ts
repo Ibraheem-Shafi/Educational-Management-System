@@ -32,8 +32,17 @@ import type {
   CreateFeeChallanInput,
   UpdateFeeInvoiceInput,
   UpdateFeeChallanInput,
+  IncrementFeeRatesInput,
+  UpdateStudentFeePolicyInput,
 } from '@eims/shared';
 import { DEFAULT_PRINT_TEMPLATE_FIELDS, DEFAULT_PRINT_TEMPLATE_NAMES } from '@eims/shared';
+import {
+  applyFeeIncrement,
+  billingPeriodFromDate,
+  currentBillingPeriod,
+  formatMonthlyVoucherNo,
+  parseCalendarDate,
+} from './fee-ops.util';
 
 const STATS_CACHE_TTL_MS = 45_000;
 
@@ -488,7 +497,17 @@ export class FeesService {
     const [student, feeType, pendingStatus] = await Promise.all([
       this.prisma.student.findFirst({
         where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
-        select: { id: true, monthlyFeeDiscount: true },
+        select: {
+          id: true,
+          admissionNumber: true,
+          rollNumber: true,
+          monthlyFeeDiscount: true,
+          monthlyFeeAmount: true,
+          monthlyFeeWaived: true,
+          annualChargeMode: true,
+          annualDeferredUntil: true,
+          annualInstallmentCount: true,
+        },
       }),
       this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } }),
       this.prisma.lookupStatus.findFirst({
@@ -513,8 +532,24 @@ export class FeesService {
       monthlyRecurring,
       existingRemarks: input.remarks,
     });
-    const fine = input.fine ?? 0;
-    const netAmount = input.amount - discount + fine;
+    const waivedMonthly = feeType.code === 'monthly' && student.monthlyFeeWaived;
+    const fine = waivedMonthly ? 0 : (input.fine ?? 0);
+    const effectiveDiscount = waivedMonthly ? input.amount : discount;
+    const netAmount = this.roundMoney(input.amount - effectiveDiscount + fine);
+    const waivedStatus = waivedMonthly
+      ? await this.prisma.lookupStatus.findFirst({
+          where: { code: 'waived', category: { code: 'fee_status' } },
+        })
+      : null;
+
+    const billingPeriod = input.billingPeriod ?? currentBillingPeriod();
+    const voucherNo =
+      input.voucherNo ??
+      (await this.allocateMonthlyVoucherNo({
+        branchId: input.branchId,
+        studentId: input.studentId,
+        billingPeriod,
+      }));
 
     const invoiceNo = await this.nextDocumentNumber(input.branchId, 'INV');
     const invoice = await this.prisma.feeInvoice.create({
@@ -523,15 +558,17 @@ export class FeesService {
         studentId: input.studentId,
         feeTypeId: input.feeTypeId,
         invoiceNo,
-        billingPeriod: input.billingPeriod ?? null,
-        voucherNo: input.voucherNo ?? null,
+        billingPeriod,
+        voucherNo,
         amount: input.amount,
-        discount,
+        discount: effectiveDiscount,
         fine,
         netAmount,
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
-        statusId: pendingStatus.id,
-        remarks,
+        statusId: waivedMonthly && waivedStatus ? waivedStatus.id : pendingStatus.id,
+        remarks: waivedMonthly
+          ? [remarks, 'Monthly fee waived'].filter(Boolean).join(' · ')
+          : remarks,
         createdById: user.id,
       },
       include: { student: { select: { id: true, fullName: true } } },
@@ -816,7 +853,7 @@ export class FeesService {
       throw new BadRequestException(`Payment amount exceeds remaining balance (${remaining})`);
     }
 
-    const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
+    const paidAt = input.paidAt ? parseCalendarDate(input.paidAt) : new Date();
     const status = options?.status ?? 'succeeded';
     const receiptNo = await this.nextDocumentNumber(invoice.branchId, 'RCP');
     const providerRef =
@@ -898,6 +935,24 @@ export class FeesService {
     const paidTotal = this.getPaidAmount(invoice);
     const netAmount = this.roundMoney(Number(invoice.netAmount));
     const statusCodes = await this.getFeeStatusMap();
+    const currentStatus = await this.prisma.lookupStatus.findUnique({
+      where: { id: invoice.statusId },
+      select: { code: true },
+    });
+
+    if (currentStatus?.code === 'waived') {
+      const latestPayment = invoice.payments
+        .filter((p) => p.paidAt)
+        .sort((a, b) => (b.paidAt!.getTime() - a.paidAt!.getTime()))[0];
+      return this.prisma.feeInvoice.update({
+        where: { id: invoiceId },
+        data: { statusId: invoice.statusId, paidAt: latestPayment?.paidAt ?? null },
+        include: {
+          student: { select: { id: true, fullName: true } },
+          payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+        },
+      });
+    }
 
     let statusCode: string;
     let paidAt: Date | null = null;
@@ -936,6 +991,585 @@ export class FeesService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return this.getRemainingAmount(invoice);
+  }
+
+  private async allocateMonthlyVoucherNo(opts: {
+    branchId: string;
+    studentId: string;
+    billingPeriod: string | null;
+  }): Promise<string | null> {
+    if (!opts.billingPeriod) return null;
+
+    const existingInvoice = await this.prisma.feeInvoice.findFirst({
+      where: {
+        branchId: opts.branchId,
+        studentId: opts.studentId,
+        billingPeriod: opts.billingPeriod,
+        voucherNo: { not: null },
+      },
+      select: { voucherNo: true },
+    });
+    if (existingInvoice?.voucherNo) return existingInvoice.voucherNo;
+
+    const existingChallan = await this.prisma.feeChallan.findUnique({
+      where: {
+        branchId_studentId_billingPeriod: {
+          branchId: opts.branchId,
+          studentId: opts.studentId,
+          billingPeriod: opts.billingPeriod,
+        },
+      },
+      select: { challanNo: true },
+    });
+    if (existingChallan?.challanNo) return existingChallan.challanNo;
+
+    const [branch, student] = await Promise.all([
+      this.prisma.branch.findUnique({
+        where: { id: opts.branchId },
+        select: { code: true },
+      }),
+      this.prisma.student.findUnique({
+        where: { id: opts.studentId },
+        select: { admissionNumber: true, rollNumber: true },
+      }),
+    ]);
+
+    return formatMonthlyVoucherNo({
+      branchCode: branch?.code ?? 'BR',
+      admissionNumber: student?.admissionNumber ?? null,
+      rollNumber: student?.rollNumber ?? null,
+      studentId: opts.studentId,
+      billingPeriod: opts.billingPeriod,
+    });
+  }
+
+  private async resolveGenerateAmount(opts: {
+    student: {
+      id: string;
+      monthlyFeeAmount: { toString(): string } | number | null;
+      monthlyFeeWaived: boolean;
+      annualChargeMode: string;
+      annualDeferredUntil: Date | null;
+      annualInstallmentCount: number;
+    };
+    feeType: { id: string; code: string };
+    requestedAmount: number;
+    billingPeriod: string;
+  }): Promise<{ amount: number; skip: boolean; waived: boolean; reason?: string }> {
+    if (opts.feeType.code === 'monthly') {
+      const listed =
+        opts.student.monthlyFeeAmount != null
+          ? this.roundMoney(Number(opts.student.monthlyFeeAmount))
+          : opts.requestedAmount;
+      if (opts.student.monthlyFeeWaived) {
+        return { amount: listed, skip: false, waived: true, reason: 'Monthly fee waived' };
+      }
+      return { amount: listed, skip: false, waived: false };
+    }
+
+    if (opts.feeType.code !== 'annual') {
+      return { amount: opts.requestedAmount, skip: false, waived: false };
+    }
+
+    const mode = opts.student.annualChargeMode || 'full';
+    if (mode === 'waived') {
+      await this.waiveUnpaidAnnualInvoices(opts.student.id, opts.feeType.id);
+      return { amount: 0, skip: true, waived: true, reason: 'Annual charges waived' };
+    }
+    if (mode === 'deferred' && opts.student.annualDeferredUntil) {
+      const until = opts.student.annualDeferredUntil;
+      if (new Date() < until) {
+        return {
+          amount: 0,
+          skip: true,
+          waived: false,
+          reason: `Annual charges deferred until ${until.toISOString().slice(0, 10)}`,
+        };
+      }
+    }
+    if (mode === 'installments') {
+      const slice = await this.annualInstallmentAmount(
+        opts.student.id,
+        opts.feeType.id,
+        opts.requestedAmount,
+        opts.billingPeriod,
+        opts.student.annualInstallmentCount || 12,
+      );
+      if (slice <= 0) {
+        return { amount: 0, skip: true, waived: false, reason: 'Annual charges already billed this session' };
+      }
+      return { amount: slice, skip: false, waived: false };
+    }
+    return { amount: opts.requestedAmount, skip: false, waived: false };
+  }
+
+  private async annualInstallmentAmount(
+    studentId: string,
+    feeTypeId: string,
+    annualAmount: number,
+    billingPeriod: string,
+    installmentCount: number,
+  ): Promise<number> {
+    const sessionLabel = this.sessionLabelFromPeriod(billingPeriod);
+    const periods = this.sessionPeriods(sessionLabel);
+    const billed = await this.prisma.feeInvoice.aggregate({
+      where: {
+        studentId,
+        feeTypeId,
+        billingPeriod: { in: periods },
+      },
+      _sum: { amount: true },
+    });
+    const billedSoFar = this.roundMoney(Number(billed._sum.amount ?? 0));
+    const remaining = this.roundMoney(annualAmount - billedSoFar);
+    if (remaining <= 0) return 0;
+    const n = Math.max(1, installmentCount);
+    const slice = this.roundMoney(annualAmount / n);
+    return Math.min(slice, remaining);
+  }
+
+  private async waiveUnpaidAnnualInvoices(studentId: string, feeTypeId: string) {
+    const waivedStatus = await this.prisma.lookupStatus.findFirst({
+      where: { code: 'waived', category: { code: 'fee_status' } },
+    });
+    if (!waivedStatus) return;
+    const invoices = await this.prisma.feeInvoice.findMany({
+      where: { studentId, feeTypeId },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
+    });
+    for (const invoice of invoices) {
+      if (invoice.statusId === waivedStatus.id) continue;
+      const paid = this.getPaidAmount(invoice);
+      if (paid > 0 && paid >= this.roundMoney(Number(invoice.netAmount))) continue;
+      const amount = this.roundMoney(Number(invoice.amount));
+      await this.prisma.feeInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          discount: this.roundMoney(amount - paid),
+          fine: 0,
+          netAmount: paid,
+          statusId: waivedStatus.id,
+          paidAt: null,
+        },
+      });
+    }
+  }
+
+  async incrementFeeRates(
+    input: IncrementFeeRatesInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
+    if (!feeType) throw new BadRequestException('Invalid fee type');
+    if (input.scope === 'all_campuses' && scope.kind !== 'all') {
+      throw new BadRequestException('All campuses increment requires institution-wide access');
+    }
+
+    const { structureIds, studentIds } = await this.resolveIncrementTargets(input, scope);
+    const dryRun = input.dryRun !== false;
+
+    const structures = structureIds.length
+      ? await this.prisma.feeStructure.findMany({ where: { id: { in: structureIds } } })
+      : [];
+    const overrideStudents =
+      feeType.code === 'monthly' && studentIds.length
+        ? await this.prisma.student.findMany({
+            where: {
+              id: { in: studentIds },
+              deletedAt: null,
+              monthlyFeeAmount: { not: null },
+            },
+            select: { id: true, fullName: true, monthlyFeeAmount: true },
+          })
+        : [];
+
+    const structureChanges = structures.map((row) => {
+      const from = this.roundMoney(Number(row.amount));
+      return { id: row.id, from, to: applyFeeIncrement(from, input.mode, input.value) };
+    });
+    const overrideChanges = overrideStudents.map((row) => {
+      const from = this.roundMoney(Number(row.monthlyFeeAmount));
+      return {
+        id: row.id,
+        name: row.fullName,
+        from,
+        to: applyFeeIncrement(from, input.mode, input.value),
+      };
+    });
+
+    let oneStudentOverride: { id: string; from: number; to: number } | null = null;
+    if (input.scope === 'student' && input.studentId && feeType.code === 'monthly') {
+      const student = await this.prisma.student.findFirst({
+        where: { id: input.studentId, deletedAt: null, ...prismaBranchFilter(scope) },
+        select: { id: true, monthlyFeeAmount: true, programId: true, batchId: true, branchId: true },
+      });
+      if (!student) throw new NotFoundException('Student not found');
+      const structuresForStudent = await this.loadFeeStructuresForBulk({
+        branchId: student.branchId,
+        feeTypeId: feeType.id,
+      });
+      const matched = this.matchFeeStructureForStudent(structuresForStudent, student);
+      const current =
+        student.monthlyFeeAmount != null
+          ? this.roundMoney(Number(student.monthlyFeeAmount))
+          : matched
+            ? this.roundMoney(Number(matched.amount))
+            : 0;
+      oneStudentOverride = {
+        id: student.id,
+        from: current,
+        to: applyFeeIncrement(current, input.mode, input.value),
+      };
+    }
+
+    const unpaidStatuses = await this.prisma.lookupStatus.findMany({
+      where: {
+        category: { code: 'fee_status' },
+        code: { in: ['pending', 'partial', 'overdue'] },
+      },
+      select: { id: true },
+    });
+    const unpaidStatusIds = unpaidStatuses.map((s) => s.id);
+    const invoices =
+      studentIds.length && unpaidStatusIds.length
+        ? await this.prisma.feeInvoice.findMany({
+            where: {
+              studentId: { in: studentIds },
+              feeTypeId: feeType.id,
+              statusId: { in: unpaidStatusIds },
+              OR: [
+                { billingPeriod: { gte: input.effectiveFrom } },
+                { billingPeriod: null, dueDate: { gte: new Date(`${input.effectiveFrom}-01T00:00:00.000Z`) } },
+              ],
+            },
+            include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
+          })
+        : [];
+
+    const invoiceChanges: Array<{ id: string; from: number; to: number }> = [];
+    for (const invoice of invoices) {
+      const from = this.roundMoney(Number(invoice.amount));
+      const to = applyFeeIncrement(from, input.mode, input.value);
+      const discount = this.roundMoney(Number(invoice.discount));
+      const fine = this.roundMoney(Number(invoice.fine));
+      const netAmount = this.roundMoney(to - Math.min(discount, to) + fine);
+      const paid = this.getPaidAmount(invoice);
+      if (netAmount < paid) continue;
+      invoiceChanges.push({ id: invoice.id, from, to });
+    }
+
+    const summary = {
+      dryRun,
+      feeType: { id: feeType.id, name: feeType.name, code: feeType.code },
+      structures: structureChanges.length,
+      studentOverrides: overrideChanges.length + (oneStudentOverride ? 1 : 0),
+      unpaidInvoices: invoiceChanges.length,
+      samples: {
+        structures: structureChanges.slice(0, 5),
+        invoices: invoiceChanges.slice(0, 5),
+        overrides: oneStudentOverride
+          ? [oneStudentOverride]
+          : overrideChanges.slice(0, 5),
+      },
+    };
+
+    if (dryRun) return summary;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const change of structureChanges) {
+        await tx.feeStructure.update({ where: { id: change.id }, data: { amount: change.to } });
+      }
+      for (const change of overrideChanges) {
+        await tx.student.update({
+          where: { id: change.id },
+          data: { monthlyFeeAmount: change.to },
+        });
+      }
+      if (oneStudentOverride) {
+        await tx.student.update({
+          where: { id: oneStudentOverride.id },
+          data: { monthlyFeeAmount: oneStudentOverride.to },
+        });
+      }
+      for (const change of invoiceChanges) {
+        const invoice = invoices.find((row) => row.id === change.id);
+        if (!invoice) continue;
+        const discount = Math.min(this.roundMoney(Number(invoice.discount)), change.to);
+        const fine = this.roundMoney(Number(invoice.fine));
+        const netAmount = this.roundMoney(change.to - discount + fine);
+        await tx.feeInvoice.update({
+          where: { id: change.id },
+          data: { amount: change.to, discount, netAmount },
+        });
+      }
+    });
+
+    for (const change of invoiceChanges) {
+      await this.syncInvoiceAfterPayment(change.id);
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_rates.incremented',
+      entityType: 'FeeStructure',
+      entityId: input.feeTypeId,
+      newValue: { ...summary, dryRun: false, input },
+    });
+
+    return { ...summary, dryRun: false };
+  }
+
+  private async resolveIncrementTargets(
+    input: IncrementFeeRatesInput,
+    scope: BranchScope,
+  ): Promise<{ structureIds: string[]; studentIds: string[] }> {
+    const branchFilter = prismaBranchFilter(
+      input.scope === 'all_campuses' ? { kind: 'all' } : scope,
+    );
+
+    if (input.scope === 'student' && input.studentId) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: input.studentId, deletedAt: null, ...prismaBranchFilter(scope) },
+        select: { id: true },
+      });
+      if (!student) throw new NotFoundException('Student not found');
+      return { structureIds: [], studentIds: [student.id] };
+    }
+
+    let programIds: string[] | undefined;
+    if (input.scope === 'program' && input.programId) {
+      const program = await this.prisma.program.findFirst({
+        where: { id: input.programId, deletedAt: null },
+        select: { id: true, name: true, code: true, branchId: true },
+      });
+      if (!program) throw new NotFoundException('Program not found');
+      programIds = [program.id];
+    }
+
+    const structureWhere = {
+      feeTypeId: input.feeTypeId,
+      isActive: true,
+      ...branchFilter,
+      ...(input.scope === 'batch' && input.batchId ? { batchId: input.batchId } : {}),
+      ...(programIds ? { programId: { in: programIds } } : {}),
+      ...(input.scope === 'branch' && input.branchId ? { branchId: input.branchId } : {}),
+    };
+
+    const structures = await this.prisma.feeStructure.findMany({
+      where: structureWhere,
+      select: { id: true, branchId: true, batchId: true, programId: true },
+    });
+
+    const students = await this.prisma.student.findMany({
+      where: {
+        deletedAt: null,
+        ...branchFilter,
+        ...(input.scope === 'batch' && input.batchId ? { batchId: input.batchId } : {}),
+        ...(programIds ? { programId: { in: programIds } } : {}),
+        ...(input.scope === 'branch' && input.branchId ? { branchId: input.branchId } : {}),
+      },
+      select: { id: true },
+    });
+
+    return {
+      structureIds: structures.map((s) => s.id),
+      studentIds: students.map((s) => s.id),
+    };
+  }
+
+  async waiveInvoice(id: string, user: AuthUser, scope: BranchScope) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    const current = await this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } });
+    if (current?.code === 'waived') throw new BadRequestException('Invoice is already waived');
+    if (current?.code === 'paid') throw new BadRequestException('Cannot waive a paid invoice');
+
+    const waivedStatus = await this.prisma.lookupStatus.findFirst({
+      where: { code: 'waived', category: { code: 'fee_status' } },
+    });
+    if (!waivedStatus) throw new BadRequestException('Fee status lookup not configured: waived');
+
+    const paid = this.getPaidAmount(invoice);
+    const amount = this.roundMoney(Number(invoice.amount));
+    const discount = this.roundMoney(amount - paid);
+    await this.prisma.feeInvoice.update({
+      where: { id },
+      data: {
+        discount,
+        fine: 0,
+        netAmount: paid,
+        statusId: waivedStatus.id,
+        paidAt: null,
+      },
+    });
+    const updated = await this.syncInvoiceAfterPayment(id);
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_invoice.waived',
+      entityType: 'FeeInvoice',
+      entityId: id,
+      previousValue: invoice,
+      newValue: updated,
+    });
+    const [feeType, status] = await Promise.all([
+      this.prisma.feeType.findUnique({ where: { id: updated.feeTypeId } }),
+      this.prisma.lookupStatus.findUnique({ where: { id: updated.statusId } }),
+    ]);
+    return {
+      ...this.toResponse(
+        updated,
+        feeType ? new Map([[feeType.id, feeType]]) : new Map(),
+        status ? new Map([[status.id, status]]) : new Map(),
+      ),
+      ...this.paymentSummary(updated),
+    };
+  }
+
+  async unwaiveInvoice(id: string, user: AuthUser, scope: BranchScope) {
+    const invoice = await this.prisma.feeInvoice.findFirst({
+      where: { id, ...prismaBranchFilter(scope) },
+      include: {
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+        student: { select: { monthlyFeeDiscount: true } },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    const current = await this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } });
+    if (current?.code !== 'waived') throw new BadRequestException('Invoice is not waived');
+    if (this.getPaidAmount(invoice) > 0) {
+      throw new BadRequestException('Cannot unwaive an invoice that already has payments');
+    }
+
+    const pendingStatus = await this.prisma.lookupStatus.findFirst({
+      where: { code: 'pending', category: { code: 'fee_status' } },
+    });
+    if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
+    const feeType = await this.prisma.feeType.findUnique({ where: { id: invoice.feeTypeId } });
+    const amount = this.roundMoney(Number(invoice.amount));
+    const discount =
+      feeType?.code === 'monthly'
+        ? Math.min(amount, this.roundMoney(Number(invoice.student.monthlyFeeDiscount)))
+        : 0;
+    const netAmount = this.roundMoney(amount - discount);
+    await this.prisma.feeInvoice.update({
+      where: { id },
+      data: {
+        discount,
+        fine: 0,
+        netAmount,
+        statusId: pendingStatus.id,
+        paidAt: null,
+      },
+    });
+    const updated = await this.syncInvoiceAfterPayment(id);
+    await this.audit.log({
+      userId: user.id,
+      action: 'fee_invoice.unwaived',
+      entityType: 'FeeInvoice',
+      entityId: id,
+      newValue: updated,
+    });
+    const status = await this.prisma.lookupStatus.findUnique({ where: { id: updated.statusId } });
+    return {
+      ...this.toResponse(
+        updated,
+        feeType ? new Map([[feeType.id, feeType]]) : new Map(),
+        status ? new Map([[status.id, status]]) : new Map(),
+      ),
+      ...this.paymentSummary(updated),
+    };
+  }
+
+  async updateStudentFeePolicy(
+    studentId: string,
+    input: UpdateStudentFeePolicyInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+    if (input.annualChargeMode === 'deferred' && !input.annualDeferredUntil) {
+      throw new BadRequestException('Defer until date is required');
+    }
+
+    const updated = await this.prisma.student.update({
+      where: { id: studentId },
+      data: {
+        ...(input.monthlyFeeDiscount !== undefined
+          ? { monthlyFeeDiscount: input.monthlyFeeDiscount }
+          : {}),
+        ...(input.monthlyFeeAmount !== undefined
+          ? { monthlyFeeAmount: input.monthlyFeeAmount }
+          : {}),
+        ...(input.monthlyFeeWaived !== undefined
+          ? { monthlyFeeWaived: input.monthlyFeeWaived }
+          : {}),
+        ...(input.annualChargeMode !== undefined
+          ? { annualChargeMode: input.annualChargeMode }
+          : {}),
+        ...(input.annualDeferredUntil !== undefined
+          ? {
+              annualDeferredUntil: input.annualDeferredUntil
+                ? parseCalendarDate(input.annualDeferredUntil)
+                : null,
+            }
+          : {}),
+        ...(input.annualInstallmentCount !== undefined
+          ? { annualInstallmentCount: input.annualInstallmentCount }
+          : {}),
+      },
+    });
+
+    if (input.monthlyFeeDiscount !== undefined) {
+      const monthlyType = await this.prisma.feeType.findUnique({ where: { code: 'monthly' } });
+      if (monthlyType) {
+        const latest = await this.prisma.feeInvoice.findFirst({
+          where: { studentId, feeTypeId: monthlyType.id, billingPeriod: { not: null } },
+          orderBy: { billingPeriod: 'desc' },
+        });
+        if (latest) {
+          await this.cascadeDiscountToFutureInvoices({
+            sourceInvoiceId: latest.id,
+            studentId,
+            feeTypeId: monthlyType.id,
+            billingPeriod: latest.billingPeriod,
+            dueDate: latest.dueDate,
+            discount: this.roundMoney(input.monthlyFeeDiscount),
+            scope,
+          });
+        }
+      }
+    }
+
+    if (input.annualChargeMode === 'waived') {
+      const annualType = await this.prisma.feeType.findUnique({ where: { code: 'annual' } });
+      if (annualType) await this.waiveUnpaidAnnualInvoices(studentId, annualType.id);
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'student.fee_policy.updated',
+      entityType: 'Student',
+      entityId: studentId,
+      previousValue: student,
+      newValue: updated,
+    });
+
+    return {
+      id: updated.id,
+      monthlyFeeDiscount: Number(updated.monthlyFeeDiscount),
+      monthlyFeeAmount: updated.monthlyFeeAmount != null ? Number(updated.monthlyFeeAmount) : null,
+      monthlyFeeWaived: updated.monthlyFeeWaived,
+      annualChargeMode: updated.annualChargeMode,
+      annualDeferredUntil: updated.annualDeferredUntil?.toISOString() ?? null,
+      annualInstallmentCount: updated.annualInstallmentCount,
+    };
   }
 
   private roundMoney(value: number): number {
@@ -1135,6 +1769,12 @@ export class FeesService {
         fullName: true,
         programId: true,
         batchId: true,
+        monthlyFeeDiscount: true,
+        monthlyFeeAmount: true,
+        monthlyFeeWaived: true,
+        annualChargeMode: true,
+        annualDeferredUntil: true,
+        annualInstallmentCount: true,
         program: { select: { id: true, name: true } },
         batch: { select: { id: true, name: true } },
       },
@@ -1157,9 +1797,11 @@ export class FeesService {
         feeStructureId: input.feeStructureId,
       });
       const structureAmount = structure ? this.roundMoney(Number(structure.amount)) : null;
-      // Explicit override fills missing structures; does not replace matched rates.
-      const suggestedAmount =
-        structureAmount ?? overrideAmount;
+      const listedAmount =
+        feeType.code === 'monthly' && student.monthlyFeeAmount != null
+          ? this.roundMoney(Number(student.monthlyFeeAmount))
+          : structureAmount;
+      const suggestedAmount = listedAmount ?? overrideAmount;
 
       return {
         studentId: student.id,
@@ -1172,6 +1814,8 @@ export class FeesService {
         defaultAmount: suggestedAmount,
         suggestedAmount,
         dueDayOfMonth: structure?.dueDayOfMonth ?? null,
+        monthlyFeeWaived: student.monthlyFeeWaived,
+        annualChargeMode: student.annualChargeMode,
       };
     });
 
@@ -1211,7 +1855,17 @@ export class FeesService {
 
     const students = await this.prisma.student.findMany({
       where: { branchId: input.branchId, batchId: input.batchId, deletedAt: null },
-      select: { id: true, programId: true, batchId: true, monthlyFeeDiscount: true },
+      select: {
+        id: true,
+        programId: true,
+        batchId: true,
+        monthlyFeeDiscount: true,
+        monthlyFeeAmount: true,
+        monthlyFeeWaived: true,
+        annualChargeMode: true,
+        annualDeferredUntil: true,
+        annualInstallmentCount: true,
+      },
     });
     if (students.length === 0) throw new BadRequestException('No students in batch');
 
@@ -1219,9 +1873,12 @@ export class FeesService {
       throw new BadRequestException('Fee type or fee structures are required');
     }
 
-    const [pendingStatus, siblingInfo, branch, structures] = await Promise.all([
+    const [pendingStatus, waivedStatus, siblingInfo, branch, structures] = await Promise.all([
       this.prisma.lookupStatus.findFirst({
         where: { code: 'pending', category: { code: 'fee_status' } },
+      }),
+      this.prisma.lookupStatus.findFirst({
+        where: { code: 'waived', category: { code: 'fee_status' } },
       }),
       this.loadSiblingDiscountContext(students.map((s) => s.id)),
       this.prisma.branch.findUnique({
@@ -1263,6 +1920,8 @@ export class FeesService {
       studentId: string;
       feeTypeId: string;
       invoiceNo: string;
+      billingPeriod: string | null;
+      voucherNo: string | null;
       amount: number;
       discount: number;
       fine: number;
@@ -1272,6 +1931,8 @@ export class FeesService {
       remarks: string | null;
       createdById: string;
     };
+
+    const billingPeriod = input.billingPeriod ?? billingPeriodFromDate(dueDate);
 
     const draft: Omit<Row, 'invoiceNo'>[] = [];
     for (const student of students) {
@@ -1286,33 +1947,57 @@ export class FeesService {
           })();
 
       for (const structure of matched) {
-        const amount = this.roundMoney(Number(structure.amount));
-        const siblingDiscount = siblingInfo.eligibleIds.has(student.id)
-          ? Math.round((amount * siblingInfo.percent) / 100)
-          : 0;
-        const monthlyRecurring = this.monthlyFeeDiscountForType(
-          feeTypeCodeById.get(structure.feeTypeId),
-          Number(student.monthlyFeeDiscount),
-          amount,
-        );
+        const listedAmount = this.roundMoney(Number(structure.amount));
+        const charge = await this.resolveGenerateAmount({
+          student,
+          feeType: {
+            id: structure.feeTypeId,
+            code: feeTypeCodeById.get(structure.feeTypeId) ?? '',
+          },
+          requestedAmount: listedAmount,
+          billingPeriod,
+        });
+        if (charge.skip) continue;
+        const amount = charge.amount;
+        const siblingDiscount = charge.waived
+          ? 0
+          : siblingInfo.eligibleIds.has(student.id)
+            ? Math.round((amount * siblingInfo.percent) / 100)
+            : 0;
+        const monthlyRecurring = charge.waived
+          ? 0
+          : this.monthlyFeeDiscountForType(
+              feeTypeCodeById.get(structure.feeTypeId),
+              Number(student.monthlyFeeDiscount),
+              amount,
+            );
         const { discount, remarks } = this.composeInvoiceDiscount({
           amount,
           siblingDiscount,
           monthlyRecurring,
         });
+        const effectiveDiscount = charge.waived ? amount : discount;
         draft.push({
           branchId: input.branchId,
           studentId: student.id,
           feeTypeId: structure.feeTypeId,
+          billingPeriod,
+          voucherNo: await this.allocateMonthlyVoucherNo({
+            branchId: input.branchId,
+            studentId: student.id,
+            billingPeriod,
+          }),
           amount,
-          discount,
+          discount: effectiveDiscount,
           fine: 0,
-          netAmount: this.roundMoney(amount - discount),
+          netAmount: this.roundMoney(amount - effectiveDiscount),
           dueDate: structure.dueDayOfMonth
             ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
             : dueDate,
-          statusId: pendingStatus.id,
-          remarks,
+          statusId: charge.waived && waivedStatus ? waivedStatus.id : pendingStatus.id,
+          remarks: charge.waived
+            ? [remarks, charge.reason].filter(Boolean).join(' · ')
+            : remarks,
           createdById: user.id,
         });
       }
@@ -1356,7 +2041,7 @@ export class FeesService {
 
     const studentIds = selectedLines.map((l) => l.studentId);
 
-    const [scopeStudents, pendingStatus, structures, siblingInfo, branch] = await Promise.all([
+    const [scopeStudents, pendingStatus, waivedStatus, structures, siblingInfo, branch] = await Promise.all([
       this.prisma.student.findMany({
         where: {
           branchId: input.branchId,
@@ -1364,10 +2049,25 @@ export class FeesService {
           ...(input.batchId ? { batchId: input.batchId } : {}),
           id: { in: studentIds },
         },
-        select: { id: true, programId: true, batchId: true, monthlyFeeDiscount: true },
+        select: {
+          id: true,
+          programId: true,
+          batchId: true,
+          admissionNumber: true,
+          rollNumber: true,
+          monthlyFeeDiscount: true,
+          monthlyFeeAmount: true,
+          monthlyFeeWaived: true,
+          annualChargeMode: true,
+          annualDeferredUntil: true,
+          annualInstallmentCount: true,
+        },
       }),
       this.prisma.lookupStatus.findFirst({
         where: { code: 'pending', category: { code: 'fee_status' } },
+      }),
+      this.prisma.lookupStatus.findFirst({
+        where: { code: 'waived', category: { code: 'fee_status' } },
       }),
       this.loadFeeStructuresForBulk({
         branchId: input.branchId,
@@ -1389,61 +2089,115 @@ export class FeesService {
             : 'One or more students are invalid for this branch',
         );
       }
-      if (this.roundMoney(line.amount) <= 0) {
-        throw new BadRequestException('Amount must be greater than 0');
-      }
     }
 
     if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
 
     const studentById = new Map(scopeStudents.map((s) => [s.id, s]));
     const dueDate = this.resolveBulkDueDate(input.dueDate);
+    const billingPeriod =
+      input.billingPeriod ?? billingPeriodFromDate(dueDate);
     const year = new Date().getFullYear();
     const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+
+    type PreparedLine = {
+      studentId: string;
+      amount: number;
+      discount: number;
+      netAmount: number;
+      remarks: string | null;
+      statusId: string;
+      voucherNo: string | null;
+      dueDate: Date;
+    };
+
+    const prepared: PreparedLine[] = [];
+    for (const line of selectedLines) {
+      const student = studentById.get(line.studentId)!;
+      const charge = await this.resolveGenerateAmount({
+        student,
+        feeType,
+        requestedAmount: this.roundMoney(line.amount),
+        billingPeriod,
+      });
+      if (charge.skip) continue;
+
+      const amount = charge.amount;
+      if (amount <= 0 && !charge.waived) {
+        throw new BadRequestException('Amount must be greater than 0');
+      }
+
+      const siblingDiscount = charge.waived
+        ? 0
+        : siblingInfo.eligibleIds.has(line.studentId)
+          ? Math.round((amount * siblingInfo.percent) / 100)
+          : 0;
+      const monthlyRecurring = charge.waived
+        ? 0
+        : this.monthlyFeeDiscountForType(
+            feeType.code,
+            Number(student.monthlyFeeDiscount),
+            amount,
+          );
+      const { discount, remarks } = this.composeInvoiceDiscount({
+        amount,
+        siblingDiscount,
+        monthlyRecurring,
+      });
+      const effectiveDiscount = charge.waived ? amount : discount;
+      const netAmount = this.roundMoney(amount - effectiveDiscount);
+      const structure = this.matchFeeStructureForStudent(structures, {
+        batchId: student.batchId,
+        programId: student.programId,
+      });
+      const voucherNo = await this.allocateMonthlyVoucherNo({
+        branchId: input.branchId,
+        studentId: student.id,
+        billingPeriod,
+      });
+
+      prepared.push({
+        studentId: line.studentId,
+        amount,
+        discount: effectiveDiscount,
+        netAmount,
+        remarks: charge.waived
+          ? [remarks, charge.reason].filter(Boolean).join(' · ')
+          : remarks,
+        statusId:
+          charge.waived && waivedStatus ? waivedStatus.id : pendingStatus.id,
+        voucherNo,
+        dueDate: structure?.dueDayOfMonth
+          ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
+          : dueDate,
+      });
+    }
+
+    if (prepared.length === 0) {
+      throw new BadRequestException(
+        'No invoices to create after applying fee policy (waived, deferred, or already billed)',
+      );
+    }
 
     const created = await this.prisma.$transaction(async (tx) => {
       const existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
 
-      const rows = selectedLines.map((line, index) => {
-        const student = studentById.get(line.studentId)!;
-        const structure = this.matchFeeStructureForStudent(structures, {
-          batchId: student.batchId,
-          programId: student.programId,
-        });
-        const amount = this.roundMoney(line.amount);
-        const siblingDiscount = siblingInfo.eligibleIds.has(line.studentId)
-          ? Math.round((amount * siblingInfo.percent) / 100)
-          : 0;
-        const monthlyRecurring = this.monthlyFeeDiscountForType(
-          feeType.code,
-          Number(student.monthlyFeeDiscount),
-          amount,
-        );
-        const { discount, remarks } = this.composeInvoiceDiscount({
-          amount,
-          siblingDiscount,
-          monthlyRecurring,
-        });
-        const netAmount = this.roundMoney(amount - discount);
-        const invoiceNo = `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`;
-
-        return {
-          branchId: input.branchId,
-          studentId: line.studentId,
-          feeTypeId: input.feeTypeId!,
-          invoiceNo,
-          amount,
-          discount,
-          fine: 0,
-          netAmount,
-          dueDate: structure?.dueDayOfMonth
-            ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
-            : dueDate,
-          statusId: pendingStatus.id,
-          remarks,
-          createdById: user.id,
-        };
-      });
+      const rows = prepared.map((line, index) => ({
+        branchId: input.branchId,
+        studentId: line.studentId,
+        feeTypeId: input.feeTypeId!,
+        invoiceNo: `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`,
+        billingPeriod,
+        voucherNo: line.voucherNo,
+        amount: line.amount,
+        discount: line.discount,
+        fine: 0,
+        netAmount: line.netAmount,
+        dueDate: line.dueDate,
+        statusId: line.statusId,
+        remarks: line.remarks,
+        createdById: user.id,
+      }));
 
       await tx.feeInvoice.createMany({ data: rows });
       return rows.length;
@@ -1796,6 +2550,8 @@ export class FeesService {
       invoice: {
         id: invoice.id,
         invoiceNo: invoice.invoiceNo,
+        voucherNo: invoice.voucherNo,
+        billingPeriod: invoice.billingPeriod,
         amount: Number(invoice.amount),
         discount: Number(invoice.discount),
         fine: Number(invoice.fine),
@@ -1877,6 +2633,8 @@ export class FeesService {
       invoice: {
         id: payment.invoice.id,
         invoiceNo: payment.invoice.invoiceNo,
+        voucherNo: payment.invoice.voucherNo,
+        billingPeriod: payment.invoice.billingPeriod,
         netAmount: Number(payment.invoice.netAmount),
         feeType: feeType ? { name: feeType.name, code: feeType.code } : null,
       },
@@ -2042,8 +2800,42 @@ export class FeesService {
     });
     if (!student) throw new BadRequestException('Invalid student for this branch');
 
-    const grandTotal = this.roundMoney(input.lines.reduce((s, l) => s + Number(l.amount), 0));
-    const challanNo = input.challanNo?.trim() || (await this.nextChallanNumber(input.branchId));
+    const annualType = await this.prisma.feeType.findUnique({ where: { code: 'annual' } });
+    const adjustedLines: CreateFeeChallanInput['lines'] = [];
+    for (const line of input.lines) {
+      if (line.code !== 'annual' || !annualType) {
+        adjustedLines.push(line);
+        continue;
+      }
+      const charge = await this.resolveGenerateAmount({
+        student: {
+          id: student.id,
+          monthlyFeeAmount: student.monthlyFeeAmount,
+          monthlyFeeWaived: student.monthlyFeeWaived,
+          annualChargeMode: student.annualChargeMode,
+          annualDeferredUntil: student.annualDeferredUntil,
+          annualInstallmentCount: student.annualInstallmentCount,
+        },
+        feeType: annualType,
+        requestedAmount: this.roundMoney(Number(line.amount)),
+        billingPeriod: input.billingPeriod,
+      });
+      if (charge.skip) continue;
+      adjustedLines.push({ ...line, amount: charge.amount });
+    }
+    if (adjustedLines.length === 0) {
+      throw new BadRequestException('No challan lines left after applying fee policy');
+    }
+
+    const grandTotal = this.roundMoney(adjustedLines.reduce((s, l) => s + Number(l.amount), 0));
+    const challanNo =
+      input.challanNo?.trim() ||
+      (await this.allocateMonthlyVoucherNo({
+        branchId: input.branchId,
+        studentId: input.studentId,
+        billingPeriod: input.billingPeriod,
+      })) ||
+      (await this.nextChallanNumber(input.branchId));
 
     const existing = await this.prisma.feeChallan.findUnique({
       where: {
@@ -2072,7 +2864,7 @@ export class FeesService {
         sessionLabel: input.sessionLabel ?? null,
         createdById: user.id,
         lines: {
-          create: input.lines.map((line, idx) => ({
+          create: adjustedLines.map((line, idx) => ({
             code: line.code,
             label: line.label,
             amount: line.amount,

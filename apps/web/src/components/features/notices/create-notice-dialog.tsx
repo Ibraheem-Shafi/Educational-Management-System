@@ -251,6 +251,7 @@ export function CreateNoticeDialog({
               <FormFieldError message={errors.publishAt ?? errors.publishedAt} />
               <p className="mt-1.5 text-xs text-[var(--text-sub-500,#525866)]">
                 Leave empty to save as a draft. Set a future date to schedule publishing.
+                When it goes live, families in this audience get a WhatsApp/SMS alert.
               </p>
             </div>
           </div>

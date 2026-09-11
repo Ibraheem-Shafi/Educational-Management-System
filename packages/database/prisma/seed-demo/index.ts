@@ -21,6 +21,7 @@ import { seedAccounting } from './steps/16-accounting';
 import { seedAiOperations } from './steps/17-ai-operations';
 import { seedPrintTemplates } from './steps/18-print-templates';
 import { DEMO_SEED_VERSION, type RunDemoSeedOptions } from './types';
+import { ensureCustomAccessTemplates } from './ensure-custom-templates';
 
 async function getDemoSeedVersion(prisma: PrismaClient): Promise<string | null> {
   const settings = await prisma.institutionSettings.findUnique({ where: { id: 'default' } });
@@ -56,6 +57,8 @@ export async function runDemoSeed(
 ): Promise<void> {
   const force = options.force ?? process.argv.includes('--force-demo');
   const config = loadDemoConfig(options.configPath);
+
+  await ensureCustomAccessTemplates(prisma, roleMap);
 
   const currentVersion = await getDemoSeedVersion(prisma);
   if (currentVersion === config.version && !force) {

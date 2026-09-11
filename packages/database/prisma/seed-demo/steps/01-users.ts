@@ -7,6 +7,9 @@ export async function seedUsers(prisma: PrismaClient, ctx: DemoContext): Promise
     const roleId = ctx.roleMap.get(account.role);
     if (!roleId) throw new Error(`Role not found: ${account.role}`);
 
+    if (account.branchCode && !ctx.branchMap.has(account.branchCode)) {
+      throw new Error(`Branch not found: ${account.branchCode}`);
+    }
     const branchId = account.branchCode ? ctx.branchMap.get(account.branchCode) ?? null : null;
 
     const existing = await prisma.user.findFirst({

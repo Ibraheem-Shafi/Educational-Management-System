@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuthCacheService, type CachedAuthContext } from '../../common/auth/auth-cache.service';
 import { JwtVerifyService } from '../../common/auth/jwt-verify.service';
-import { isSuperAdmin } from '@eims/shared';
+import { isSuperAdmin, resolveEffectivePermissionCodes } from '@eims/shared';
 
 @Injectable()
 export class TransportGpsWebhookGuard implements CanActivate {
@@ -61,6 +61,12 @@ export class TransportGpsWebhookGuard implements CanActivate {
               },
             },
           },
+          userPermissions: {
+            select: {
+              effect: true,
+              permission: { select: { code: true } },
+            },
+          },
         },
       });
       if (!appUser) throw new UnauthorizedException('User account not found');
@@ -70,11 +76,17 @@ export class TransportGpsWebhookGuard implements CanActivate {
         throw new UnauthorizedException('Account disabled');
       }
 
-      const permissionSet = new Set<string>();
+      const roleCodes = new Set<string>();
+      const grants: string[] = [];
+      const denies: string[] = [];
       for (const ur of appUser.userRoles) {
         for (const rp of ur.role.rolePermissions) {
-          permissionSet.add(rp.permission.code);
+          roleCodes.add(rp.permission.code);
         }
+      }
+      for (const row of appUser.userPermissions) {
+        if (row.effect === 'grant') grants.push(row.permission.code);
+        if (row.effect === 'deny') denies.push(row.permission.code);
       }
 
       authUser = {
@@ -84,7 +96,12 @@ export class TransportGpsWebhookGuard implements CanActivate {
         fullName: appUser.fullName,
         branchId: appUser.branchId,
         roles,
-        permissions: Array.from(permissionSet),
+        permissions: resolveEffectivePermissionCodes({
+          isSuperAdmin: isSuperAdmin(roles),
+          roleCodes,
+          grants,
+          denies,
+        }),
         isActive: isSuperAdmin(roles) ? true : appUser.isActive,
       };
       this.authCache.setBySupabaseUserId(verified.supabaseUserId, authUser);

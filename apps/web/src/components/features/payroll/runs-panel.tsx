@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Download, Play, Send, Check, Lock } from 'lucide-react';
+import { Download, Play, Send, Check, Lock, Undo2, Banknote } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatCurrency, payrollRunStatuses, PERMISSIONS } from '@eims/shared';
+import { formatCurrency, payrollPaymentMethods, payrollRunStatuses, PERMISSIONS } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
@@ -14,16 +14,18 @@ import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, seedRowClass, statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -34,7 +36,13 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { CreateRunDialog } from './create-run-dialog';
 import { AdjustLineDialog } from './adjust-line-dialog';
 import type { PayrollLine, PayrollRunDetail, PayrollRunSummary } from './types';
-import { formatLabel, formatPeriod, statusBadgeCode } from './types';
+import {
+  formatLabel,
+  formatPeriod,
+  lineGross,
+  parsePayrollBreakdown,
+  statusBadgeCode,
+} from './types';
 
 const MONTH_OPTIONS = [
   { value: '', label: 'All months' },
@@ -67,6 +75,9 @@ function RunActions({
   const queryClient = useQueryClient();
   const canManage = can(PERMISSIONS.PAYROLL_MANAGE);
   const canApprove = can(PERMISSIONS.PAYROLL_APPROVE);
+  const [confirmGenerate, setConfirmGenerate] = useState(false);
+  const [confirmPaid, setConfirmPaid] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<(typeof payrollPaymentMethods)[number]>('cash');
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.payrollRuns(branchId) });
@@ -79,6 +90,7 @@ function RunActions({
     mutationFn: () => apiClient(`/payroll/runs/${run.id}/generate`, { method: 'POST', token }),
     onSuccess: async () => {
       toast.success('Payroll lines generated');
+      setConfirmGenerate(false);
       await invalidate();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -89,6 +101,15 @@ function RunActions({
       apiClient(`/payroll/runs/${run.id}/submit-approval`, { method: 'POST', token }),
     onSuccess: async () => {
       toast.success('Submitted for approval');
+      await invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const sendBack = useMutation({
+    mutationFn: () => apiClient(`/payroll/runs/${run.id}/send-back`, { method: 'POST', token }),
+    onSuccess: async () => {
+      toast.success('Sent back to draft');
       await invalidate();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -107,6 +128,21 @@ function RunActions({
     mutationFn: () => apiClient(`/payroll/runs/${run.id}/finalize`, { method: 'POST', token }),
     onSuccess: async () => {
       toast.success('Payroll finalized');
+      await invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const markPaid = useMutation({
+    mutationFn: () =>
+      apiClient(`/payroll/runs/${run.id}/mark-paid`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ paymentMethod }),
+      }),
+    onSuccess: async () => {
+      toast.success('Marked as paid');
+      setConfirmPaid(false);
       await invalidate();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -132,66 +168,141 @@ function RunActions({
   });
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {canManage && run.status === 'draft' && (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {canManage && run.status === 'draft' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={generate.isPending}
+            onClick={() => setConfirmGenerate(true)}
+          >
+            <Play className="mr-1.5 h-3.5 w-3.5" />
+            Generate
+          </Button>
+        )}
+        {canManage && run.status === 'draft' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={submit.isPending}
+            onClick={() => submit.mutate()}
+          >
+            <Send className="mr-1.5 h-3.5 w-3.5" />
+            Submit
+          </Button>
+        )}
+        {(canManage || canApprove) && run.status === 'pending_approval' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={sendBack.isPending}
+            onClick={() => sendBack.mutate()}
+          >
+            <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+            Send back to draft
+          </Button>
+        )}
+        {canApprove && run.status === 'pending_approval' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={approve.isPending}
+            onClick={() => approve.mutate()}
+          >
+            <Check className="mr-1.5 h-3.5 w-3.5" />
+            Approve
+          </Button>
+        )}
+        {canApprove && run.status === 'approved' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={finalize.isPending}
+            onClick={() => finalize.mutate()}
+          >
+            <Lock className="mr-1.5 h-3.5 w-3.5" />
+            Finalize
+          </Button>
+        )}
+        {canManage && run.status === 'finalized' && !run.paidAt && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={markPaid.isPending}
+            onClick={() => setConfirmPaid(true)}
+          >
+            <Banknote className="mr-1.5 h-3.5 w-3.5" />
+            Mark as paid
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={generate.isPending}
-          onClick={() => generate.mutate()}
+          disabled={exportCsv.isPending}
+          onClick={() => exportCsv.mutate()}
         >
-          <Play className="mr-1.5 h-3.5 w-3.5" />
-          Generate
+          <Download className="mr-1.5 h-3.5 w-3.5" />
+          Export CSV
         </Button>
+      </div>
+      {!canApprove && run.status === 'pending_approval' && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          A branch admin must approve this run.
+        </p>
       )}
-      {canManage && run.status === 'draft' && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={submit.isPending}
-          onClick={() => submit.mutate()}
-        >
-          <Send className="mr-1.5 h-3.5 w-3.5" />
-          Submit
-        </Button>
+      {!canApprove && run.status === 'approved' && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          A branch admin must finalize this run.
+        </p>
       )}
-      {canApprove && run.status === 'pending_approval' && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={approve.isPending}
-          onClick={() => approve.mutate()}
-        >
-          <Check className="mr-1.5 h-3.5 w-3.5" />
-          Approve
-        </Button>
+      {run.status === 'finalized' && run.paidAt && (
+        <p className="text-sm text-[var(--text-sub-500)]">
+          Paid {new Date(run.paidAt).toLocaleDateString()}
+          {run.paymentMethod ? ` · ${formatLabel(run.paymentMethod)}` : ''}
+        </p>
       )}
-      {canApprove && run.status === 'approved' && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={finalize.isPending}
-          onClick={() => finalize.mutate()}
-        >
-          <Lock className="mr-1.5 h-3.5 w-3.5" />
-          Finalize
-        </Button>
-      )}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={exportCsv.isPending}
-        onClick={() => exportCsv.mutate()}
+
+      <ConfirmDialog
+        open={confirmGenerate}
+        onOpenChange={setConfirmGenerate}
+        title="Generate payroll lines?"
+        description="This replaces all lines and clears adjustments."
+        confirmLabel="Generate"
+        loading={generate.isPending}
+        onConfirm={() => generate.mutate()}
+      />
+      <ConfirmDialog
+        open={confirmPaid}
+        onOpenChange={setConfirmPaid}
+        title="Mark this run as paid?"
+        description="Record that staff have been paid for this month."
+        confirmLabel="Mark as paid"
+        loading={markPaid.isPending}
+        onConfirm={() => markPaid.mutate()}
       >
-        <Download className="mr-1.5 h-3.5 w-3.5" />
-        Export CSV
-      </Button>
-    </div>
+        <SelectDropdown
+          aria-label="Payment method"
+          fullWidth
+          value={paymentMethod}
+          onValueChange={(value) =>
+            setPaymentMethod(value as (typeof payrollPaymentMethods)[number])
+          }
+          options={payrollPaymentMethods.map((method) => ({
+            value: method,
+            label: formatLabel(method),
+          }))}
+          className="w-full"
+        />
+      </ConfirmDialog>
+    </>
   );
 }
 
@@ -250,7 +361,8 @@ function RunDetail({
         <div className="space-y-4 border-b border-stroke-soft-200 px-5 py-4">
           <RunActions branchId={branchId} run={run} onRefresh={() => setTick((t) => t + 1)} />
           <p className="text-sm text-[var(--text-sub-500)]">
-            {run.lines.length} staff · Total net {formatCurrency(totalNet)}
+            For the month of {formatPeriod(run.year, run.month)} · {run.lines.length} staff · Total
+            net {formatCurrency(totalNet)}
             {run.notes ? ` · ${run.notes}` : ''}
           </p>
         </div>
@@ -260,8 +372,8 @@ function RunDetail({
             <thead>
               <tr>
                 <th className={dataTableThClass}>Staff</th>
-                <th className={dataTableThClass}>Basic</th>
-                <th className={dataTableThClass}>Allowances</th>
+                <th className={dataTableThClass}>Gross</th>
+                <th className={dataTableThClass}>LWP</th>
                 <th className={dataTableThClass}>Deductions</th>
                 <th className={dataTableThClass}>Adjustments</th>
                 <th className={dataTableThClass}>Net pay</th>
@@ -274,58 +386,101 @@ function RunDetail({
             </thead>
             <tbody>
               {run.lines.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={canManage && run.status === 'draft' ? 9 : 8}
-                    className={dataTableTdClass}
-                  >
-                    <p className="text-sm text-[var(--text-sub-500)]">
-                      No lines yet — generate from active salary structures
-                    </p>
-                  </td>
-                </tr>
+                <EmptyStateCell
+                  colSpan={canManage && run.status === 'draft' ? 9 : 8}
+                  title="No lines yet — generate from active salary structures"
+                />
               ) : (
-                run.lines.map((line) => (
-                  <tr key={line.id} className={dataTableRowHoverClass}>
-                    <td className={dataTableTdClass}>
-                      <p className="font-medium">{line.user?.fullName}</p>
-                      <p className="text-xs text-[var(--text-sub-500)]">{line.user?.staffCode}</p>
-                    </td>
-                    <td className={dataTableTdClass}>{formatCurrency(line.basicSalary)}</td>
-                    <td className={dataTableTdClass}>{formatCurrency(line.allowancesTotal)}</td>
-                    <td className={dataTableTdClass}>{formatCurrency(line.deductionsTotal)}</td>
-                    <td className={dataTableTdClass}>{formatCurrency(line.adjustmentsTotal)}</td>
-                    <td className={dataTableTdClass}>{formatCurrency(line.netPay)}</td>
-                    <td className={dataTableTdClass}>
-                      {line.attendancePresentDays}/{line.workingDays}
-                      <span className="text-xs text-[var(--text-sub-500)]">
-                        {' '}
-                        ({line.attendanceAbsentDays} absent)
-                      </span>
-                    </td>
-                    <td className={dataTableTdClass}>
-                      <Link
-                        href={`/print/salary-slips/${line.id}`}
-                        target="_blank"
-                        className="text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
-                      >
-                        Print
-                      </Link>
-                    </td>
-                    {canManage && run.status === 'draft' && (
+                run.lines.map((line, index) => {
+                  const breakdown = parsePayrollBreakdown(line.breakdown);
+                  const lwp = breakdown.lwpAmount ?? 0;
+                  const otherDeductions = Math.max(0, line.deductionsTotal - lwp);
+                  const componentNames = breakdown.components
+                    .filter((c) => c.group !== 'lwp' && c.amount !== 0)
+                    .map((c) => c.name)
+                    .filter(Boolean)
+                    .join(', ');
+                  return (
+                    <tr key={line.id} className={seedRowClass(line.id, index)}>
                       <td className={dataTableTdClass}>
-                        <RowActionsMenu
-                          items={[
-                            {
-                              label: 'Adjust',
-                              onClick: () => setAdjustLine(line),
-                            },
-                          ]}
-                        />
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={line.user?.fullName} seed={line.id} size="sm" />
+                          <div>
+                            <p className="font-medium">{line.user?.fullName}</p>
+                            <p className="text-xs text-[var(--text-sub-500)]">
+                              {line.user?.staffCode}
+                            </p>
+                          </div>
+                        </div>
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td className={dataTableTdClass}>
+                        <p>{formatCurrency(lineGross(line))}</p>
+                        <p className="text-xs text-[var(--text-sub-500)]">
+                          Basic {formatCurrency(line.basicSalary)}
+                          {line.allowancesTotal
+                            ? ` + ${formatCurrency(line.allowancesTotal)} allowances`
+                            : ''}
+                        </p>
+                      </td>
+                      <td className={dataTableTdClass}>{formatCurrency(lwp)}</td>
+                      <td className={dataTableTdClass}>
+                        <p>{formatCurrency(otherDeductions)}</p>
+                        {componentNames ? (
+                          <p className="text-xs text-[var(--text-sub-500)]">{componentNames}</p>
+                        ) : null}
+                      </td>
+                      <td className={dataTableTdClass}>
+                        <p>{formatCurrency(line.adjustmentsTotal)}</p>
+                        {breakdown.adjustmentReason ? (
+                          <p className="text-xs text-[var(--text-sub-500)]">
+                            {breakdown.adjustmentReason}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className={dataTableTdClass}>{formatCurrency(line.netPay)}</td>
+                      <td className={dataTableTdClass}>
+                        {breakdown.attendanceNotMarked ? (
+                          <p className="text-xs text-[var(--text-sub-500)]">
+                            Not marked — full pay
+                          </p>
+                        ) : (
+                          <>
+                            {line.attendancePresentDays}/{line.workingDays}
+                            <span className="text-xs text-[var(--text-sub-500)]">
+                              {' '}
+                              ({line.attendanceAbsentDays} unpaid
+                              {breakdown.paidLeaveDays
+                                ? `, ${breakdown.paidLeaveDays} paid leave`
+                                : ''}
+                              )
+                            </span>
+                          </>
+                        )}
+                      </td>
+                      <td className={dataTableTdClass}>
+                        <Link
+                          href={`/print/salary-slips/${line.id}`}
+                          target="_blank"
+                          className="text-sm font-medium text-[var(--midnight-blue-950,#01366C)] hover:underline"
+                        >
+                          Print
+                        </Link>
+                      </td>
+                      {canManage && run.status === 'draft' && (
+                        <td className={dataTableTdClass}>
+                          <RowActionsMenu
+                            items={[
+                              {
+                                label: 'Adjust',
+                                onClick: () => setAdjustLine(line),
+                              },
+                            ]}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -399,6 +554,7 @@ export function RunsPanel({
         limit: String(limit),
       });
       if (status) params.set('status', status);
+      else params.set('excludeFinalized', 'true');
       if (year) params.set('year', year);
       if (month) params.set('month', month);
       return apiClient<PaginatedResponse<PayrollRunSummary>>(
@@ -408,13 +564,6 @@ export function RunsPanel({
     },
     enabled: !!token && !!branchId,
     placeholderData: (previous) => previous,
-    select: (res) =>
-      status
-        ? res
-        : {
-            ...res,
-            data: res.data.filter((r) => r.status !== 'finalized'),
-          },
   });
 
   const rows = data?.data ?? [];
@@ -518,7 +667,7 @@ export function RunsPanel({
                 rows.map((row) => (
                   <tr
                     key={row.id}
-                    className={dataTableRowHoverClass}
+                    className={statusRowClass(statusBadgeCode(row.status), formatLabel(row.status))}
                     onClick={() => setSelectedRunId(row.id)}
                   >
                     <td className={dataTableTdClass}>

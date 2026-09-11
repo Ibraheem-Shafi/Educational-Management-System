@@ -13,7 +13,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -22,7 +22,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -178,7 +177,10 @@ export function VouchersPanel({ branchId }: { branchId: string }) {
                     const total = row.lines.reduce((sum, line) => sum + line.debit, 0);
                     const isManual = !row.sourceType || row.sourceType === 'manual';
                     return (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
+                      <tr
+                        key={row.id}
+                        className={statusRowClass(row.status, formatLabel(row.status))}
+                      >
                         <td className={dataTableTdClass}>{row.voucherNo}</td>
                         <td className={dataTableTdClass}>{row.voucherDate}</td>
                         <td className={dataTableTdClass}>{formatLabel(row.voucherType)}</td>

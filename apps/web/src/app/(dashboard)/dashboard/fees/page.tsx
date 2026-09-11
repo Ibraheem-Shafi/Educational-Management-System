@@ -1,8 +1,9 @@
 'use client';
 
 import { Fragment, useCallback, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Receipt } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
@@ -13,6 +14,7 @@ import type {
   FeesStatsResponse,
   FeeDefaultersSummaryResponse,
   PaginatedResponse,
+  CommunicationCampaignQueuedResponse,
 } from '@eims/types';
 import {
   currencyStat,
@@ -28,7 +30,7 @@ import {
 } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { PaginationBar } from '@/components/layout/pagination-bar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowAccentClass, statusRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
@@ -41,6 +43,8 @@ import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { CreateInvoiceDialog } from '@/components/features/fees/create-invoice-dialog';
 import { EditInvoiceDialog } from '@/components/features/fees/edit-invoice-dialog';
 import { GenerateInvoicesDialog } from '@/components/features/fees/generate-invoices-dialog';
+import { FeeIncrementDialog } from '@/components/features/fees/fee-increment-dialog';
+import { StudentFeePolicyDialog } from '@/components/features/fees/student-fee-policy-dialog';
 import { FeeTypesPanel, type FeeTypeRow } from '@/components/features/fees/fee-types-panel';
 import { FeeStructuresPanel } from '@/components/features/fees/fee-structures-panel';
 import { FeeChallansPanel } from '@/components/features/fees/fee-challans-panel';
@@ -51,13 +55,14 @@ import {
 } from '@/components/features/fees/record-payment-dialog';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { queryKeys } from '@/lib/query-keys';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 
@@ -108,6 +113,12 @@ function monthLabel(yyyyMm: string): string {
   });
 }
 
+function remainingClass(amount: number) {
+  return amount > 0
+    ? 'font-semibold text-[var(--palette-coral)]'
+    : 'font-semibold text-[var(--palette-green)]';
+}
+
 function toPayTarget(invoice: {
   id: string;
   netAmount: number;
@@ -127,7 +138,17 @@ function invoiceRowActions(
   canCollect: boolean,
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void,
   openEditInvoice?: (invoiceId: string) => void,
+  requestWaive?: (invoice: Invoice) => void,
+  requestUnwaive?: (invoice: Invoice) => void,
 ) {
+  const remaining = inv.remainingAmount ?? inv.netAmount;
+  const statusCode = inv.status?.code;
+  const canPay =
+    canCollect && remaining > 0 && statusCode !== 'waived' && statusCode !== 'paid';
+  const canWaive =
+    canCollect && remaining > 0 && statusCode !== 'waived' && statusCode !== 'paid';
+  const canUnwaive = canCollect && statusCode === 'waived';
+
   return [
     {
       label: 'Print voucher',
@@ -149,7 +170,7 @@ function invoiceRowActions(
           },
         ]
       : []),
-    ...(canCollect && !inv.paidAt
+    ...(canPay
       ? [
           {
             label: 'Record payment',
@@ -161,6 +182,22 @@ function invoiceRowActions(
           },
         ]
       : []),
+    ...(canWaive && requestWaive
+      ? [
+          {
+            label: 'Waive remaining',
+            onClick: () => requestWaive(inv),
+          },
+        ]
+      : []),
+    ...(canUnwaive && requestUnwaive
+      ? [
+          {
+            label: 'Unwaive',
+            onClick: () => requestUnwaive(inv),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -169,25 +206,45 @@ function InvoiceTableRow({
   canCollect,
   openRecordPayment,
   openEditInvoice,
+  requestWaive,
+  requestUnwaive,
   nested,
 }: {
   inv: Invoice;
   canCollect: boolean;
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
   openEditInvoice?: (invoiceId: string) => void;
+  requestWaive?: (invoice: Invoice) => void;
+  requestUnwaive?: (invoice: Invoice) => void;
   nested?: boolean;
 }) {
+  const remaining = inv.remainingAmount ?? inv.netAmount;
+  const statusCode = inv.status?.code;
+  const statusLabel = inv.status?.label ?? '';
+  const isOverdue = `${statusCode ?? ''} ${statusLabel}`.toLowerCase().includes('overdue');
+
   return (
-    <tr className={cn('transition-colors', dataTableRowHoverClass, nested && 'bg-[var(--bg-weak-50,#F8F9FB)]')}>
-      <td className={cn(dataTableTdClass, nested && 'pl-10 text-[var(--base-muted-foreground,#71717A)]')}>
+    <tr className={cn('transition-colors', statusRowClass(statusCode, statusLabel))}>
+      <td
+        className={cn(
+          dataTableTdClass,
+          nested && cn(statusRowAccentClass(statusCode, statusLabel), 'pl-10 text-[var(--base-muted-foreground,#71717A)]'),
+        )}
+      >
         {nested ? '' : (inv.student?.fullName ?? '—')}
       </td>
       <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
       <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>{formatCurrency(inv.netAmount)}</td>
-      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
-        {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
+      <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(remaining))}>
+        {formatCurrency(remaining)}
       </td>
-      <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+      <td
+        className={cn(
+          dataTableTdClass,
+          'whitespace-nowrap',
+          isOverdue && 'font-medium text-[var(--palette-coral)]',
+        )}
+      >
         {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
       </td>
       <td className={dataTableTdClass}>
@@ -195,7 +252,14 @@ function InvoiceTableRow({
       </td>
       <td className={cn(dataTableTdClass, 'text-right')}>
         <RowActionsMenu
-          items={invoiceRowActions(inv, canCollect, openRecordPayment, openEditInvoice)}
+          items={invoiceRowActions(
+            inv,
+            canCollect,
+            openRecordPayment,
+            openEditInvoice,
+            requestWaive,
+            requestUnwaive,
+          )}
         />
       </td>
     </tr>
@@ -210,6 +274,8 @@ function StudentInvoiceExpandRows({
   canCollect,
   openRecordPayment,
   openEditInvoice,
+  requestWaive,
+  requestUnwaive,
   token,
 }: {
   studentId: string;
@@ -226,6 +292,8 @@ function StudentInvoiceExpandRows({
   canCollect: boolean;
   openRecordPayment: (invoice: PayInvoiceTarget, mode?: PaymentDialogMode) => void;
   openEditInvoice?: (invoiceId: string) => void;
+  requestWaive?: (invoice: Invoice) => void;
+  requestUnwaive?: (invoice: Invoice) => void;
   token: string | undefined;
 }) {
   const { data, isLoading, error } = useQuery({
@@ -296,6 +364,8 @@ function StudentInvoiceExpandRows({
           canCollect={canCollect}
           openRecordPayment={openRecordPayment}
           openEditInvoice={openEditInvoice}
+          requestWaive={requestWaive}
+          requestUnwaive={requestUnwaive}
           nested
         />
       ))}
@@ -307,12 +377,21 @@ export default function FeesPage() {
   const { session } = useAuth();
   const { can } = usePermissions();
   const token = session?.access_token;
+  const queryClient = useQueryClient();
   const canCollect = can(PERMISSIONS.FEES_COLLECT);
+  const canSendComms = can(PERMISSIONS.COMMUNICATIONS_SEND);
+  const [remindOpen, setRemindOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [incrementOpen, setIncrementOpen] = useState(false);
+  const [feePolicyOpen, setFeePolicyOpen] = useState(false);
   const [payInvoice, setPayInvoice] = useState<PayInvoiceTarget | null>(null);
   const [payMode, setPayMode] = useState<PaymentDialogMode>('partial');
   const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'waive' | 'unwaive';
+    invoice: Invoice;
+  } | null>(null);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceLimit, setInvoiceLimit] = useState(8);
   const [invoiceSearch, setInvoiceSearch] = useState('');
@@ -512,6 +591,79 @@ export default function FeesPage() {
     setEditInvoiceId(invoiceId);
   };
 
+  const requestWaive = (invoice: Invoice) => {
+    setConfirmAction({ type: 'waive', invoice });
+  };
+
+  const requestUnwaive = (invoice: Invoice) => {
+    setConfirmAction({ type: 'unwaive', invoice });
+  };
+
+  const waiveMutation = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiClient(withBranchScope(`/fee-invoices/${invoiceId}/waive`, effectiveScope), {
+        method: 'PATCH',
+        token,
+      }),
+    onSuccess: () => {
+      toast.success('Remaining balance waived');
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-by-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-completed'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
+      queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportsFeeDefaulters() });
+      setConfirmAction(null);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const unwaiveMutation = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiClient(withBranchScope(`/fee-invoices/${invoiceId}/unwaive`, effectiveScope), {
+        method: 'PATCH',
+        token,
+      }),
+    onSuccess: () => {
+      toast.success('Invoice unwaived');
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-by-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-completed'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
+      queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportsFeeDefaulters() });
+      setConfirmAction(null);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const { data: reminderPreview } = useQuery({
+    queryKey: ['comms-preview-fee-defaulters', scopeKey, remindOpen],
+    queryFn: () =>
+      apiClient<{ count: number }>(
+        withBranchScope('/communications/preview-audience', effectiveScope),
+        { method: 'POST', token, body: { audience: 'fee_defaulters' } },
+      ),
+    enabled: !!token && remindOpen && canSendComms,
+  });
+
+  const remindMutation = useMutation({
+    mutationFn: () =>
+      apiClient<CommunicationCampaignQueuedResponse>(
+        withBranchScope('/communications/fee-reminders', effectiveScope),
+        { method: 'POST', token, body: { channel: 'whatsapp', smsFallback: false } },
+      ),
+    onSuccess: (res) => {
+      toast.success(`Queued ${res.queued} fee reminder${res.queued === 1 ? '' : 's'}`);
+      queryClient.invalidateQueries({ queryKey: queryKeys.communicationsStats });
+      queryClient.invalidateQueries({ queryKey: ['communication-logs'] });
+      setRemindOpen(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleLimitChange = useCallback((next: number) => {
     setInvoiceLimit(next);
     setInvoicePage(1);
@@ -550,6 +702,20 @@ export default function FeesPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setIncrementOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                Fee increment
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeePolicyOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                Student fee
+              </button>
+              <button
+                type="button"
                 onClick={() => setCreateOpen(true)}
                 className={pageHeaderActionClassName}
               >
@@ -571,6 +737,21 @@ export default function FeesPage() {
         open={generateOpen}
         onOpenChange={setGenerateOpen}
         branchId={singleBranchId ?? ''}
+      />
+
+      <FeeIncrementDialog
+        open={incrementOpen}
+        onOpenChange={setIncrementOpen}
+        branchId={singleBranchId ?? ''}
+        scope={effectiveScope}
+        canAllCampuses={effectiveScope.kind === 'all'}
+      />
+
+      <StudentFeePolicyDialog
+        open={feePolicyOpen}
+        onOpenChange={setFeePolicyOpen}
+        branchId={singleBranchId ?? ''}
+        scope={effectiveScope}
       />
 
       <RecordPaymentDialog
@@ -595,6 +776,49 @@ export default function FeesPage() {
           if (!open) setEditInvoiceId(null);
         }}
         invoiceId={editInvoiceId}
+      />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => {
+          if (!open && !waiveMutation.isPending && !unwaiveMutation.isPending) {
+            setConfirmAction(null);
+          }
+        }}
+        title={confirmAction?.type === 'unwaive' ? 'Unwaive invoice' : 'Waive remaining'}
+        description={
+          confirmAction?.type === 'unwaive'
+            ? 'Restore this waived invoice to pending. Only unpaid waived invoices can be unwaived.'
+            : 'Set remaining balance to zero. Succeeded payments stay. You can unwaive later if nothing has been paid after this.'
+        }
+        confirmLabel={confirmAction?.type === 'unwaive' ? 'Unwaive' : 'Waive remaining'}
+        loading={waiveMutation.isPending || unwaiveMutation.isPending}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (confirmAction.type === 'unwaive') {
+            unwaiveMutation.mutate(confirmAction.invoice.id);
+          } else {
+            waiveMutation.mutate(confirmAction.invoice.id);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={remindOpen}
+        onOpenChange={(open) => {
+          if (!open && !remindMutation.isPending) setRemindOpen(false);
+        }}
+        title="Send fee reminders"
+        description={`Queue WhatsApp alerts to ${reminderPreview?.count ?? 0} fee-defaulter contact${(reminderPreview?.count ?? 0) === 1 ? '' : 's'} in this branch.`}
+        confirmLabel="Send reminders"
+        loading={remindMutation.isPending}
+        onConfirm={() => {
+          if (!reminderPreview?.count) {
+            toast.error('No fee-defaulter contacts to notify');
+            return;
+          }
+          remindMutation.mutate();
+        }}
       />
 
       <MainStatsSection
@@ -777,49 +1001,61 @@ export default function FeesPage() {
                       const previewIds = new Set(group.preview.map((inv) => inv.id));
                       return (
                         <Fragment key={group.student.id}>
-                          <tr className="bg-[var(--bg-weak-50,#F8F9FB)]">
-                            <td colSpan={7} className={cn(dataTableTdClass, 'py-2.5')}>
+                          <tr className="bg-[var(--palette-orange-soft)]">
+                            <td colSpan={7} className={cn(dataTableTdClass, 'border-b-[var(--palette-orange)]/20 py-2.5')}>
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <UserAvatar
+                                    name={group.student.fullName}
+                                    seed={group.student.id}
+                                    size="sm"
+                                  />
                                   {moreCount > 0 ? (
                                     <button
                                       type="button"
                                       onClick={() => toggleStudentExpanded(group.student.id)}
-                                      className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-sm font-medium text-[var(--text-main-900,#0A0D14)] hover:bg-white"
+                                      className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-sm font-semibold text-[var(--palette-navy)] hover:bg-white/70"
                                       aria-expanded={expanded}
                                     >
                                       <ChevronDown
                                         className={cn(
-                                          'h-4 w-4 shrink-0 transition-transform',
+                                          'h-4 w-4 shrink-0 text-[var(--palette-orange)] transition-transform',
                                           expanded && 'rotate-180',
                                         )}
                                       />
                                       <span className="truncate">{group.student.fullName}</span>
                                     </button>
                                   ) : (
-                                    <span className="truncate text-sm font-medium text-[var(--text-main-900,#0A0D14)]">
+                                    <span className="truncate text-sm font-semibold text-[var(--palette-navy)]">
                                       {group.student.fullName}
                                     </span>
                                   )}
                                   {group.student.admissionNumber ? (
-                                    <span className="text-xs text-[var(--base-muted-foreground,#71717A)]">
+                                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-[var(--palette-navy)]">
                                       En. {group.student.admissionNumber}
                                     </span>
                                   ) : null}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--base-muted-foreground,#71717A)]">
-                                  <span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-[var(--palette-teal-soft)] px-2.5 py-0.5 text-xs font-semibold text-[var(--palette-teal)]">
                                     {group.totals.invoiceCount} invoice
                                     {group.totals.invoiceCount === 1 ? '' : 's'}
                                   </span>
-                                  <span>
+                                  <span
+                                    className={cn(
+                                      'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                      group.totals.openBalance > 0
+                                        ? 'bg-[var(--palette-coral-soft)] text-[var(--palette-coral)]'
+                                        : 'bg-[var(--palette-green-soft)] text-[var(--palette-green)]',
+                                    )}
+                                  >
                                     Open {formatCurrency(group.totals.openBalance)}
                                   </span>
                                   {moreCount > 0 && !expanded ? (
                                     <button
                                       type="button"
                                       onClick={() => toggleStudentExpanded(group.student.id)}
-                                      className="font-medium text-[var(--primary-base,#375DFB)] hover:underline"
+                                      className="text-xs font-semibold text-[var(--palette-teal)] hover:underline"
                                     >
                                       Show {moreCount} more
                                     </button>
@@ -838,6 +1074,8 @@ export default function FeesPage() {
                               canCollect={canCollect}
                               openRecordPayment={openRecordPayment}
                               openEditInvoice={openEditInvoice}
+                              requestWaive={requestWaive}
+                              requestUnwaive={requestUnwaive}
                               nested
                             />
                           ))}
@@ -857,6 +1095,8 @@ export default function FeesPage() {
                               canCollect={canCollect}
                               openRecordPayment={openRecordPayment}
                               openEditInvoice={openEditInvoice}
+                              requestWaive={requestWaive}
+                              requestUnwaive={requestUnwaive}
                               token={token}
                             />
                           ) : null}
@@ -961,10 +1201,21 @@ export default function FeesPage() {
                   {!completedLoading &&
                     !completedError &&
                     completedInvoices?.data.map((inv) => (
-                      <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                        <td className={dataTableTdClass}>{inv.student?.fullName ?? '—'}</td>
+                      <tr
+                        key={inv.id}
+                        className={cn(
+                          'transition-colors',
+                          statusRowClass(inv.status?.code ?? 'paid', inv.status?.label ?? 'Paid'),
+                        )}
+                      >
+                        <td className={dataTableTdClass}>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <UserAvatar name={inv.student?.fullName} size="sm" />
+                            <span className="truncate">{inv.student?.fullName ?? '—'}</span>
+                          </div>
+                        </td>
                         <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        <td className={cn(dataTableTdClass, 'whitespace-nowrap font-semibold text-[var(--palette-green)]')}>
                           {formatCurrency(inv.netAmount)}
                         </td>
                         <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
@@ -1049,9 +1300,9 @@ export default function FeesPage() {
             const aging = defaultersSummary?.aging ?? [];
             const agingTotal = aging.reduce((sum, b) => sum + b.remainingAmount, 0);
             const agingColors: Record<string, string> = {
-              '0-30': '#F59E0B',
-              '31-60': '#F97316',
-              '61+': '#DC2626',
+              '0-30': 'var(--palette-yellow)',
+              '31-60': 'var(--palette-orange)',
+              '61+': 'var(--palette-coral)',
             };
             const agingLabels: Record<string, string> = {
               '0-30': '0–30 days',
@@ -1080,12 +1331,12 @@ export default function FeesPage() {
                       {
                         label: 'Outstanding',
                         rate: sharePercent(outstanding, healthTotal),
-                        color: '#DC2626',
+                        color: 'var(--palette-coral)',
                       },
                       {
                         label: 'Collected',
                         rate: sharePercent(collected, healthTotal),
-                        color: '#16A34A',
+                        color: 'var(--palette-green)',
                       },
                     ]}
                   />
@@ -1098,12 +1349,12 @@ export default function FeesPage() {
                         ? aging.map((b) => ({
                             label: agingLabels[b.bucket] ?? b.bucket,
                             rate: sharePercent(b.remainingAmount, agingTotal),
-                            color: agingColors[b.bucket] ?? '#71717A',
+                            color: agingColors[b.bucket] ?? 'var(--text-soft-400)',
                           }))
                         : [
-                            { label: '0–30 days', rate: 0, color: '#F59E0B' },
-                            { label: '31–60 days', rate: 0, color: '#F97316' },
-                            { label: '61+ days', rate: 0, color: '#DC2626' },
+                            { label: '0–30 days', rate: 0, color: 'var(--palette-yellow)' },
+                            { label: '31–60 days', rate: 0, color: 'var(--palette-orange)' },
+                            { label: '61+ days', rate: 0, color: 'var(--palette-coral)' },
                           ]
                     }
                   />
@@ -1172,6 +1423,11 @@ export default function FeesPage() {
                 Clear filters
               </Button>
             )}
+            {canSendComms ? (
+              <Button type="button" onClick={() => setRemindOpen(true)}>
+                Send reminders
+              </Button>
+            ) : null}
           </FilterBar>
 
           <div className="bg-white">
@@ -1209,12 +1465,20 @@ export default function FeesPage() {
                   {!defaultersLoading &&
                     !defaultersError &&
                     defaulters?.data.map((inv) => (
-                      <tr key={inv.id} className={cn('transition-colors', dataTableRowHoverClass)}>
-                        <td className={dataTableTdClass}>{inv.student.fullName}</td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                      <tr
+                        key={inv.id}
+                        className={cn('transition-colors', statusRowClass('overdue', 'Overdue'))}
+                      >
+                        <td className={dataTableTdClass}>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <UserAvatar name={inv.student.fullName} size="sm" />
+                            <span className="truncate">{inv.student.fullName}</span>
+                          </div>
+                        </td>
+                        <td className={cn(dataTableTdClass, 'whitespace-nowrap font-medium text-[var(--palette-coral)]')}>
                           {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
                         </td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>
+                        <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(inv.remainingAmount ?? inv.netAmount))}>
                           {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
                         </td>
                         <td className={cn(dataTableTdClass, 'text-right')}>
@@ -1232,6 +1496,18 @@ export default function FeesPage() {
                                 {
                                   label: 'Pay in full',
                                   onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
+                                },
+                                {
+                                  label: 'Waive remaining',
+                                  onClick: () =>
+                                    requestWaive({
+                                      id: inv.id,
+                                      netAmount: inv.netAmount,
+                                      remainingAmount: inv.remainingAmount,
+                                      dueDate: inv.dueDate,
+                                      student: inv.student,
+                                      paidAt: null,
+                                    }),
                                 },
                               ]}
                             />

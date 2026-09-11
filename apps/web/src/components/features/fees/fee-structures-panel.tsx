@@ -24,11 +24,10 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -415,7 +414,10 @@ export function FeeStructuresPanel({
               {!isLoading &&
                 !error &&
                 structures?.data.map((row) => (
-                  <tr key={row.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={row.id}
+                    className={cn('transition-colors', activeRowClass(row.isActive))}
+                  >
                     <td className={dataTableTdClass}>{row.feeType?.name ?? '—'}</td>
                     <td className={dataTableTdClass}>
                       {row.programId

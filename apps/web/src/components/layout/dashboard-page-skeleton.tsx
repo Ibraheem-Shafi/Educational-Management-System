@@ -20,7 +20,7 @@ export function DashboardPageSkeleton({
   const showBottom = !section || section === 'full' || section === 'bottom';
 
   if (section === 'overview') {
-    return <MainStatsSection isLoading stats={[]} />;
+    return <MainStatsSection isLoading stats={[]} variant="filled" />;
   }
 
   if (section === 'charts') {
@@ -57,7 +57,7 @@ export function DashboardPageSkeleton({
         </div>
       )}
 
-      {showOverview && <MainStatsSection isLoading stats={[]} />}
+      {showOverview && <MainStatsSection isLoading stats={[]} variant="filled" />}
 
       {showCharts && (
         <div className="grid gap-4 lg:grid-cols-2">

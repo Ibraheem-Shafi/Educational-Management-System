@@ -1,17 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { isAllowedCorsOrigin } from './common/utils/cors.util';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(compression());
   app.setGlobalPrefix('api/v1');
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
+    if (
+      req.headers['access-control-request-private-network'] === 'true' &&
+      isAllowedCorsOrigin(origin)
+    ) {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
   app.enableCors({
-    origin: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+    origin: (origin, callback) => {
+      callback(null, isAllowedCorsOrigin(origin));
+    },
     credentials: true,
+    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
   });
   app.useGlobalFilters(new GlobalExceptionFilter());
 

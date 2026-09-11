@@ -28,9 +28,20 @@
 | 10 | Fees | Invoice filters (if present) | Apply any status / search filters | Results match filter | | |
 | 11 | Fees | Defaulters list | Confirm amounts / students | Remaining amounts look correct; actions work | | |
 | 12 | Fees | Branch scope | Switch branch (or use LAHORE accountant) | Only that campus’s invoices/stats; no cross-branch leakage | | |
-| 13 | Fees | Print invoice (optional) | Print voucher from row | Print page opens with fee type / amounts | | |
-| 14 | Fees | Print receipt (optional) | After payment → print receipt | Receipt opens with correct amount / method | | |
+| 13 | Fees | Print invoice (optional) | Print voucher from row | Print page opens with fee type / amounts and **bank voucher #** | | |
+| 14 | Fees | Print receipt (optional) | After payment → print receipt | Receipt opens with correct amount / method, **calendar paid date**, and voucher # | | |
 | 15 | Accounting | Fee payment → voucher fee type | After a fee payment → Accounting → Vouchers | Receipt voucher shows correct **Fee type** | | |
+| 16 | Fees | Paid date (backdated) | Record payment → set **Paid date** to a past day → confirm | Invoice list / receipt show that calendar day, not today | | |
+| 17 | Fees | Generate billing month | **Generate invoices** → pick billing month YYYY-MM | Created invoices store that `billingPeriod` | | |
+| 18 | Fees | Bank voucher uniqueness | Generate two students, same campus/month | Voucher numbers differ (`BRANCH-ADM-YYYY-MM`) | | |
+| 19 | Fees | Shared voucher per month | Same student, two fee types in one month | Invoice/challan voucher numbers **match** | | |
+| 20 | Fees | Fee increment (batch) | **Fee increment** → batch, 10%, preview, apply | Structures + unpaid invoices from that month change; **paid invoices stay** | | |
+| 21 | Fees | Fee increment (one student) | Increment one student | That student’s override/invoices change; batch-mates unchanged | | |
+| 22 | Fees | Student fee policy | **Student fee** → discount, monthly waive, annual mode | Policy saves; admit/edit student and student detail show the same fields | | |
+| 23 | Fees | Annual installments | Student annual = installments (12) → generate annual | Each month bills ~1/12; 12th month completes the session total | | |
+| 24 | Fees | Annual waived / deferred | Waived student: generate annual. Deferred student: generate before the date | Waived: no annual charge (unpaid annual invoices waived). Deferred: skipped until the date | | |
+| 25 | Fees | Monthly waived generate | Student monthly waived → generate monthly | Invoice is **waived**, net 0. Discount-only student still reduces net without waived status | | |
+| 26 | Fees | Waive remaining | Invoice row → **Waive remaining** | Remaining becomes 0 / waived. Payment is rejected. **Unwaive** restores unpaid waived invoices | | |
 
 ---
 

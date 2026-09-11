@@ -1,19 +1,20 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from './api';
+import { colors } from './theme';
 import type { InstitutionSettings } from './types';
-
-const DEFAULT_COLOR = '#1e40af';
 
 interface ThemeContextValue {
   primaryColor: string;
   institutionName: string;
+  logoUrl: string | null;
   loading: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  primaryColor: DEFAULT_COLOR,
-  institutionName: 'EIMS',
+  primaryColor: colors.teal,
+  institutionName: 'Nexium Academy',
+  logoUrl: null,
   loading: true,
 });
 
@@ -22,12 +23,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     queryKey: ['institution-settings'],
     queryFn: () => apiClient<InstitutionSettings>('/settings/institution'),
     staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
 
   const value = useMemo(
     () => ({
-      primaryColor: data?.primaryColor ?? DEFAULT_COLOR,
-      institutionName: data?.name ?? 'EIMS',
+      primaryColor: data?.primaryColor || colors.teal,
+      institutionName: data?.name ?? 'Nexium Academy',
+      logoUrl: data?.logoUrl ?? null,
       loading: isLoading,
     }),
     [data, isLoading],

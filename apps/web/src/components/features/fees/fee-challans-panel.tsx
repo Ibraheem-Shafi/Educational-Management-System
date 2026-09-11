@@ -12,17 +12,18 @@ import { usePermissions } from '@/hooks/use-permissions';
 import type { PaginatedResponse } from '@eims/types';
 import { SearchInput } from '@/components/layout/search-input';
 import { PaginationBar } from '@/components/layout/pagination-bar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { FilterBar } from '@/components/layout/filter-bar';
+import { UserAvatar } from '@/components/layout/user-avatar';
+import { cn } from '@/lib/utils';
 import {
   EditChallanDialog,
   type EditableChallan,
@@ -119,11 +120,19 @@ export function FeeChallansPanel() {
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className={dataTableRowHoverClass}>
+                <tr
+                  key={row.id}
+                  className={cn('transition-colors', statusRowClass(row.status, row.status))}
+                >
                   <td className={dataTableTdClass}>{row.challanNo ?? '—'}</td>
                   <td className={dataTableTdClass}>
-                    <div className="font-medium">{row.student?.fullName ?? '—'}</div>
-                    <div className="text-xs text-text-sub-500">{row.student?.admissionNumber}</div>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <UserAvatar name={row.student?.fullName} size="sm" />
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{row.student?.fullName ?? '—'}</div>
+                        <div className="text-xs text-text-sub-500">{row.student?.admissionNumber}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className={dataTableTdClass}>{row.student?.className ?? '—'}</td>
                   <td className={dataTableTdClass}>{row.monthLabel}</td>
@@ -142,7 +151,15 @@ export function FeeChallansPanel() {
                   <td className={`${dataTableTdClass} text-right`}>
                     {formatCurrency(row.grandTotal)}
                   </td>
-                  <td className={`${dataTableTdClass} text-right`}>
+                  <td
+                    className={cn(
+                      dataTableTdClass,
+                      'text-right font-semibold',
+                      row.dueAmount > 0
+                        ? 'text-[var(--palette-coral)]'
+                        : 'text-[var(--palette-green)]',
+                    )}
+                  >
                     {formatCurrency(row.dueAmount)}
                   </td>
                   <td className={dataTableTdClass}>

@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   Dialog,
@@ -22,6 +23,7 @@ export interface ConfirmDialogProps {
   destructive?: boolean;
   loading?: boolean;
   onConfirm: () => void;
+  children?: ReactNode;
 }
 
 export function ConfirmDialog({
@@ -34,14 +36,16 @@ export function ConfirmDialog({
   destructive = false,
   loading = false,
   onConfirm,
+  children,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => (loading ? undefined : onOpenChange(next))}>
-      <DialogContent className="max-w-[420px]">
+      <DialogContent className="max-w-[420px]" tone={destructive ? 'destructive' : 'default'}>
         <DialogHeader className="px-5 pt-5">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
+        {children ? <div className="px-5 pb-1">{children}</div> : null}
         <DialogFooter>
           <Button
             type="button"

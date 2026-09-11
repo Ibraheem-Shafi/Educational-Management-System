@@ -1,4 +1,4 @@
-export const DEMO_SEED_VERSION = 'nexium-v1.5';
+export const DEMO_SEED_VERSION = 'nexium-v1.6';
 
 export interface DemoConfig {
   version: string;

@@ -112,7 +112,7 @@ export function PortalPayFeePage({ returnPath }: { returnPath: string }) {
               disabled={confirmMutation.isPending}
               onClick={() => confirmMutation.mutate()}
               className={cn(
-                'w-full rounded-lg bg-[var(--primary-base,#2563EB)] px-4 py-2.5 text-sm font-medium text-white',
+                'w-full rounded-lg bg-[var(--institution-primary)] px-4 py-2.5 text-sm font-medium text-white',
                 'disabled:cursor-not-allowed disabled:opacity-50',
               )}
             >

@@ -6,7 +6,7 @@ test.describe('Accept invitation', () => {
 
     await page.route('**/api/v1/settings/institution', async (route) => {
       return route.fulfill({
-        json: { name: 'Test Institution', primaryColor: '#2563eb', terminology: {}, featureFlags: {} },
+        json: { name: 'Test Institution', primaryColor: '#0d9b8a', terminology: {}, featureFlags: {} },
       });
     });
 

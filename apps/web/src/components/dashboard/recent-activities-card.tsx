@@ -10,19 +10,16 @@ import {
   UserPlus,
 } from 'lucide-react';
 import type { DashboardActivityKind, DashboardRecentActivitiesResponse } from '@eims/types';
+import { accentForActivity, paletteColor, paletteSoft } from '@/lib/ui-palette';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 
-const ACTIVITY_STYLES: Record<
-  DashboardActivityKind,
-  { icon: LucideIcon; iconBg: string; iconColor: string }
-> = {
-  student: { icon: UserPlus, iconBg: 'bg-[#EFF6FF]', iconColor: 'text-[#2563EB]' },
-  teacher: { icon: BookOpen, iconBg: 'bg-[#ECFDF3]', iconColor: 'text-[#16A34A]' },
-  fee: { icon: Banknote, iconBg: 'bg-[#FFF7ED]', iconColor: 'text-[#EA580C]' },
-  attendance: { icon: CalendarCheck, iconBg: 'bg-[#ECFDF3]', iconColor: 'text-[#16A34A]' },
-  branch: { icon: Building2, iconBg: 'bg-[#EFF6FF]', iconColor: 'text-[#2563EB]' },
-  report: { icon: FileText, iconBg: 'bg-[#F4F4F5]', iconColor: 'text-[#71717A]' },
+const ACTIVITY_ICONS: Record<DashboardActivityKind, LucideIcon> = {
+  student: UserPlus,
+  teacher: BookOpen,
+  fee: Banknote,
+  attendance: CalendarCheck,
+  branch: Building2,
+  report: FileText,
 };
 
 function formatRelativeTime(iso: string): string {
@@ -87,7 +84,7 @@ export function RecentActivitiesCard({
           <p className="text-sm font-normal leading-5 text-text-sub-500">{scopeLabel}</p>
         </div>
         <span
-          className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#38C793]"
+          className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--palette-green)]"
           aria-hidden
           title="Live"
         />
@@ -99,9 +96,9 @@ export function RecentActivitiesCard({
         ) : (
           <ul className="space-y-0">
             {data.activities.map((activity, index) => {
-              const style = ACTIVITY_STYLES[activity.kind];
-              const Icon = style.icon;
+              const Icon = ACTIVITY_ICONS[activity.kind];
               const isLast = index === data.activities.length - 1;
+              const accent = accentForActivity(activity.kind, index);
 
               return (
                 <li key={activity.id} className="relative flex gap-3 pb-5 last:pb-0">
@@ -112,12 +109,13 @@ export function RecentActivitiesCard({
                     />
                   )}
                   <div
-                    className={cn(
-                      'relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-                      style.iconBg,
-                    )}
+                    className="relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    style={{
+                      backgroundColor: paletteSoft(accent),
+                      color: paletteColor(accent),
+                    }}
                   >
-                    <Icon className={cn('h-4 w-4', style.iconColor)} strokeWidth={1.75} />
+                    <Icon className="h-4 w-4" strokeWidth={1.75} />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="flex items-baseline justify-between gap-3">

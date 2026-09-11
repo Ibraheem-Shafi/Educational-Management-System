@@ -46,6 +46,9 @@ export const queryKeys = {
   studentsStats: ['students-stats'] as const,
   usersStats: ['users-stats'] as const,
   userDetail: (id: string) => ['user', id] as const,
+  userAccess: (id: string) => ['user-access', id] as const,
+  accessCatalog: ['access-catalog'] as const,
+  accessRoles: ['access-roles'] as const,
   reportsOverview: ['reports-overview'] as const,
   dashboardStats: ['dashboard-stats'] as const,
   dashboardTodayAttendance: ['dashboard-today-attendance'] as const,
@@ -184,6 +187,8 @@ export const queryKeys = {
     branchListKey('accounting-vouchers', branchId, params),
   accountingBudgets: (branchId?: string, params?: Params) =>
     branchListKey('accounting-budgets', branchId, params),
+  opsRecords: (prefix: string, branchId?: string, params?: Params) =>
+    branchListKey(prefix, branchId, params),
 };
 
 /** Root prefixes for invalidate/refetch — always match every filtered/paginated variant. */

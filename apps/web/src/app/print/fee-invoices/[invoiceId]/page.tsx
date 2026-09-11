@@ -12,6 +12,8 @@ import { PrintFooter, PrintInstitutionHeader, PrintShell, printQueryUiState } fr
 interface InvoicePrintData {
   invoice: {
     invoiceNo: string | null;
+    voucherNo: string | null;
+    billingPeriod: string | null;
     amount: number;
     discount: number;
     fine: number;
@@ -96,6 +98,8 @@ export default function PrintFeeInvoicePage() {
             </div>
             <div className="text-right">
               <p>Invoice #: {data.invoice.invoiceNo ?? '—'}</p>
+              <p>Voucher #: {data.invoice.voucherNo ?? '—'}</p>
+              {data.invoice.billingPeriod ? <p>Period: {data.invoice.billingPeriod}</p> : null}
               {data.invoice.feeType ? <p>Fee: {data.invoice.feeType.name}</p> : null}
               {fieldVisible(t, 'showDueDate') && data.invoice.dueDate ? (
                 <p>Due: {new Date(data.invoice.dueDate).toLocaleDateString()}</p>

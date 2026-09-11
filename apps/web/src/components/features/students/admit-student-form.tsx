@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, GraduationCap, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { createStudentSchema, updateStudentSchema } from '@eims/shared';
+import { createStudentSchema, updateStudentSchema, type AnnualChargeMode } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { usePageBranchScopeOptional } from '@/hooks/use-page-branch-scope';
 import { apiClient, ApiClientError } from '@/lib/api-client';
@@ -30,7 +30,9 @@ import {
   FormFieldLabel,
   modalFieldClassName,
 } from '@/components/features/users/invite-form-fields';
+import { DateField } from '@/components/ui/date-field';
 import { CnicInput } from '@/components/ui/cnic-input';
+import { ANNUAL_CHARGE_MODE_OPTIONS } from '@/components/features/fees/student-fee-policy-dialog';
 import { PakistanPhoneInput } from '@/components/ui/pakistan-phone-input';
 import {
   AdmitFieldGrid,
@@ -112,6 +114,10 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
   const [rollNumber, setRollNumber] = useState('');
   const [admissionNumber, setAdmissionNumber] = useState('');
   const [monthlyFeeDiscount, setMonthlyFeeDiscount] = useState('');
+  const [monthlyFeeWaived, setMonthlyFeeWaived] = useState(false);
+  const [annualChargeMode, setAnnualChargeMode] = useState<AnnualChargeMode>('full');
+  const [annualDeferredUntil, setAnnualDeferredUntil] = useState('');
+  const [annualInstallmentCount, setAnnualInstallmentCount] = useState('12');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [cnicOrBForm, setCnicOrBForm] = useState('');
@@ -204,6 +210,10 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         rollNumber?: string | null;
         admissionNumber?: string | null;
         monthlyFeeDiscount?: number | null;
+        monthlyFeeWaived?: boolean;
+        annualChargeMode?: AnnualChargeMode | string;
+        annualDeferredUntil?: string | null;
+        annualInstallmentCount?: number;
         branchId: string;
         programId?: string | null;
         batchId?: string | null;
@@ -223,6 +233,10 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         ? String(editingStudent.monthlyFeeDiscount)
         : '',
     );
+    setMonthlyFeeWaived(Boolean(editingStudent.monthlyFeeWaived));
+    setAnnualChargeMode((editingStudent.annualChargeMode as AnnualChargeMode) || 'full');
+    setAnnualDeferredUntil(editingStudent.annualDeferredUntil?.slice(0, 10) ?? '');
+    setAnnualInstallmentCount(String(editingStudent.annualInstallmentCount ?? 12));
     setPhone(editingStudent.phone ?? '');
     setEmail(editingStudent.email ?? '');
     setCnicOrBForm(editingStudent.cnicOrBForm ?? '');
@@ -449,6 +463,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         ...(monthlyFeeDiscount.trim() !== ''
           ? { monthlyFeeDiscount: Number(monthlyFeeDiscount) }
           : { monthlyFeeDiscount: 0 }),
+        monthlyFeeWaived,
+        annualChargeMode,
+        annualDeferredUntil:
+          annualChargeMode === 'deferred' ? annualDeferredUntil || null : null,
+        annualInstallmentCount: Number(annualInstallmentCount) || 12,
         ...(programId ? { programId } : {}),
         ...(batchId ? { batchId } : {}),
       };
@@ -464,6 +483,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
         : isEditing
           ? { monthlyFeeDiscount: 0 }
           : {}),
+      monthlyFeeWaived,
+      annualChargeMode,
+      annualDeferredUntil:
+        annualChargeMode === 'deferred' ? annualDeferredUntil || null : null,
+      annualInstallmentCount: Number(annualInstallmentCount) || 12,
       ...(phone.trim() ? { phone: normalizePakistanPhone(phone.trim()) } : {}),
       ...(email.trim() ? { email: email.trim() } : {}),
       ...(cnicOrBForm.trim() ? { cnicOrBForm: cnicOrBForm.trim() } : {}),
@@ -523,6 +547,11 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (annualChargeMode === 'deferred' && !/^\d{4}-\d{2}-\d{2}$/.test(annualDeferredUntil)) {
+      setFieldError('annualDeferredUntil', 'Defer until date is required');
+      toast.error('Defer until date is required');
+      return;
+    }
     const payload = buildPayload();
     if (feeFieldsOnly) {
       if (
@@ -676,6 +705,48 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                   </p>
                   <FormFieldError message={errors.monthlyFeeDiscount} />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-[var(--text-main-900)] sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={monthlyFeeWaived}
+                    onChange={(e) => setMonthlyFeeWaived(e.target.checked)}
+                  />
+                  Waive monthly fee (new monthly invoices are net 0)
+                </label>
+                <div>
+                  <FormFieldLabel>Annual charges</FormFieldLabel>
+                  <SelectDropdown
+                    fullWidth
+                    aria-label="Annual charges"
+                    value={annualChargeMode}
+                    onValueChange={(value) => setAnnualChargeMode(value as AnnualChargeMode)}
+                    options={ANNUAL_CHARGE_MODE_OPTIONS}
+                  />
+                </div>
+                {annualChargeMode === 'installments' && (
+                  <div>
+                    <FormFieldLabel>Installment count</FormFieldLabel>
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      className={modalFieldClassName}
+                      value={annualInstallmentCount}
+                      onChange={(e) => setAnnualInstallmentCount(e.target.value)}
+                    />
+                  </div>
+                )}
+                {annualChargeMode === 'deferred' && (
+                  <div>
+                    <FormFieldLabel required>Defer until</FormFieldLabel>
+                    <DateField
+                      value={annualDeferredUntil}
+                      onValueChange={setAnnualDeferredUntil}
+                      className={modalFieldClassName}
+                    />
+                    <FormFieldError message={errors.annualDeferredUntil} />
+                  </div>
+                )}
                 <div>
                   <FormFieldLabel>Program</FormFieldLabel>
                   <SelectDropdown
@@ -837,6 +908,48 @@ export function AdmitStudentForm({ studentId }: { studentId?: string } = {}) {
                 </p>
                 <FormFieldError message={errors.monthlyFeeDiscount} />
               </div>
+              <label className="flex items-center gap-2 text-sm text-[var(--text-main-900)] sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={monthlyFeeWaived}
+                  onChange={(e) => setMonthlyFeeWaived(e.target.checked)}
+                />
+                Waive monthly fee (new monthly invoices are net 0)
+              </label>
+              <div>
+                <FormFieldLabel>Annual charges</FormFieldLabel>
+                <SelectDropdown
+                  fullWidth
+                  aria-label="Annual charges"
+                  value={annualChargeMode}
+                  onValueChange={(value) => setAnnualChargeMode(value as AnnualChargeMode)}
+                  options={ANNUAL_CHARGE_MODE_OPTIONS}
+                />
+              </div>
+              {annualChargeMode === 'installments' && (
+                <div>
+                  <FormFieldLabel>Installment count</FormFieldLabel>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    className={modalFieldClassName}
+                    value={annualInstallmentCount}
+                    onChange={(e) => setAnnualInstallmentCount(e.target.value)}
+                  />
+                </div>
+              )}
+              {annualChargeMode === 'deferred' && (
+                <div>
+                  <FormFieldLabel required>Defer until</FormFieldLabel>
+                  <DateField
+                    value={annualDeferredUntil}
+                    onValueChange={setAnnualDeferredUntil}
+                    className={modalFieldClassName}
+                  />
+                  <FormFieldError message={errors.annualDeferredUntil} />
+                </div>
+              )}
               <div>
                 <FormFieldLabel>Gender</FormFieldLabel>
                 <SelectDropdown

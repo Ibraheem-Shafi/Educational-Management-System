@@ -12,6 +12,11 @@ import {
 import { TrendingUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import {
+  PaletteChartGradients,
+  paletteChartActiveDot,
+  paletteChartDot,
+} from './palette-chart';
 
 export interface TrendChartPoint {
   label: string;
@@ -88,7 +93,7 @@ export function TrendAreaChart({
               <p
                 className={cn(
                   'mt-0.5 inline-flex items-center justify-end gap-1 text-xs font-medium leading-4',
-                  isPositiveTrend ? 'text-[#16A34A]' : 'text-[#DC2626]',
+                  isPositiveTrend ? 'text-success-text' : 'text-error-text',
                 )}
               >
                 {isPositiveTrend && <TrendingUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />}
@@ -106,10 +111,7 @@ export function TrendAreaChart({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -12, bottom: 0 }}>
             <defs>
-              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#00A5FF" stopOpacity={0.6} />
-                <stop offset="100%" stopColor="#CEF0FF" stopOpacity={0.09} />
-              </linearGradient>
+              <PaletteChartGradients id={gradientId} />
             </defs>
             <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--stroke-soft-200, #E2E4E9)" />
             <XAxis
@@ -138,11 +140,11 @@ export function TrendAreaChart({
             <Area
               type="monotone"
               dataKey="value"
-              stroke="#003E73"
+              stroke={`url(#${gradientId}-stroke)`}
               strokeWidth={2.5}
-              fill={`url(#${gradientId})`}
-              dot={false}
-              activeDot={{ r: 4, fill: '#003E73' }}
+              fill={`url(#${gradientId}-fill)`}
+              dot={paletteChartDot}
+              activeDot={paletteChartActiveDot}
             />
           </AreaChart>
         </ResponsiveContainer>

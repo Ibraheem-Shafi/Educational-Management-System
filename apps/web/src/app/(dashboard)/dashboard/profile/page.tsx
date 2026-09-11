@@ -22,6 +22,8 @@ import { UserAvatar } from '@/components/layout/user-avatar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 const MfaSettings = dynamic(
@@ -30,7 +32,7 @@ const MfaSettings = dynamic(
 );
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -200,14 +202,10 @@ export default function ProfilePage() {
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
               {sessions?.data.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                    No sessions found
-                  </td>
-                </tr>
+                <EmptyStateCell colSpan={3} title="No sessions found" />
               )}
-              {sessions?.data.map((s) => (
-                <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+              {sessions?.data.map((s, index) => (
+                <tr key={s.id} className={seedRowClass(s.id, index)}>
                   <td className={tdClass}>{s.deviceInfo ?? 'Unknown device'}</td>
                   <td className={tdClass}>{new Date(s.lastActiveAt).toLocaleString()}</td>
                   <td className={cn(tdClass, 'text-right')}>

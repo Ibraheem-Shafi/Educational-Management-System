@@ -4,7 +4,7 @@
 :root {
   --background: #ffffff;
   --foreground: #0f172a;
-  --institution-primary: #2563eb;
+  --institution-primary: #0d9b8a;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   --border: #e2e8f0;
@@ -18,11 +18,11 @@
   --text-main-900: #0a0d14;
   --text-sub-500: #525866;
   --icon-primary: #c3ccd4;
-  --success-soft: #ecfdf3;
-  --success-text: #16a34a;
-  --error-soft: #fef2f2;
-  --error-text: #dc2626;
-  --midnight-blue-950: #01366c;
+  --success-soft: #e7f6ef;
+  --success-text: #22a06b;
+  --error-soft: #fdecea;
+  --error-text: #e24b4b;
+  --midnight-blue-950: #0b1f3a;
   --base-muted-foreground: #71717a;
   --base-foreground: #18181b;
   --base-input: #e4e4e7;
@@ -31,6 +31,38 @@
   --green-darker: #176448;
   --red-light: #f8c9d2;
   --red-darker: #710e21;
+
+  /* Lively client palette: teal, orange, yellow, green, coral, purple, navy */
+  --palette-navy: #0b1f3a;
+  --palette-teal: #0d9b8a;
+  --palette-orange: #f06d2a;
+  --palette-yellow: #d4a017;
+  --palette-green: #22a06b;
+  --palette-coral: #f07167;
+  --palette-purple: #7c5cfc;
+
+  --palette-navy-soft: #e8eef5;
+  --palette-teal-soft: #e5f6f3;
+  --palette-orange-soft: #fef0e7;
+  --palette-yellow-soft: #fbf4e0;
+  --palette-green-soft: #e7f6ef;
+  --palette-coral-soft: #fdecea;
+  --palette-purple-soft: #f0ecfe;
+
+  --sidebar-bg: #0b1f3a;
+  --sidebar-bg-footer: #122844;
+  --sidebar-text: #f8fafc;
+  --sidebar-text-muted: #94a3b8;
+  --sidebar-active: #0d9b8a;
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+
+  --chart-stop-1: #0d9b8a;
+  --chart-stop-2: #f06d2a;
+  --chart-stop-3: #d4a017;
+  --chart-stop-4: #22a06b;
+  --chart-stop-5: #f07167;
+  --chart-stop-6: #7c5cfc;
 }
 
 @theme inline {
@@ -52,6 +84,22 @@
   --color-error-soft: var(--error-soft);
   --color-error-text: var(--error-text);
   --color-midnight-blue-950: var(--midnight-blue-950);
+  --color-palette-navy: var(--palette-navy);
+  --color-palette-navy-soft: var(--palette-navy-soft);
+  --color-palette-teal: var(--palette-teal);
+  --color-palette-orange: var(--palette-orange);
+  --color-palette-yellow: var(--palette-yellow);
+  --color-palette-green: var(--palette-green);
+  --color-palette-coral: var(--palette-coral);
+  --color-palette-purple: var(--palette-purple);
+  --color-palette-teal-soft: var(--palette-teal-soft);
+  --color-palette-orange-soft: var(--palette-orange-soft);
+  --color-palette-yellow-soft: var(--palette-yellow-soft);
+  --color-palette-green-soft: var(--palette-green-soft);
+  --color-palette-coral-soft: var(--palette-coral-soft);
+  --color-palette-purple-soft: var(--palette-purple-soft);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-text: var(--sidebar-text);
 }
 
 body {

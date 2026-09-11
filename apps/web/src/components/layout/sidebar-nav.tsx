@@ -13,12 +13,13 @@ import {
   Library,
   UserCog,
   ClipboardCheck,
+  ClipboardList,
+  ClipboardPen,
   FileText,
   Wallet,
   Calculator,
   UserRound,
   Bell,
-  ClipboardList,
   Headset,
   Shield,
   Settings,
@@ -34,6 +35,7 @@ import {
   Banknote,
   Bus,
   Fingerprint,
+  Wrench,
   ChevronDown,
   ChevronRight,
   PanelLeftClose,
@@ -43,6 +45,8 @@ import {
 } from 'lucide-react';
 import { useInstitution } from '@/providers/institution-provider';
 import { useAuth } from '@/providers/auth-provider';
+import { isSuperAdmin } from '@eims/shared';
+import { accentForHref, paletteColor } from '@/lib/ui-palette';
 import { cn } from '@/lib/utils';
 import { useSidebar } from './sidebar-context';
 import { UserAvatar } from './user-avatar';
@@ -54,6 +58,7 @@ export type NavItem = {
   permission?: string;
   /** Compact readiness label (e.g. demo / unfinished surfaces). */
   badge?: 'soon';
+  superAdminOnly?: boolean;
 };
 
 export type NavGroup = {
@@ -77,6 +82,7 @@ export const navGroups: NavGroup[] = [
       { href: '/dashboard/students', label: 'Students', icon: Users, permission: 'students.read' },
       { href: '/dashboard/parents', label: 'Parents', icon: UserRound, permission: 'students.read' },
       { href: '/dashboard/users', label: 'Users', icon: UserCog, permission: 'users.manage' },
+      { href: '/dashboard/hr', label: 'HR operations', icon: UserCog, permission: 'hr.read' },
       { href: '/dashboard/front-office', label: 'Front office', icon: Headset, permission: 'front_office.read' },
     ],
   },
@@ -85,11 +91,13 @@ export const navGroups: NavGroup[] = [
     label: 'Academics',
     items: [
       { href: '/dashboard/academic', label: 'Academic', icon: BookOpen, permission: 'academic.read' },
+      { href: '/dashboard/academic-ops', label: 'Academic operations', icon: ClipboardPen, permission: 'academic.read' },
       { href: '/dashboard/assessments', label: 'Assessments', icon: FileText, permission: 'assessments.read' },
       { href: '/dashboard/timetable', label: 'Timetable', icon: Calendar, permission: 'timetable.read' },
       { href: '/dashboard/learning', label: 'Learning', icon: BookMarked, permission: 'learning.read' },
       { href: '/dashboard/attendance', label: 'Attendance', icon: ClipboardCheck, permission: 'attendance.read' },
       { href: '/dashboard/leave-requests', label: 'Leave requests', icon: ClipboardList, permission: 'leave.request' },
+      { href: '/dashboard/reports/academic', label: 'Academic reports', icon: FileBarChart, permission: 'reports.view' },
     ],
   },
   {
@@ -98,7 +106,9 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: '/dashboard/fees', label: 'Fees', icon: Wallet, permission: 'fees.read' },
       { href: '/dashboard/accounting', label: 'Accounting', icon: Calculator, permission: 'accounting.read' },
+      { href: '/dashboard/finance-ops', label: 'Finance operations', icon: Banknote, permission: 'accounting.read' },
       { href: '/dashboard/payroll', label: 'Payroll', icon: Banknote, permission: 'payroll.read' },
+      { href: '/dashboard/reports/finance', label: 'Finance reports', icon: FileBarChart, permission: 'reports.view' },
     ],
   },
   {
@@ -155,7 +165,15 @@ export const navGroups: NavGroup[] = [
       { href: '/dashboard/branches', label: 'Branches', icon: Building2, permission: 'branches.read' },
       { href: '/dashboard/audit', label: 'Audit', icon: Shield, permission: 'audit.read' },
       { href: '/dashboard/settings', label: 'Settings', icon: Settings, permission: 'settings.manage' },
+      {
+        href: '/dashboard/settings/roles',
+        label: 'Roles & access',
+        icon: Shield,
+        superAdminOnly: true,
+      },
+      { href: '/dashboard/campus-ops', label: 'Campus operations', icon: Wrench, permission: 'settings.manage' },
       { href: '/dashboard/form-fields', label: 'Form fields', icon: FormInput, permission: 'form_fields.manage' },
+      { href: '/dashboard/reports/administration', label: 'Admin reports', icon: FileBarChart, permission: 'reports.view' },
     ],
   },
 ];
@@ -166,8 +184,8 @@ export const navItems: NavItem[] = [overviewNavItem, ...navGroups.flatMap((group
 const OPEN_GROUPS_STORAGE_KEY = 'sidebar-nav-open-groups';
 
 function isNavItemActive(pathname: string, href: string): boolean {
-  if (href === '/dashboard') {
-    return pathname === '/dashboard' || pathname === '/dashboard/';
+  if (href === '/dashboard' || href === '/dashboard/reports') {
+    return pathname === href || pathname === `${href}/`;
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -196,14 +214,19 @@ function writeStoredOpenGroups(state: Record<string, boolean>) {
   }
 }
 
-function canSeeItem(item: NavItem, permissions: string[] | undefined): boolean {
+function canSeeItem(
+  item: NavItem,
+  permissions: string[] | undefined,
+  roles: string[] | undefined,
+): boolean {
+  if (item.superAdminOnly && !isSuperAdmin(roles ?? [])) return false;
   return !item.permission || !!permissions?.includes(item.permission);
 }
 
 function SidebarSeparator() {
   return (
     <div className="flex justify-center" aria-hidden>
-      <div className="h-px w-[80%] bg-stroke-soft-200" />
+      <div className="h-px w-[80%] bg-white/10" />
     </div>
   );
 }
@@ -245,7 +268,7 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
           height={40}
           className="h-10 w-10 shrink-0 rounded object-contain"
         />
-        <span className="truncate text-base font-medium leading-6 tracking-[-0.006em] text-text-main-900">
+        <span className="truncate text-base font-medium leading-6 tracking-[-0.006em] text-white">
           {name}
         </span>
       </div>
@@ -276,7 +299,7 @@ function CollapseButton() {
       type="button"
       onClick={toggleCollapsed}
       aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-text-soft-400 transition-colors hover:bg-neutral-50 hover:text-text-sub-500"
+      className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
     >
       {collapsed ? (
         <PanelLeft className="h-5 w-5" strokeWidth={1.75} />
@@ -326,12 +349,12 @@ function ProfileFooter({
   };
 
   return (
-    <div ref={menuRef} className="relative px-3 pb-4 pt-3">
+    <div ref={menuRef} className="relative bg-[var(--sidebar-bg-footer)] px-3 pb-4 pt-3">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-neutral-50',
+          'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/10',
           collapsed && 'justify-center px-0',
         )}
         aria-expanded={open}
@@ -341,12 +364,12 @@ function ProfileFooter({
         {!collapsed && (
           <>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900">
+              <p className="truncate text-sm font-medium leading-5 tracking-[-0.006em] text-white">
                 {user?.fullName}
               </p>
-              <p className="truncate text-xs leading-4 text-text-sub-500">{user?.email}</p>
+              <p className="truncate text-xs leading-4 text-white/60">{user?.email}</p>
             </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-white/40" />
           </>
         )}
       </button>
@@ -411,22 +434,26 @@ function NavLinkItem({
       title={title}
       aria-label={item.badge === 'soon' ? `${item.label}, coming soon` : undefined}
       className={cn(
-        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-text-main-900 transition-colors',
+        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 tracking-[-0.006em] text-white/90 transition-colors',
         collapsed && 'justify-center px-2',
         nested && !collapsed && 'pl-3',
-        active ? 'bg-neutral-50' : 'hover:bg-neutral-50/60',
+        active ? 'bg-[var(--sidebar-active)] text-white' : 'hover:bg-white/10',
       )}
     >
-      <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+      <Icon
+        className="h-4 w-4 shrink-0"
+        strokeWidth={1.5}
+        style={active ? undefined : { color: paletteColor(accentForHref(item.href)) }}
+      />
       {!collapsed && (
         <>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
           {item.badge === 'soon' ? (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-sub-500)] ring-1 ring-inset ring-[var(--stroke-soft-200,#E2E4E9)]">
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/70 ring-1 ring-inset ring-white/20">
               Soon
             </span>
           ) : null}
-          {active && <ChevronRight className="h-4 w-4 shrink-0 text-icon-primary" />}
+          {active && <ChevronRight className="h-4 w-4 shrink-0 text-white/80" />}
         </>
       )}
     </Link>
@@ -457,21 +484,21 @@ function NavGroupSection({
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
-          'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-neutral-50/60',
-          hasActive && !open && 'bg-neutral-50/40',
+          'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/10',
+          hasActive && !open && 'bg-white/5',
         )}
       >
         <span
           className={cn(
             'flex-1 truncate text-xs font-medium uppercase leading-4 tracking-[0.04em]',
-            hasActive ? 'text-text-sub-500' : 'text-text-soft-400',
+            hasActive ? 'text-white/70' : 'text-white/45',
           )}
         >
           {group.label}
         </span>
         <ChevronDown
           className={cn(
-            'h-3.5 w-3.5 shrink-0 text-text-soft-400 transition-transform duration-200',
+            'h-3.5 w-3.5 shrink-0 text-white/40 transition-transform duration-200',
             open && 'rotate-180',
           )}
           strokeWidth={2}
@@ -506,13 +533,13 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       navGroups
         .map((group) => ({
           ...group,
-          items: group.items.filter((item) => canSeeItem(item, user?.permissions)),
+          items: group.items.filter((item) => canSeeItem(item, user?.permissions, user?.roles)),
         }))
         .filter((group) => group.items.length > 0),
-    [user?.permissions],
+    [user?.permissions, user?.roles],
   );
 
-  const showOverview = canSeeItem(overviewNavItem, user?.permissions);
+  const showOverview = canSeeItem(overviewNavItem, user?.permissions, user?.roles);
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
@@ -607,7 +634,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <div className="space-y-3">
             {showOverview && (
               <div className="space-y-0.5">
-                <p className="mb-1 px-3 text-xs font-medium uppercase leading-4 tracking-[0.04em] text-text-soft-400">
+                <p className="mb-1 px-3 text-xs font-medium uppercase leading-4 tracking-[0.04em] text-white/45">
                   Overview
                 </p>
                 <NavLinkItem

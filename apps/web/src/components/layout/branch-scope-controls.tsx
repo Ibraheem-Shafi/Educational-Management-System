@@ -1,6 +1,6 @@
 'use client';
 
-import { BranchScopeSelect } from '@/components/layout/branch-scope-select';
+import { CampusBranchFace, BranchScopeSelect } from '@/components/layout/branch-scope-select';
 import { useAppBranchScope } from '@/providers/branch-scope-provider';
 import { Button } from '@/components/ui/button';
 import { usePageBranchScope } from '@/hooks/use-page-branch-scope';
@@ -21,12 +21,13 @@ export function AppBranchScopeControl({
     return (
       <div
         className={cn(
-          'truncate rounded-lg border border-[var(--stroke-soft-200,#E2E4E9)] bg-[var(--neutral-50)] px-3 py-1.5 text-xs text-[var(--text-sub-500)]',
+          'flex h-10 min-w-[200px] items-center gap-2 rounded-xl border border-[var(--palette-navy-soft)] bg-white py-1 pl-1.5 pr-3',
+          'shadow-[0_1px_2px_rgba(11,31,58,0.06)]',
           className,
         )}
         title={summaryLabel}
       >
-        {summaryLabel}
+        <CampusBranchFace label={summaryLabel} />
       </div>
     );
   }
@@ -37,9 +38,10 @@ export function AppBranchScopeControl({
     <BranchScopeSelect
       value={appScope}
       onValueChange={setAppScope}
-      options={branches.map((b) => ({ value: b.id, label: b.name }))}
+      options={(branches ?? []).map((b) => ({ value: b.id, label: b.name }))}
       aria-label="App branch scope"
       size={size}
+      variant="campus"
       className={className}
     />
   );
@@ -84,7 +86,7 @@ export function PageBranchScopeControl({
       <BranchScopeSelect
         value={effectiveScope}
         onValueChange={(scope) => setPageOverride(scope)}
-        options={branches.map((b) => ({ value: b.id, label: b.name }))}
+        options={(branches ?? []).map((b) => ({ value: b.id, label: b.name }))}
         aria-label={`${label} page override`}
         placeholder={hasPageOverride ? undefined : 'Using app selection'}
       />

@@ -238,7 +238,7 @@ export function MappingDialog({
             <button
               type="submit"
               disabled={save.isPending}
-              className="rounded-lg bg-[var(--primary-base)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-[var(--institution-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {save.isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Create mapping'}
             </button>

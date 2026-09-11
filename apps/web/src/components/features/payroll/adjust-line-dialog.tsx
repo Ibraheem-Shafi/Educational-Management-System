@@ -20,6 +20,7 @@ import { FormFieldLabel, modalFieldClassName } from '@/components/features/users
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { PayrollLine } from './types';
+import { parsePayrollBreakdown } from './types';
 
 export function AdjustLineDialog({
   branchId,
@@ -42,8 +43,9 @@ export function AdjustLineDialog({
 
   useEffect(() => {
     if (line && open) {
+      const breakdown = parsePayrollBreakdown(line.breakdown);
       setAdjustmentsTotal(String(line.adjustmentsTotal ?? 0));
-      setReason('');
+      setReason(breakdown.adjustmentReason ?? '');
       clearAll();
     }
     if (!open) {

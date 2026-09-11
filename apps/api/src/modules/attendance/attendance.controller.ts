@@ -62,8 +62,9 @@ export class AttendanceController {
   getSheet(
     @Query(createZodPipe(attendanceSheetQuerySchema)) query: AttendanceSheetQuery,
     @BranchScopeParam() scope: BranchScope,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.attendanceService.getSheet(query, scope);
+    return this.attendanceService.getSheet(query, scope, user);
   }
 
   @Get('sheet/print-data')

@@ -1,35 +1,39 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { apiClient } from './api';
-import { APP_ROLE } from './config';
-import { registerPushToken } from './push';
+import { registerPushToken, unregisterPushToken } from './push';
+import { pickAppRole, type AppRole } from './role';
 import { getSupabase } from './supabase';
 import type { AuthMeResponse, AuthUser } from './types';
 
 interface AuthContextValue {
   session: Session | null;
   user: AuthUser | null;
+  appRole: AppRole | null;
   accessToken: string | null;
   loading: boolean;
   roleError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   clearRoleError: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function validateRole(accessToken: string): Promise<AuthUser> {
+async function loadAppUser(accessToken: string): Promise<{ user: AuthUser; role: AppRole }> {
   const me = await apiClient<AuthMeResponse>('/auth/me', { token: accessToken });
-  if (!me.user.roles.includes(APP_ROLE)) {
-    throw new Error(`This app is for ${APP_ROLE}s only. Your account does not have the ${APP_ROLE} role.`);
+  const role = pickAppRole(me.user.roles);
+  if (!role) {
+    throw new Error('This app is for parents, students, and teachers. Please use the web dashboard.');
   }
-  return me.user;
+  return { user: me.user, role };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [appRole, setAppRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [roleError, setRoleError] = useState<string | null>(null);
 
@@ -37,21 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!nextSession?.access_token) {
       setSession(null);
       setUser(null);
+      setAppRole(null);
       setLoading(false);
       return;
     }
 
     try {
-      const meUser = await validateRole(nextSession.access_token);
+      const loaded = await loadAppUser(nextSession.access_token);
       setSession(nextSession);
-      setUser(meUser);
+      setUser(loaded.user);
+      setAppRole(loaded.role);
       setRoleError(null);
-      registerPushToken(nextSession.access_token).catch(() => undefined);
+      registerPushToken(nextSession.access_token, loaded.role).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to sign in';
       setRoleError(message);
       setSession(null);
       setUser(null);
+      setAppRole(null);
       await getSupabase().auth.signOut();
     } finally {
       setLoading(false);
@@ -71,39 +78,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.subscription.unsubscribe();
   }, [bootstrap]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    setLoading(true);
-    setRoleError(null);
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      setLoading(true);
+      setRoleError(null);
+      const supabase = getSupabase();
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setLoading(false);
+        throw error;
+      }
+      await bootstrap(data.session);
+    },
+    [bootstrap],
+  );
+
+  const resetPassword = useCallback(async (email: string) => {
     const supabase = getSupabase();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setLoading(false);
-      throw error;
-    }
-    await bootstrap(data.session);
-  }, [bootstrap]);
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+  }, []);
 
   const signOut = useCallback(async () => {
     setLoading(true);
+    if (session?.access_token) {
+      await unregisterPushToken(session.access_token);
+    }
     await getSupabase().auth.signOut();
     setSession(null);
     setUser(null);
+    setAppRole(null);
     setRoleError(null);
     setLoading(false);
-  }, []);
+  }, [session?.access_token]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       user,
+      appRole,
       accessToken: session?.access_token ?? null,
       loading,
       roleError,
       signIn,
+      resetPassword,
       signOut,
       clearRoleError: () => setRoleError(null),
     }),
-    [session, user, loading, roleError, signIn, signOut],
+    [session, user, appRole, loading, roleError, signIn, resetPassword, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

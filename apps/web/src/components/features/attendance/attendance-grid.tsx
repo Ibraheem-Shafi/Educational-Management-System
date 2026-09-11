@@ -1,6 +1,7 @@
 'use client';
 
 import type { AttendanceGridResponse } from '@eims/types';
+import { EmptyState } from '@/components/layout/empty-state';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { cn } from '@/lib/utils';
 
@@ -17,18 +18,18 @@ function dayParts(iso: string): { month: string; day: string; weekday: string } 
 function attendanceCellStyle(code: string): { letter: string; className: string } {
   switch (code) {
     case 'present':
-      return { letter: 'P', className: 'bg-[#D9F5E8]' };
+      return { letter: 'P', className: 'bg-[var(--palette-green-soft)]' };
     case 'absent':
-      return { letter: 'A', className: 'bg-[#FADADA]' };
+      return { letter: 'A', className: 'bg-[var(--palette-coral-soft)]' };
     case 'leave':
     case 'excused':
-      return { letter: 'L', className: 'bg-[#DCE4FA]' };
+      return { letter: 'L', className: 'bg-[var(--palette-purple-soft)]' };
     case 'late':
-      return { letter: 'L', className: 'bg-[#FFF0D4]' };
+      return { letter: 'L', className: 'bg-[var(--palette-yellow-soft)]' };
     default:
       return {
         letter: code.slice(0, 1).toUpperCase(),
-        className: 'bg-[var(--neutral-50)]',
+        className: 'bg-[var(--palette-navy-soft)]',
       };
   }
 }
@@ -53,7 +54,7 @@ export function AttendanceGrid({
       <div className="bg-white">
         <div className="space-y-3 p-6">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-12 animate-pulse rounded-lg bg-[var(--neutral-50)]" />
+            <div key={i} className="h-12 animate-pulse rounded-lg bg-[var(--palette-teal-soft)]" />
           ))}
         </div>
       </div>
@@ -62,8 +63,8 @@ export function AttendanceGrid({
 
   if (!data.rows.length) {
     return (
-      <div className="bg-white px-6 py-12 text-center text-sm text-[var(--text-sub-500)]">
-        No {entityLabel.toLowerCase()} found for this selection.
+      <div className="bg-[var(--palette-green-soft)] px-6 py-8">
+        <EmptyState title={`No ${entityLabel.toLowerCase()} found for this selection.`} />
       </div>
     );
   }
@@ -88,7 +89,7 @@ export function AttendanceGrid({
                     key={date}
                     className={cn(
                       'min-w-[52px] border-b border-r border-[var(--stroke-soft-200)] px-1 py-2 text-center align-bottom last:border-r-0',
-                      selected ? 'bg-[var(--midnight-blue-950,#01366C)]' : 'bg-white',
+                      selected ? 'bg-[var(--midnight-blue-950,#01366C)]' : 'bg-[var(--palette-navy-soft)]',
                     )}
                   >
                     <div
@@ -151,8 +152,8 @@ export function AttendanceGrid({
                       key={date}
                       className={cn(
                         'h-[52px] min-w-[52px] border-b border-r border-[var(--stroke-soft-200)] p-0 last:border-r-0',
-                        !cell && selected && 'bg-[#F4F7FB]',
-                        !cell && !selected && 'bg-white',
+                        !cell && selected && 'bg-[var(--palette-teal-soft)]',
+                        !cell && !selected && 'bg-[var(--palette-navy-soft)]/40',
                       )}
                     >
                       <button

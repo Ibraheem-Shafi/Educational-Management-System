@@ -79,7 +79,7 @@ flowchart LR
 |------|---------|------|
 | `apps/api` | `@eims/api` | NestJS REST API (port **3001**) |
 | `apps/web` | `@eims/web` | Next.js staff dashboard + portals (port **3000**) |
-| `apps/mobile` | `@eims/mobile` | Expo parent/student apps |
+| `apps/mobile` | `@eims/mobile` | Expo parent/student/teacher app |
 | `packages/database` | `@eims/database` | Prisma schema, client, seeds |
 | `packages/shared` | `@eims/shared` | Zod schemas, permissions, utils |
 | `packages/types` | `@eims/types` | Entity + API TypeScript types |
@@ -106,7 +106,7 @@ Also: `docs/`, `docs/templates/`, `progress/`, `scripts/`.
 | `npm run db:seed:all` | Institution + auth + demo |
 | `npm run db:seed:verify` | Verify demo seed |
 | `npm run verify:app` | Readiness script |
-| `npm run mobile:parent` / `mobile:student` | Expo with role |
+| `npm run mobile` | Expo parent/student/teacher app |
 
 Env templates: `docs/templates/.env.api.example`, `docs/templates/.env.web.example`. Canonical DB env loaded from `apps/api/.env`.
 
@@ -141,7 +141,7 @@ Env templates: `docs/templates/.env.api.example`, `docs/templates/.env.web.examp
 
 ### Mobile (`apps/mobile`)
 
-Expo Router, Supabase, direct API via `apps/mobile/lib/api.ts`. Does **not** currently consume `@eims/shared` / `@eims/types`. Phase 7 delivery scope is largely deferred — see [18-android-apps.md](./18-android-apps.md) and `progress/delivery/`.
+Expo Router + NativeWind. One app for parents, students, and teachers (login routes by `/auth/me`). Direct API via `apps/mobile/lib/api.ts`. See [18-android-apps.md](./18-android-apps.md).
 
 ### Documented but not installed / not used
 

@@ -46,6 +46,7 @@ export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [mode, setMode] = useState<AttendanceMode>('student');
   const [batchId, setBatchId] = useState('');
+  const [notifyAbsences, setNotifyAbsences] = useState(true);
 
   const viewMonth = monthFromIso(selectedDate);
   const { effectiveScope, scopeKey, singleBranchId } = useEffectiveBranchScope();
@@ -109,23 +110,28 @@ export default function AttendancePage() {
       rowId: string;
       date: string;
       statusId: string;
-    }) => {
+    }): Promise<{ absenceAlerts?: { sent: number; skipped: number } | null }> => {
       if (!effectiveBranchId) throw new Error('Branch is required');
 
       if (mode === 'student') {
-        return apiClient('/attendance/bulk', {
-          method: 'POST',
-          token,
-          body: JSON.stringify({
-            branchId: effectiveBranchId,
-            date,
-            batchId,
-            records: [{ studentId: rowId, statusId }],
-          }),
-        });
+        return apiClient<{ absenceAlerts?: { sent: number; skipped: number } | null }>(
+          '/attendance/bulk',
+          {
+            method: 'POST',
+            token,
+            body: JSON.stringify({
+              branchId: effectiveBranchId,
+              date,
+              batchId,
+              records: [{ studentId: rowId, statusId }],
+              notifyAbsences,
+              notifyChannel: 'whatsapp',
+            }),
+          },
+        );
       }
 
-      return apiClient('/attendance/staff-bulk', {
+      await apiClient('/attendance/staff-bulk', {
         method: 'POST',
         token,
         body: JSON.stringify({
@@ -135,11 +141,16 @@ export default function AttendancePage() {
           records: [{ userId: rowId, statusId }],
         }),
       });
+      return { absenceAlerts: null };
     },
-    onSuccess: () => {
+    onSuccess: (res: { absenceAlerts?: { sent: number; skipped: number } | null }) => {
       queryClient.invalidateQueries({ queryKey: gridQueryKey });
       queryClient.invalidateQueries({ queryKey: queryKeys.attendanceStats });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardTodayAttendance });
+      const queued = res.absenceAlerts?.sent ?? 0;
+      if (queued > 0) {
+        toast.success(`Queued ${queued} parent absence alert${queued === 1 ? '' : 's'}`);
+      }
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update attendance'),
   });
@@ -257,6 +268,18 @@ export default function AttendancePage() {
           ) : null}
 
           <PageBranchScopeControl />
+
+          {mode === 'student' && canMark ? (
+            <label className="flex items-center gap-2 text-sm text-[var(--text-main-900)]">
+              <input
+                type="checkbox"
+                checked={notifyAbsences}
+                onChange={(e) => setNotifyAbsences(e.target.checked)}
+                className="h-4 w-4 accent-[var(--midnight-blue-950,#01366C)]"
+              />
+              Notify parents when marked absent
+            </label>
+          ) : null}
         </div>
 
         <Tabs

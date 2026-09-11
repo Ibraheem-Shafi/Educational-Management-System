@@ -3,6 +3,7 @@ import {
   configuredBranchCodes,
   featuredStudentDemoKey,
   staffUserId,
+  swcFinanceDummyBranchCodes,
 } from '../branch-helpers';
 import type { DemoContext } from '../types';
 
@@ -94,6 +95,68 @@ export async function seedHrAndLeave(prisma: PrismaClient, ctx: DemoContext): Pr
         toDate: new Date(Date.UTC(2026, 6, 18)),
         reason: `Family function — student absence (${branchCode})`,
         status: 'pending',
+      });
+    }
+  }
+
+  for (const branchCode of swcFinanceDummyBranchCodes(ctx)) {
+    const branchId = ctx.branchMap.get(branchCode);
+    if (!branchId) continue;
+
+    const feeCollectorId = staffUserId(ctx, branchCode, 'fee_collector');
+    const hrFinanceId = staffUserId(ctx, branchCode, 'hr_finance') ?? adminId;
+
+    for (const [userId, salaryNote] of [
+      [feeCollectorId, 'PKR 75,000 basic + transport'] as const,
+      [staffUserId(ctx, branchCode, 'hr_finance'), 'PKR 85,000 basic + transport'] as const,
+    ]) {
+      if (!userId) continue;
+
+      const existing = await prisma.employmentContract.findFirst({
+        where: { userId, branchId, deletedAt: null, status: 'active' },
+      });
+      if (!existing) {
+        await prisma.employmentContract.create({
+          data: {
+            userId,
+            branchId,
+            startDate: new Date(Date.UTC(2025, 0, 1)),
+            employmentType: 'full_time',
+            salaryNote,
+            status: 'active',
+            documentPath: `hr/demo/${branchCode.toLowerCase()}-${userId.slice(-6)}-contract.pdf`,
+          },
+        });
+      }
+
+      const reviewPeriod = `H1 2026 [${branchCode}]`;
+      const existingReview = await prisma.performanceReview.findFirst({
+        where: { userId, branchId, periodLabel: reviewPeriod, deletedAt: null },
+      });
+      if (!existingReview) {
+        await prisma.performanceReview.create({
+          data: {
+            userId,
+            branchId,
+            periodLabel: reviewPeriod,
+            reviewedAt: new Date(Date.UTC(2026, 5, 15)),
+            score: new Prisma.Decimal(userId === feeCollectorId ? 84 : 90),
+            summary: `Solid performance for ${branchCode} campus. Demo review record.`,
+            reviewedById: hrFinanceId,
+          },
+        });
+      }
+    }
+
+    if (feeCollectorId) {
+      await upsertLeave(prisma, {
+        kind: 'employee',
+        userId: feeCollectorId,
+        fromDate: new Date(Date.UTC(2026, 5, 10)),
+        toDate: new Date(Date.UTC(2026, 5, 11)),
+        reason: `Medical leave — ${branchCode}`,
+        status: 'approved',
+        reviewedById: hrFinanceId,
       });
     }
   }

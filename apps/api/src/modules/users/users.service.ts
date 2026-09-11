@@ -49,6 +49,11 @@ const userDetailInclude = {
       },
     },
   },
+  userPermissions: {
+    include: {
+      permission: { select: { code: true, name: true, module: true } },
+    },
+  },
 } as const;
 
 type UserDetailRecord = {
@@ -75,6 +80,10 @@ type UserDetailRecord = {
         permission: { code: string; name: string; module: string };
       }>;
     };
+  }>;
+  userPermissions: Array<{
+    effect: string;
+    permission: { code: string; name: string; module: string };
   }>;
 };
 
@@ -691,20 +700,29 @@ export class UsersService {
     };
   }
 
-  private collectPermissions(
-    userRoles: UserDetailRecord['userRoles'],
-  ): UserPermissionDetail[] {
+  private collectPermissions(user: UserDetailRecord): UserPermissionDetail[] {
     const byCode = new Map<string, UserPermissionDetail>();
-    for (const ur of userRoles) {
+    for (const ur of user.userRoles) {
       for (const rp of ur.role.rolePermissions) {
         const permission = rp.permission;
-        if (!byCode.has(permission.code)) {
-          byCode.set(permission.code, {
-            code: permission.code,
-            name: permission.name,
-            module: permission.module,
-          });
-        }
+        byCode.set(permission.code, {
+          code: permission.code,
+          name: permission.name,
+          module: permission.module,
+        });
+      }
+    }
+    for (const row of user.userPermissions) {
+      const permission = row.permission;
+      if (row.effect === 'grant') {
+        byCode.set(permission.code, {
+          code: permission.code,
+          name: permission.name,
+          module: permission.module,
+        });
+      }
+      if (row.effect === 'deny') {
+        byCode.delete(permission.code);
       }
     }
     return [...byCode.values()].sort((a, b) => {
@@ -734,7 +752,7 @@ export class UsersService {
         name: ur.role.name,
         description: ur.role.description,
       })),
-      permissions: this.collectPermissions(user.userRoles),
+      permissions: this.collectPermissions(user),
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
       createdAt: user.createdAt.toISOString(),
     };

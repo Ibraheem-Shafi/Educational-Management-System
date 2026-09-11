@@ -17,7 +17,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
@@ -25,7 +25,6 @@ import { FilterBar } from '@/components/layout/filter-bar';
 import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -260,7 +259,10 @@ export function FeeTypesPanel({ canManage }: { canManage: boolean }) {
               {!isLoading &&
                 !error &&
                 data?.data.map((row) => (
-                  <tr key={row.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr
+                    key={row.id}
+                    className={cn('transition-colors', activeRowClass(row.isActive))}
+                  >
                     <td className={dataTableTdClass}>{row.name}</td>
                     <td className={cn(dataTableTdClass, 'font-mono text-xs')}>{row.code}</td>
                     <td className={cn(dataTableTdClass, 'max-w-[240px] truncate')}>

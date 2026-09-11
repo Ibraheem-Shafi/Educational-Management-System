@@ -14,7 +14,7 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,7 +24,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -222,7 +221,10 @@ export function ComplaintsPanel({ branchId }: { branchId: string }) {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
+                    <tr
+                      key={row.id}
+                      className={statusRowClass(statusBadgeCode(row.status), formatLabel(row.status))}
+                    >
                       <td className={dataTableTdClass}>{formatLabel(row.type)}</td>
                       <td className={dataTableTdClass}>{row.subject}</td>
                       <td className={dataTableTdClass}>

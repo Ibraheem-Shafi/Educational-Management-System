@@ -11,11 +11,10 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, activeRowClass } from '@/components/layout/status-badge';
 import { Button } from '@/components/ui/button';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -147,7 +146,7 @@ export function IntegrationPanel({ branchId }: { branchId: string }) {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
+                    <tr key={row.id} className={activeRowClass(row.isActive)}>
                       <td className={dataTableTdClass}>
                         <div className="flex items-center gap-2">
                           <Fingerprint className="h-4 w-4 text-[var(--text-sub-500)]" />

@@ -49,6 +49,14 @@
       "city": "Lahore",
       "phone": "+924212345678",
       "email": "lahore@nexium.edu.pk"
+    },
+    {
+      "name": "Shahwali Campus",
+      "code": "SWC",
+      "address": "GT Road, Wah Cantt",
+      "city": "Wah Cantt",
+      "phone": "+92514567890",
+      "email": "shahwali@nexium.edu.pk"
     }
   ],
   "superAdmin": {

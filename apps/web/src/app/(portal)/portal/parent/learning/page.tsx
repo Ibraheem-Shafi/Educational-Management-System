@@ -26,7 +26,8 @@ import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { PaginationBar } from '@/components/layout/pagination-bar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, categoryRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import {
   dataTableClass,
@@ -174,17 +175,10 @@ function ParentLearningContent() {
                       </thead>
                       <tbody className="[&>tr:last-child>td]:border-b-0">
                         {items.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={5}
-                              className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]"
-                            >
-                              No learning resources found
-                            </td>
-                          </tr>
+                          <EmptyStateCell colSpan={5} title="No learning resources found" />
                         ) : (
                           items.map((item) => (
-                            <tr key={item.id} className="group">
+                            <tr key={item.id} className={cn('group', categoryRowClass(item.type))}>
                               <td className={dataTableTdClass}>
                                 <Link
                                   href={`/portal/parent/learning/${item.id}?childId=${childId}`}

@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { apiClient } from './api';
-import { APP_ROLE } from './config';
+import type { AppRole } from './role';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -12,7 +12,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export async function registerPushToken(accessToken: string): Promise<void> {
+let lastPushToken: string | null = null;
+
+export async function registerPushToken(accessToken: string, appRole: AppRole): Promise<void> {
   if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
@@ -23,13 +25,9 @@ export async function registerPushToken(accessToken: string): Promise<void> {
   }
   if (finalStatus !== 'granted') return;
 
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ??
-    Constants.easConfig?.projectId;
-
-  const tokenData = await Notifications.getExpoPushTokenAsync(
-    projectId ? { projectId } : undefined,
-  );
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+  lastPushToken = tokenData.data;
 
   await apiClient('/device-tokens', {
     method: 'POST',
@@ -37,15 +35,22 @@ export async function registerPushToken(accessToken: string): Promise<void> {
     body: {
       token: tokenData.data,
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
-      appRole: APP_ROLE,
+      appRole,
     },
   });
 }
 
-export async function unregisterPushToken(accessToken: string, pushToken: string): Promise<void> {
-  await apiClient('/device-tokens', {
-    method: 'DELETE',
-    token: accessToken,
-    body: { token: pushToken },
-  });
+export async function unregisterPushToken(accessToken: string): Promise<void> {
+  if (!lastPushToken) return;
+  try {
+    await apiClient('/device-tokens', {
+      method: 'DELETE',
+      token: accessToken,
+      body: { token: lastPushToken },
+    });
+  } catch {
+    // ignore network errors on logout
+  } finally {
+    lastPushToken = null;
+  }
 }

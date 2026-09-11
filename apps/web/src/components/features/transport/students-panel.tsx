@@ -17,9 +17,9 @@ import {
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
+import { categoryRowClass } from '@/components/layout/status-badge';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -130,7 +130,7 @@ export function StudentsPanel({ branchId }: { branchId: string }) {
                     </tr>
                   ) : (
                     rows.map((row) => (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
+                      <tr key={row.id} className={categoryRowClass(row.direction)}>
                         <td className={dataTableTdClass}>{row.student?.fullName ?? '—'}</td>
                         <td className={dataTableTdClass}>{row.route?.name ?? '—'}</td>
                         <td className={dataTableTdClass}>

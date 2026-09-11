@@ -12,6 +12,7 @@ import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { DateField } from '@/components/ui/date-field';
+import { currentYearMonth } from '@/lib/date-utils';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { statusRowClass } from '@/components/layout/status-badge';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +42,8 @@ type PreviewStudent = {
   defaultAmount: number | null;
   suggestedAmount: number | null;
   dueDayOfMonth?: number | null;
+  monthlyFeeWaived?: boolean;
+  annualChargeMode?: string;
 };
 
 type PreviewResponse = {
@@ -59,12 +63,23 @@ type RowState = {
   hasStructure: boolean;
   include: boolean;
   amount: string;
+  policyNote: string | null;
 };
 
 type ScopeMode = 'branch' | 'batch';
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function policyNoteForStudent(student: PreviewStudent, feeTypeCode?: string): string | null {
+  if (feeTypeCode === 'monthly' && student.monthlyFeeWaived) return 'Monthly waived';
+  if (feeTypeCode === 'annual') {
+    if (student.annualChargeMode === 'waived') return 'Annual waived';
+    if (student.annualChargeMode === 'deferred') return 'Annual deferred';
+    if (student.annualChargeMode === 'installments') return 'Annual installments';
+  }
+  return null;
 }
 
 export function GenerateInvoicesDialog({
@@ -86,6 +101,7 @@ export function GenerateInvoicesDialog({
   const [feeTypeId, setFeeTypeId] = useState('');
   const [defaultAmount, setDefaultAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [billingPeriod, setBillingPeriod] = useState(currentYearMonth());
   const [rows, setRows] = useState<RowState[]>([]);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -137,6 +153,7 @@ export function GenerateInvoicesDialog({
       setFeeTypeId('');
       setDefaultAmount('');
       setDueDate('');
+      setBillingPeriod(currentYearMonth());
       setRows([]);
       setPreviewError(null);
     }
@@ -173,6 +190,7 @@ export function GenerateInvoicesDialog({
           hasStructure: suggested !== null && suggested > 0,
           include: suggested !== null && suggested > 0,
           amount: suggested !== null && suggested > 0 ? String(suggested) : '',
+          policyNote: policyNoteForStudent(student, preview.feeType.code),
         };
       }),
     );
@@ -221,6 +239,7 @@ export function GenerateInvoicesDialog({
           feeTypeId,
           ...(effectiveBatchId ? { batchId: effectiveBatchId } : {}),
           ...(dueDate ? { dueDate: new Date(dueDate).toISOString() } : {}),
+          billingPeriod,
           lines,
         }),
       });
@@ -278,6 +297,10 @@ export function GenerateInvoicesDialog({
     }
     if (scopeMode === 'batch' && !effectiveBatchId) {
       toast.error('Select a batch');
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(billingPeriod)) {
+      toast.error('Select a billing month');
       return;
     }
     if (selectedRows.length === 0) {
@@ -421,6 +444,21 @@ export function GenerateInvoicesDialog({
                 </p>
               </div>
               <div>
+                <FormFieldLabel htmlFor="bulk-billing-period" required>
+                  Billing month
+                </FormFieldLabel>
+                <input
+                  id="bulk-billing-period"
+                  type="month"
+                  value={billingPeriod}
+                  onChange={(e) => setBillingPeriod(e.target.value)}
+                  className={modalFieldClassName}
+                />
+                <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                  Bank voucher number is unique per student and this month.
+                </p>
+              </div>
+              <div>
                 <FormFieldLabel htmlFor="bulk-due-date">Due date</FormFieldLabel>
                 <DateField
                   id="bulk-due-date"
@@ -487,7 +525,13 @@ export function GenerateInvoicesDialog({
                     {!previewLoading &&
                       !previewError &&
                       rows.map((row) => (
-                        <tr key={row.studentId} className={!row.hasStructure ? 'opacity-70' : undefined}>
+                        <tr
+                          key={row.studentId}
+                          className={statusRowClass(
+                            row.hasStructure ? 'active' : 'pending',
+                            row.hasStructure ? 'Active' : 'Pending',
+                          )}
+                        >
                           <td className={dataTableTdClass}>
                             <input
                               type="checkbox"
@@ -507,6 +551,9 @@ export function GenerateInvoicesDialog({
                           </td>
                           <td className={dataTableTdClass}>
                             <div>{row.fullName}</div>
+                            {row.policyNote ? (
+                              <div className="text-xs text-[var(--text-sub-500)]">{row.policyNote}</div>
+                            ) : null}
                             {!row.hasStructure && (
                               <div className="text-xs text-amber-700">No fee structure</div>
                             )}

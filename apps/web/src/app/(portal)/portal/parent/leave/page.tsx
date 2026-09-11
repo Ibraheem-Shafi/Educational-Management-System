@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { PortalParentPageShell } from '@/components/portal/portal-parent-page-shell';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
@@ -277,7 +277,10 @@ function ParentLeaveContent({
                   </tr>
                 ) : (
                   data?.data.map((row) => (
-                    <tr key={row.id}>
+                    <tr
+                      key={row.id}
+                      className={statusRowClass(row.status, row.status)}
+                    >
                       <td className={dataTableTdClass}>{row.studentName}</td>
                       <td className={dataTableTdClass}>
                         {row.fromDate} – {row.toDate}

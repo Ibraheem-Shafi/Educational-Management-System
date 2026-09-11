@@ -17,9 +17,11 @@ import { ContentPanel } from '@/components/layout/content-panel';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { LinkStudentDialog } from '@/components/features/parents/link-student-dialog';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -202,18 +204,16 @@ export default function ParentDetailPage() {
                     </tr>
                   )}
                   {!studentsLoading && studentRows.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={3}
-                        className="px-4 py-8 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
-                      >
-                        No students linked yet
-                      </td>
-                    </tr>
+                    <EmptyStateCell colSpan={3} title="No students linked yet" />
                   )}
-                  {studentRows.map((link) => (
-                    <tr key={link.linkId} className={cn('transition-colors', dataTableRowHoverClass)}>
-                      <td className={dataTableTdClass}>{link.student.fullName}</td>
+                  {studentRows.map((link, index) => (
+                    <tr key={link.linkId} className={seedRowClass(link.linkId, index)}>
+                      <td className={dataTableTdClass}>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={link.student.fullName} seed={link.linkId} size="sm" />
+                          {link.student.fullName}
+                        </div>
+                      </td>
                       <td className={cn(dataTableTdClass, 'capitalize')}>{link.relationshipCode}</td>
                       <td className={cn(dataTableTdClass, 'text-right')}>
                         {canUpdate ? (

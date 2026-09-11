@@ -27,6 +27,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 interface ContractRow {
@@ -180,14 +182,10 @@ export function UserContractsSection({
                 </td>
               </tr>
             ) : contracts.length === 0 ? (
-              <tr>
-                <td colSpan={canManage ? 5 : 4} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                  No contracts recorded
-                </td>
-              </tr>
+              <EmptyStateCell colSpan={canManage ? 5 : 4} title="No contracts recorded" />
             ) : (
               contracts.map((c) => (
-                <tr key={c.id}>
+                <tr key={c.id} className={statusRowClass(c.status, formatLabel(c.status))}>
                   <td className={dataTableTdClass}>{c.startDate}</td>
                   <td className={dataTableTdClass}>{c.endDate ?? '—'}</td>
                   <td className={dataTableTdClass}>{formatLabel(c.employmentType)}</td>

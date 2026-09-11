@@ -1,87 +1,51 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useChildContext } from '@/lib/child-context';
 import { apiClient } from '@/lib/api';
-import { useTheme } from '@/lib/theme-context';
+import { colors } from '@/lib/theme';
 import type { ParentPortalData } from '@/lib/types';
 
 export function ChildSwitcher() {
   const { accessToken } = useAuth();
   const { selectedStudentId, setSelectedStudentId } = useChildContext();
-  const { primaryColor } = useTheme();
-
-  const { data } = useQuery({
+  const query = useQuery({
     queryKey: ['portal-parent'],
     queryFn: () => apiClient<ParentPortalData>('/portal/parent', { token: accessToken }),
     enabled: !!accessToken,
   });
 
-  const children = data?.children ?? [];
+  const children = query.data?.children ?? [];
 
   useEffect(() => {
-    if (children.length > 0 && !selectedStudentId) {
-      setSelectedStudentId(children[0].student.id);
+    if (!children.length) return;
+    if (!selectedStudentId || !children.some((child) => child.student.id === selectedStudentId)) {
+      void setSelectedStudentId(children[0].student.id);
     }
   }, [children, selectedStudentId, setSelectedStudentId]);
 
-  if (children.length <= 1) return null;
+  if (children.length === 0) return null;
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.label}>Viewing child</Text>
-      <View style={styles.row}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+      <View className="flex-row gap-2">
         {children.map((child) => {
-          const active = selectedStudentId === child.student.id;
+          const active = child.student.id === selectedStudentId;
           return (
             <Pressable
               key={child.student.id}
               onPress={() => setSelectedStudentId(child.student.id)}
-              style={[
-                styles.chip,
-                active && { backgroundColor: primaryColor, borderColor: primaryColor },
-              ]}
+              className="rounded-full px-3 py-2"
+              style={{ backgroundColor: active ? colors.navy : colors.white, borderWidth: 1, borderColor: active ? colors.navy : colors.line }}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {child.student.fullName}
+              <Text className="text-sm font-semibold" style={{ color: active ? colors.white : colors.ink }}>
+                {child.student.fullName.split(' ')[0]}
               </Text>
             </Pressable>
           );
         })}
       </View>
-    </View>
+    </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    color: '#64748b',
-    marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#ffffff',
-  },
-  chipText: {
-    fontSize: 14,
-    color: '#334155',
-  },
-  chipTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-});

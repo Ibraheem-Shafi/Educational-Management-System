@@ -10,6 +10,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { metricRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 interface AssessmentRecord {
@@ -99,14 +101,10 @@ export function PortalAssessmentsSection({
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
               {assessments.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-[var(--text-sub-500)]">
-                    No assessment records
-                  </td>
-                </tr>
+                <EmptyStateCell colSpan={4} title="No assessment records" />
               ) : (
                 assessments.map((row, i) => (
-                  <tr key={i}>
+                  <tr key={i} className={metricRowClass(row.percentage)}>
                     <td className={dataTableTdClass}>{row.assessment ?? 'Test'}</td>
                     <td className={dataTableTdClass}>{row.subject ?? '—'}</td>
                     <td className={dataTableTdClass}>{row.grade ?? '—'}</td>

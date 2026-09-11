@@ -198,6 +198,11 @@ export class StudentsService {
           admissionNumber: true,
           rollNumber: true,
           monthlyFeeDiscount: true,
+          monthlyFeeAmount: true,
+          monthlyFeeWaived: true,
+          annualChargeMode: true,
+          annualDeferredUntil: true,
+          annualInstallmentCount: true,
           customFields: true,
           createdAt: true,
           updatedAt: true,
@@ -262,6 +267,13 @@ export class StudentsService {
           admissionNumber: input.admissionNumber ?? null,
           rollNumber: input.rollNumber ?? null,
           monthlyFeeDiscount: input.monthlyFeeDiscount ?? 0,
+          monthlyFeeAmount: input.monthlyFeeAmount ?? null,
+          monthlyFeeWaived: input.monthlyFeeWaived ?? false,
+          annualChargeMode: input.annualChargeMode ?? 'full',
+          annualDeferredUntil: input.annualDeferredUntil
+            ? new Date(`${input.annualDeferredUntil.slice(0, 10)}T12:00:00.000Z`)
+            : null,
+          annualInstallmentCount: input.annualInstallmentCount ?? 12,
           customFields: input.customFields ?? {},
           createdById: user.id,
         },
@@ -328,6 +340,11 @@ export class StudentsService {
         admissionNumber: true,
         rollNumber: true,
         monthlyFeeDiscount: true,
+        monthlyFeeAmount: true,
+        monthlyFeeWaived: true,
+        annualChargeMode: true,
+        annualDeferredUntil: true,
+        annualInstallmentCount: true,
         customFields: true,
         createdAt: true,
         updatedAt: true,
@@ -429,11 +446,20 @@ export class StudentsService {
       user.roles.includes('accountant') && !isPrivileged;
 
     if (accountantFeeFieldsOnly) {
-      const allowedKeys = new Set(['monthlyFeeDiscount', 'programId', 'batchId']);
+      const allowedKeys = new Set([
+        'monthlyFeeDiscount',
+        'monthlyFeeAmount',
+        'monthlyFeeWaived',
+        'annualChargeMode',
+        'annualDeferredUntil',
+        'annualInstallmentCount',
+        'programId',
+        'batchId',
+      ]);
       const forbidden = Object.keys(input).filter((k) => !allowedKeys.has(k));
       if (forbidden.length > 0) {
         throw new BadRequestException(
-          `Accountants may only update fee-related fields (monthlyFeeDiscount, programId, batchId). Rejected: ${forbidden.join(', ')}`,
+          `Accountants may only update fee-related fields. Rejected: ${forbidden.join(', ')}`,
         );
       }
     }
@@ -454,6 +480,25 @@ export class StudentsService {
             ...(input.monthlyFeeDiscount !== undefined
               ? { monthlyFeeDiscount: input.monthlyFeeDiscount }
               : {}),
+            ...(input.monthlyFeeAmount !== undefined
+              ? { monthlyFeeAmount: input.monthlyFeeAmount }
+              : {}),
+            ...(input.monthlyFeeWaived !== undefined
+              ? { monthlyFeeWaived: input.monthlyFeeWaived }
+              : {}),
+            ...(input.annualChargeMode !== undefined
+              ? { annualChargeMode: input.annualChargeMode }
+              : {}),
+            ...(input.annualDeferredUntil !== undefined
+              ? {
+                  annualDeferredUntil: input.annualDeferredUntil
+                    ? new Date(`${input.annualDeferredUntil.slice(0, 10)}T12:00:00.000Z`)
+                    : null,
+                }
+              : {}),
+            ...(input.annualInstallmentCount !== undefined
+              ? { annualInstallmentCount: input.annualInstallmentCount }
+              : {}),
           }
         : {
             ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
@@ -473,6 +518,25 @@ export class StudentsService {
             ...(input.rollNumber !== undefined ? { rollNumber: input.rollNumber } : {}),
             ...(input.monthlyFeeDiscount !== undefined
               ? { monthlyFeeDiscount: input.monthlyFeeDiscount }
+              : {}),
+            ...(input.monthlyFeeAmount !== undefined
+              ? { monthlyFeeAmount: input.monthlyFeeAmount }
+              : {}),
+            ...(input.monthlyFeeWaived !== undefined
+              ? { monthlyFeeWaived: input.monthlyFeeWaived }
+              : {}),
+            ...(input.annualChargeMode !== undefined
+              ? { annualChargeMode: input.annualChargeMode }
+              : {}),
+            ...(input.annualDeferredUntil !== undefined
+              ? {
+                  annualDeferredUntil: input.annualDeferredUntil
+                    ? new Date(`${input.annualDeferredUntil.slice(0, 10)}T12:00:00.000Z`)
+                    : null,
+                }
+              : {}),
+            ...(input.annualInstallmentCount !== undefined
+              ? { annualInstallmentCount: input.annualInstallmentCount }
               : {}),
             ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
           },
@@ -531,6 +595,11 @@ export class StudentsService {
     admissionNumber?: string | null;
     rollNumber?: string | null;
     monthlyFeeDiscount?: { toString(): string } | number | null;
+    monthlyFeeAmount?: { toString(): string } | number | null;
+    monthlyFeeWaived?: boolean;
+    annualChargeMode?: string;
+    annualDeferredUntil?: Date | null;
+    annualInstallmentCount?: number;
     customFields?: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
@@ -556,6 +625,12 @@ export class StudentsService {
       admissionNumber: student.admissionNumber ?? null,
       rollNumber: student.rollNumber ?? null,
       monthlyFeeDiscount: Number(student.monthlyFeeDiscount ?? 0),
+      monthlyFeeAmount:
+        student.monthlyFeeAmount != null ? Number(student.monthlyFeeAmount) : null,
+      monthlyFeeWaived: Boolean(student.monthlyFeeWaived),
+      annualChargeMode: student.annualChargeMode ?? 'full',
+      annualDeferredUntil: student.annualDeferredUntil?.toISOString() ?? null,
+      annualInstallmentCount: student.annualInstallmentCount ?? 12,
       customFields:
         student.customFields && typeof student.customFields === 'object' && !Array.isArray(student.customFields)
           ? (student.customFields as Record<string, unknown>)

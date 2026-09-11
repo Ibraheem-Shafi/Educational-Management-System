@@ -6,9 +6,10 @@ Related docs (not substitutes for this file):
 
 - [10-frontend-guidelines.md](./10-frontend-guidelines.md) — routing, auth, white-label wiring
 - [ui-ux-page-inventory.md](./ui-ux-page-inventory.md) — page inventory and shared chrome list
+- [ui-color-overhaul-tracker.md](./ui-color-overhaul-tracker.md) — per-route color pass status and hex-audit gate
 - [14-white-label-config.md](./14-white-label-config.md) — institution branding config
 
-**Scope:** Web ERP UI only. Light mode only. Do not use the auth/marketing purple shell on dashboard or portal pages.
+**Scope:** Web ERP UI only. Light mode only. Auth uses navy + teal (same lively palette as the ERP). Do not introduce a separate purple marketing palette.
 
 ---
 
@@ -16,7 +17,7 @@ Related docs (not substitutes for this file):
 
 ### Goal
 
-Recreate this ERP’s visual language: soft gray borders, white panels, Inter typography, midnight-blue primary CTAs, segmented tabs, native data tables, Recharts area charts, and KPI stat rows.
+Recreate this ERP’s visual language: lively teal/orange/yellow/green/coral/purple accents on a navy sidebar, white content panels, Inter typography, navy primary CTAs, segmented tabs, native data tables, multi-color Recharts area charts, and KPI stat rows.
 
 ### Actual stack (installed)
 
@@ -38,9 +39,9 @@ Do not pull these in for visual parity:
 - TanStack Table (tables are native `<table>` + shared class constants)
 - react-hook-form (forms use local state + shared field classes)
 
-### Exception: auth / marketing shell
+### Exception: auth shell
 
-`apps/web/src/components/auth/auth-shell.tsx` uses a separate purple palette (`#3B1FA8` → `#5B2FE0` → `#7C4DFF`, panel `#0B1024`, accent `#6B4EFF`). **Do not** apply this to ERP dashboard/portal pages.
+`apps/web/src/components/auth/auth-shell.tsx` uses navy + teal (gradient `--palette-navy` → `--palette-teal` → `--palette-green`, accent `--palette-teal`). Same screens; do not reintroduce the old purple marketing palette (`#3B1FA8` / `#7C4DFF`).
 
 ---
 
@@ -54,13 +55,12 @@ Do not pull these in for visual parity:
 :root {
   --background: #ffffff;
   --foreground: #0f172a;
-  --institution-primary: #2563eb;
+  --institution-primary: #0d9b8a;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   --border: #e2e8f0;
   --radius: 0.5rem;
 
-  /* Figma / ERP palette */
   --neutral-0: #ffffff;
   --neutral-50: #f7f9fb;
   --stroke-soft-200: #e2e4e9;
@@ -68,11 +68,21 @@ Do not pull these in for visual parity:
   --text-main-900: #0a0d14;
   --text-sub-500: #525866;
   --icon-primary: #c3ccd4;
-  --success-soft: #ecfdf3;
-  --success-text: #16a34a;
-  --error-soft: #fef2f2;
-  --error-text: #dc2626;
-  --midnight-blue-950: #01366c;
+  --success-soft: #e7f6ef;
+  --success-text: #22a06b;
+  --error-soft: #fdecea;
+  --error-text: #e24b4b;
+  --midnight-blue-950: #0b1f3a;
+
+  --palette-navy: #0b1f3a;
+  --palette-teal: #0d9b8a;
+  --palette-orange: #f06d2a;
+  --palette-yellow: #d4a017;
+  --palette-green: #22a06b;
+  --palette-coral: #f07167;
+  --palette-purple: #7c5cfc;
+  --sidebar-bg: #0b1f3a;
+  --sidebar-active: #0d9b8a;
   --base-muted-foreground: #71717a;
   --base-foreground: #18181b;
   --base-input: #e4e4e7;
@@ -120,8 +130,9 @@ Usage styles you will see mixed in code:
 
 | Token | Default | Dynamic? | Use for |
 |-------|---------|----------|---------|
-| `--institution-primary` | `#2563eb` | Yes — set at runtime from institution settings | Focus rings, links, default `Button`, portal active accents |
-| `--midnight-blue-950` | `#01366c` | No | Page-header primary CTAs, dialog submit buttons, print accents |
+| `--institution-primary` | `#0d9b8a` (teal) | Yes — set at runtime from institution settings | Focus rings, links, default `Button`, portal active accents |
+| `--midnight-blue-950` / `--palette-navy` | `#0b1f3a` | No | Page-header primary CTAs, dialog submit buttons, sidebar, print accents |
+| `--palette-teal` … `--palette-purple` | see `globals.css` | No | KPI cards, charts, nav icons, status, quick actions |
 
 Runtime override (do not hardcode institution color in components):
 
@@ -382,8 +393,8 @@ Row dividers: centered `h-px w-[80%] bg-stroke-soft-200`.
 
 ### Progress bar in table cells
 
-Track: `h-1.5 rounded-full bg-[#E2E4E9]`  
-Fill: `bg-[#003E73]`
+Track: `h-1.5 rounded-full bg-[var(--stroke-soft-200)]`  
+Fill: cycle `--palette-*` (see `paletteCssAt`) — never `#003E73` / `#00A5FF`.
 
 ---
 
@@ -508,29 +519,25 @@ Default chart height: `220`.
 
 ### Area chart config (copy exactly)
 
+Use `PaletteChartGradients` + `paletteChartDot` from `apps/web/src/components/dashboard/palette-chart.tsx`. Single series only (do not add extra data lines for color).
+
 | Element | Spec |
 |---------|------|
-| Gradient top | `#00A5FF` @ opacity `0.6` |
-| Gradient bottom | `#CEF0FF` @ opacity `0.09` |
-| Stroke | `#003E73`, `strokeWidth={2.5}` |
-| Active dot | `r: 4`, fill `#003E73` |
-| Dots | `dot={false}` |
+| Stroke | Horizontal multi-stop gradient teal → orange → yellow → green → coral → purple (`x1=0` `x2=1`) |
+| Fill | Same stops at ~28% opacity |
+| Dots | Cycle palette per month (`paletteChartDot`) |
+| Active dot | Slightly larger cycling palette dot |
 | Grid | `strokeDasharray="4 4"`, `vertical={false}`, stroke `var(--stroke-soft-200)` |
 | Axes | No axis/tick lines; tick `fontSize: 12`, `fill: var(--text-soft-400)` |
 | Tooltip | `borderRadius: 8`, border `1px solid var(--stroke-soft-200)`, `fontSize: 12` |
 | Margins | `{ top: 8, right: 4, left: -12, bottom: 0 }` |
 | Curve | `type="monotone"` |
 
-```tsx
-<linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-  <stop offset="0%" stopColor="#00A5FF" stopOpacity={0.6} />
-  <stop offset="100%" stopColor="#CEF0FF" stopOpacity={0.09} />
-</linearGradient>
-```
+**Do not** recreate the old cyan/navy recipe (`#00A5FF` / `#CEF0FF` / `#003E73`).
 
 **Rule:** Pass a unique `gradientId` when multiple charts appear on one page (SVG `id` collisions).
 
-`MonthlyRevenueCard` uses the same styling with gradient id `dashboardRevenueGradient`.
+`MonthlyRevenueCard` uses `PaletteChartGradients id="dashboardRevenue"`.
 
 ---
 
@@ -641,7 +648,7 @@ Two-column fields: `grid gap-4 sm:grid-cols-2`.
 
 ### 8.5 Sheet (mobile nav)
 
-Left sheet, width `w-[min(100vw,272px)]`, renders same sidebar nav.
+Left sheet, width `w-[min(100vw,272px)]`, navy `bg-sidebar-bg`, renders same sidebar nav.
 
 ---
 
@@ -689,12 +696,12 @@ Sonner, typically top-right for success/error feedback.
 
 1. Copy CSS variables + `@theme inline` from `globals.css`; keep light mode only.
 2. Load Inter as `--font-inter`; apply `font-[family-name:var(--font-inter)]` on shells/pages.
-3. Implement dual brand: institution primary for focus/links/default button; **midnight `#01366c`** for primary page/dialog CTAs.
+3. Implement dual brand: institution primary (default teal) for focus/links/default button; **navy `#0b1f3a`** for primary page/dialog CTAs and the sidebar.
 4. Build shell: sticky sidebar + scrollable main (`p-4 lg:p-6`).
 5. Page recipe: `space-y-6` → `PageHeader` → optional segmented `Tabs` / `FilterBar` → `ContentPanel`.
 6. Tables: shared `dataTable*` classes, min-width 960px, gray `#F8F8F8` header, hover `neutral-50/50`.
 7. Stats: dashed `MainStatsSection` and/or bordered `StatMetricsRow` + `TrendBadge` / `StatusBadge`.
-8. Charts: Recharts area with `#00A5FF`→`#CEF0FF` fill and `#003E73` stroke; unique gradient IDs.
+8. Charts: Recharts area with palette multi-stop stroke/fill and cycling dots (`palette-chart.tsx`); unique gradient IDs. Never `#00A5FF` / `#003E73`.
 9. Dialogs: Radix, `rounded-[20px]`, blur overlay, `modalFieldClassName` fields, dual footer buttons.
 10. Match empty/loading patterns before shipping list pages.
 
@@ -703,6 +710,9 @@ Sonner, typically top-right for success/error feedback.
 | Concern | Path |
 |---------|------|
 | Tokens | `apps/web/src/app/globals.css` |
+| Palette map | `apps/web/src/lib/ui-palette.ts` |
+| Color overhaul tracker | `docs/ui-color-overhaul-tracker.md` |
+| Hex audit | `apps/web/scripts/audit-ui-hex.mjs` |
 | Institution color | `apps/web/src/providers/institution-provider.tsx` |
 | `cn()` | `apps/web/src/lib/utils.ts` |
 | Page header / CTA | `apps/web/src/components/layout/page-header.tsx` |
@@ -714,6 +724,7 @@ Sonner, typically top-right for success/error feedback.
 | Card KPIs | `apps/web/src/components/layout/stat-metrics-row.tsx` |
 | Trend / status badges | `trend-badge.tsx`, `status-badge.tsx` |
 | Area chart | `apps/web/src/components/dashboard/trend-area-chart.tsx` |
+| Palette chart helpers | `apps/web/src/components/dashboard/palette-chart.tsx` |
 | Donut | `apps/web/src/components/dashboard/attendance-donut.tsx` |
 | Button | `apps/web/src/components/ui/button.tsx` |
 | Tabs | `apps/web/src/components/ui/tabs.tsx` |
@@ -726,4 +737,4 @@ Sonner, typically top-right for success/error feedback.
 
 ### Visual language summary
 
-Light ERP UI: white panels, soft `#E2E4E9` borders, Inter with tight tracking, gray `#F8F8F8` table headers, midnight-blue primary actions, blue area charts, green/red trend pills, and segmented gray/white tabs. No dark mode, no purple on ERP surfaces.
+Light ERP UI: navy sidebar with teal active state and cycled icon colors, white panels, soft `#E2E4E9` borders, Inter with tight tracking, tinted table headers, navy primary actions, multi-color area charts, green/coral trend pills, and segmented gray/white tabs. No dark mode. Color tracking: [ui-color-overhaul-tracker.md](./ui-color-overhaul-tracker.md).

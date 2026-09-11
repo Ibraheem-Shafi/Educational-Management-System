@@ -42,12 +42,12 @@ export function SearchInput({
     <div
       className={cn(
         'flex h-10 w-full max-w-[322px] items-center gap-1 rounded-[10px] border border-[var(--base-input,#E4E4E7)] bg-white px-3 py-2',
-        'focus-within:ring-2 focus-within:ring-[var(--institution-primary)] focus-within:ring-offset-1',
+        'focus-within:border-[var(--palette-teal)] focus-within:ring-2 focus-within:ring-[var(--palette-teal)]/30 focus-within:ring-offset-1',
         className,
       )}
     >
       <Search
-        className="h-3 w-3 shrink-0 text-[var(--base-muted-foreground,#71717A)]"
+        className="h-3 w-3 shrink-0 text-[var(--palette-teal)]"
         strokeWidth={1.33}
         aria-hidden
       />

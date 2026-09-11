@@ -13,7 +13,7 @@ export function PortalMobileNavSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-[min(100vw,272px)] border-stroke-soft-200 bg-neutral-0 p-0">
+      <SheetContent side="left" className="w-[min(100vw,272px)] border-transparent bg-sidebar-bg p-0">
         <SheetTitle className="sr-only">Portal navigation menu</SheetTitle>
         <SidebarExpandedProvider>
           <PortalSidebarNav onNavigate={() => onOpenChange(false)} />

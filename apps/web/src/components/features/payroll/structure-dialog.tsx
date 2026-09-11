@@ -25,7 +25,15 @@ import { FormFieldLabel, modalFieldClassName } from '@/components/features/users
 import { DateField } from '@/components/ui/date-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-import type { SalaryComponent, SalaryStructure } from './types';
+import type { SalaryComponent, SalaryComponentKind, SalaryStructure } from './types';
+
+const COMPONENT_KIND_OPTIONS: Array<{ value: SalaryComponentKind; label: string }> = [
+  { value: 'allowance', label: 'Allowance' },
+  { value: 'deduction', label: 'Deduction' },
+  { value: 'tax', label: 'Tax' },
+  { value: 'eobi', label: 'EOBI' },
+  { value: 'provident_fund', label: 'Provident fund' },
+];
 
 const emptyComponent = (): SalaryComponent => ({
   kind: 'allowance',
@@ -182,7 +190,8 @@ export function StructureDialog({
           <div className="min-w-0 flex-1">
             <DialogTitle>{isEdit ? 'Edit salary structure' : 'Add salary structure'}</DialogTitle>
             <DialogDescription className="mt-1">
-              Define basic salary and allowance/deduction components
+              Define basic salary plus allowances, deductions, and statutory amounts (tax, EOBI,
+              provident fund)
             </DialogDescription>
           </div>
           <button
@@ -308,17 +317,17 @@ export function StructureDialog({
                         value={component.kind}
                         onValueChange={(value) => {
                           clearField(`components.${index}.kind`);
+                          const kind = (COMPONENT_KIND_OPTIONS.some((o) => o.value === value)
+                            ? value
+                            : 'allowance') as SalaryComponentKind;
                           setForm((prev) => ({
                             ...prev,
                             components: prev.components.map((c, i) =>
-                              i === index ? { ...c, kind: value as 'allowance' | 'deduction' } : c,
+                              i === index ? { ...c, kind } : c,
                             ),
                           }));
                         }}
-                        options={[
-                          { value: 'allowance', label: 'Allowance' },
-                          { value: 'deduction', label: 'Deduction' },
-                        ]}
+                        options={COMPONENT_KIND_OPTIONS}
                         className={fieldClassName(`components.${index}.kind`, 'w-full')}
                       />
                       <input
@@ -383,6 +392,9 @@ export function StructureDialog({
                     </div>
                     <FormFieldError message={errors[`components.${index}.amount`]} />
                     <FormFieldError message={errors[`components.${index}.percentOfBasic`]} />
+                    <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                      Use a fixed amount or % of full basic. If both are filled, % of basic is used.
+                    </p>
                     {form.components.length > 1 && (
                       <button
                         type="button"

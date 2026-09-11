@@ -12,7 +12,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -21,7 +21,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -170,7 +169,21 @@ export function LoansPanel({ branchId }: { branchId: string }) {
                   rows.map((loan) => {
                     const overdue = isOverdue(loan.dueAt, loan.returnedAt);
                     return (
-                      <tr key={loan.id} className={dataTableRowHoverClass}>
+                      <tr
+                        key={loan.id}
+                        className={statusRowClass(
+                          overdue && !loan.returnedAt
+                            ? 'overdue'
+                            : loan.returnedAt
+                              ? 'paid'
+                              : 'pending',
+                          overdue && !loan.returnedAt
+                            ? 'Overdue'
+                            : loan.returnedAt
+                              ? 'Returned'
+                              : 'Issued',
+                        )}
+                      >
                         <td className={dataTableTdClass}>{loan.copy?.book?.title ?? '—'}</td>
                         <td className={dataTableTdClass}>{loan.copy?.copyCode ?? '—'}</td>
                         <td className={dataTableTdClass}>{borrowerName(loan)}</td>

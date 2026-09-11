@@ -21,8 +21,7 @@
     "db:seed:all": "npm run db:seed:all -w @eims/database",
     "db:seed:verify": "npm run db:seed:verify -w @eims/database",
     "verify:app": "node scripts/verify-app-readiness.mjs",
-    "mobile:parent": "npm run start:parent -w @eims/mobile",
-    "mobile:student": "npm run start:student -w @eims/mobile"
+    "mobile": "npm run start -w @eims/mobile"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

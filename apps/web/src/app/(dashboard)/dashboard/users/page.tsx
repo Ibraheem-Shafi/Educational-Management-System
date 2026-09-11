@@ -24,7 +24,7 @@ import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { UserAvatar } from '@/components/layout/user-avatar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { ContactIcon } from '@/components/layout/contact-icon';
@@ -38,7 +38,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -339,7 +339,13 @@ export default function UsersPage() {
               {!isLoading &&
                 !error &&
                 data?.data.map((staff) => (
-                  <tr key={staff.id} className="transition-colors hover:bg-[var(--neutral-50)]/50">
+                  <tr
+                    key={staff.id}
+                    className={cn(
+                      'transition-colors',
+                      statusRowClass(staffStatusCode(staff.status), staffStatusLabel(staff.status)),
+                    )}
+                  >
                     <td className={cn(tdClass, 'whitespace-nowrap')}>{staff.staffCode}</td>
                     <td className={tdClass}>
                       <div className="flex min-w-0 items-center gap-2.5">

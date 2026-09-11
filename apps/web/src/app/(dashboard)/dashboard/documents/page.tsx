@@ -28,11 +28,12 @@ import { PaginationBar } from '@/components/layout/pagination-bar';
 import { UploadDocumentDialog } from '@/components/features/documents/upload-document-dialog';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { categoryRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -267,20 +268,13 @@ export default function DocumentsPage() {
               )}
 
               {!isLoading && !error && rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
-                  >
-                    No documents found
-                  </td>
-                </tr>
+                <EmptyStateCell colSpan={5} title="No documents found" />
               )}
 
               {!isLoading &&
                 !error &&
                 rows.map((doc) => (
-                  <tr key={doc.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                  <tr key={doc.id} className={categoryRowClass(doc.category)}>
                     <td className={dataTableTdClass}>{doc.title}</td>
                     <td className={dataTableTdClass}>{doc.student?.fullName ?? '—'}</td>
                     <td className={dataTableTdClass}>{categoryLabel(doc.category)}</td>

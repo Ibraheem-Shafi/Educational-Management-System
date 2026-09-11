@@ -14,6 +14,7 @@ import { withBranchScope } from '@/lib/branch-scope';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import type { NoticesStatsResponse, PaginatedResponse } from '@eims/types';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { SearchInput } from '@/components/layout/search-input';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { FilterBar } from '@/components/layout/filter-bar';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import {
@@ -39,7 +40,6 @@ import {
 import { useNoticesRealtime } from '@/hooks/use-notices-realtime';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -99,6 +99,8 @@ export default function NoticesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editNotice, setEditNotice] = useState<EditableNotice | null>(null);
   const [viewNotice, setViewNotice] = useState<Notice | null>(null);
+  const [publishTarget, setPublishTarget] = useState<string | null>(null);
+  const [notifyFamilies, setNotifyFamilies] = useState(true);
   const [search, setSearch] = useState('');
   const [audience, setAudience] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -152,16 +154,22 @@ export default function NoticesPage() {
   const notices = data?.data ?? [];
 
   const publishMutation = useMutation({
-    mutationFn: (id: string) =>
+    mutationFn: ({ id, notifyFamilies: notify }: { id: string; notifyFamilies: boolean }) =>
       apiClient(`/notices/${id}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({ isPublished: true }),
+        body: JSON.stringify({ isPublished: true, notifyFamilies: notify }),
       }),
     onSuccess: () => {
-      toast.success('Notice published');
+      toast.success(
+        notifyFamilies
+          ? 'Notice published. Family alerts are queued.'
+          : 'Notice published',
+      );
       queryClient.invalidateQueries({ queryKey: ['notices'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.noticesStats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.communicationsStats });
+      setPublishTarget(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -212,6 +220,31 @@ export default function NoticesPage() {
         branchId={singleBranchId ?? ''}
         notice={editNotice}
       />
+
+      <ConfirmDialog
+        open={Boolean(publishTarget)}
+        onOpenChange={(open) => {
+          if (!open && !publishMutation.isPending) setPublishTarget(null);
+        }}
+        title="Publish notice"
+        description="Families will see this in the portal. Optionally send a WhatsApp/SMS alert (logged if Twilio is not configured)."
+        confirmLabel={notifyFamilies ? 'Publish and notify' : 'Publish without alert'}
+        loading={publishMutation.isPending}
+        onConfirm={() => {
+          if (!publishTarget) return;
+          publishMutation.mutate({ id: publishTarget, notifyFamilies });
+        }}
+      >
+        <label className="flex items-center gap-2 text-sm text-[var(--text-main-900)]">
+          <input
+            type="checkbox"
+            checked={notifyFamilies}
+            onChange={(e) => setNotifyFamilies(e.target.checked)}
+            className="h-4 w-4 accent-[var(--midnight-blue-950,#01366C)]"
+          />
+          Notify families by WhatsApp/SMS
+        </label>
+      </ConfirmDialog>
 
       <Dialog open={Boolean(viewNotice)} onOpenChange={(open) => !open && setViewNotice(null)}>
         <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col gap-0 p-0" aria-describedby={undefined}>
@@ -346,7 +379,10 @@ export default function NoticesPage() {
                 notices.map((notice) => {
                   const status = getNoticeStatus(notice);
                   return (
-                    <tr key={notice.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <tr
+                      key={notice.id}
+                      className={cn('transition-colors', statusRowClass(status.code, status.label))}
+                    >
                       <td className={cn(dataTableTdClass, 'font-mono text-xs text-[var(--text-sub-500,#525866)]')}>
                         {notice.id.slice(0, 8).toUpperCase()}
                       </td>
@@ -388,7 +424,10 @@ export default function NoticesPage() {
                                   },
                                   {
                                     label: 'Publish now',
-                                    onClick: () => publishMutation.mutate(notice.id),
+                                    onClick: () => {
+                                      setNotifyFamilies(true);
+                                      setPublishTarget(notice.id);
+                                    },
                                   },
                                 ]
                               : []),

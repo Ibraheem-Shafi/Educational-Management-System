@@ -58,7 +58,7 @@ export default function SettingsPage() {
   });
 
   const [name, setName] = useState('');
-  const [primaryColor, setPrimaryColor] = useState('#2563eb');
+  const [primaryColor, setPrimaryColor] = useState('#0d9b8a');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [parentPortal, setParentPortal] = useState(true);

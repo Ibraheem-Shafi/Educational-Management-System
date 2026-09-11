@@ -18,6 +18,9 @@ npm run db:push -w @eims/database
 # Parse + summary only
 npm run db:import:shahwali -w @eims/database -- --dry-run
 
+# Upsert income heads (fee types) only — no student/challan import
+npm run db:import:shahwali -w @eims/database -- --catalog-only
+
 # Create branch/catalog + upsert students/challans/invoices
 npm run db:import:shahwali -w @eims/database -- --apply
 
@@ -36,6 +39,8 @@ Fees → **Challans** tab → Print opens `/print/challans/[challanId]` (School 
 
 - Session label: `2026-2027` (Apr 2026 – Mar 2027)
 - `En. No.` → `admissionNumber`
+- Income heads (Tuition Fee, Admission Fee, discounts, board/sports/uniform charges, etc.) are upserted as **Fee types** (`--catalog-only` or `--apply`)
+- Excel extras kept: Security Fee, Party Charges
 - Arrears are challan line snapshots; charge lines map to invoices
 - Re-run `--apply` is idempotent on student + billing period / fee type
 - **Important:** set `DIRECT_URL` in `apps/api/.env` to the **session** connection (`:5432` pooler or `db.*.supabase.co`). Do **not** run long imports on `DATABASE_URL` transaction pooler (`:6543`) — it drops connections mid-run (`P1017` / `P1001`).

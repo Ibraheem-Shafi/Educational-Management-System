@@ -26,6 +26,7 @@ import {
   exportPayrollRunQuerySchema,
   listPayrollRunsQuerySchema,
   listSalaryStructuresQuerySchema,
+  markPayrollPaidSchema,
   updateSalaryStructureSchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -36,6 +37,7 @@ import type {
   ExportPayrollRunQuery,
   ListPayrollRunsQuery,
   ListSalaryStructuresQuery,
+  MarkPayrollPaidInput,
   UpdateSalaryStructureInput,
 } from '@eims/shared';
 
@@ -137,6 +139,16 @@ export class PayrollController {
     return this.payrollService.submitApproval(id, user, scope);
   }
 
+  @Post('runs/:id/send-back')
+  @Permissions('payroll.manage')
+  sendBackToDraft(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.payrollService.sendBackToDraft(id, user, scope);
+  }
+
   @Post('runs/:id/approve')
   @Permissions('payroll.approve')
   approveRun(
@@ -155,6 +167,17 @@ export class PayrollController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.payrollService.finalizeRun(id, user, scope);
+  }
+
+  @Post('runs/:id/mark-paid')
+  @Permissions('payroll.manage')
+  markPaid(
+    @Param('id') id: string,
+    @Body(createZodPipe(markPayrollPaidSchema)) body: MarkPayrollPaidInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.payrollService.markPaid(id, body, user, scope);
   }
 
   @Get('runs/:id/export')

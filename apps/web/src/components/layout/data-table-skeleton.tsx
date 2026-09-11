@@ -15,7 +15,7 @@ export function DataTableSkeletonRows({
         <tr key={rowIndex}>
           {Array.from({ length: columns }).map((__, colIndex) => (
             <td key={colIndex} className={dataTableTdClass}>
-              <div className="h-4 animate-pulse rounded bg-[var(--neutral-50)]" />
+              <div className="h-4 animate-pulse rounded bg-[var(--palette-teal-soft)]" />
             </td>
           ))}
         </tr>

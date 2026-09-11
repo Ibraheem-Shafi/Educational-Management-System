@@ -21,6 +21,8 @@ import { FormFieldLabel, modalFieldClassName } from '@/components/features/users
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { queryKeys } from '@/lib/query-keys';
 import { formatCurrency } from '@eims/shared';
+import { DateField } from '@/components/ui/date-field';
+import { todayYmd } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 
 const METHOD_OPTIONS = [
@@ -66,6 +68,7 @@ export function RecordPaymentDialog({
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [amount, setAmount] = useState('');
+  const [paidAt, setPaidAt] = useState(todayYmd());
   const [method, setMethod] = useState('cash');
   const [providerRef, setProviderRef] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -83,6 +86,7 @@ export function RecordPaymentDialog({
     if (open && invoice) {
       const rem = roundMoney(invoice.remainingAmount ?? invoice.netAmount);
       setAmount(String(rem));
+      setPaidAt(todayYmd());
       setMethod('cash');
       setProviderRef('');
       setReceiptFile(null);
@@ -91,6 +95,7 @@ export function RecordPaymentDialog({
     }
     if (!open) {
       setAmount('');
+      setPaidAt(todayYmd());
       setMethod('cash');
       setProviderRef('');
       setReceiptFile(null);
@@ -103,6 +108,7 @@ export function RecordPaymentDialog({
     mutationFn: async (payload: {
       amount: number;
       method: string;
+      paidAt: string;
       providerRef?: string;
       receipt?: {
         storagePath: string;
@@ -135,6 +141,7 @@ export function RecordPaymentDialog({
         body: JSON.stringify({
           amount: payload.amount,
           method: payload.method,
+          paidAt: payload.paidAt,
           ...(payload.providerRef ? { providerRef: payload.providerRef } : {}),
           ...(receipt ? { receipt } : {}),
         }),
@@ -173,6 +180,11 @@ export function RecordPaymentDialog({
     e.preventDefault();
     if (!invoice) return;
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
+      setFieldError('paidAt', 'Paid date is required');
+      return;
+    }
+
     const numericAmount = roundMoney(Number(amount));
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setAmountError('Amount must be greater than 0');
@@ -193,6 +205,7 @@ export function RecordPaymentDialog({
     const payload = {
       amount: isFull ? remaining : numericAmount,
       method: method as 'cash' | 'bank' | 'online' | 'other',
+      paidAt,
       ...(trimmedRef ? { providerRef: trimmedRef } : {}),
       // Placeholder so schema refine passes before upload; real path set in mutation
       ...(needsReceipt(method) && receiptFile
@@ -263,6 +276,24 @@ export function RecordPaymentDialog({
                 </p>
               )}
               <FormFieldError message={amountError ?? errors.amount} />
+            </div>
+
+            <div>
+              <FormFieldLabel htmlFor="payment-paid-at" required>
+                Paid date
+              </FormFieldLabel>
+              <DateField
+                id="payment-paid-at"
+                value={paidAt}
+                onValueChange={(value) => {
+                  clearField('paidAt');
+                  setPaidAt(value);
+                }}
+                confirmTitle="Backdated payment"
+                confirmDescription="Use this only if the money was received on an earlier day, not today."
+                className={fieldClassName('paidAt', modalFieldClassName)}
+              />
+              <FormFieldError message={errors.paidAt} />
             </div>
 
             <div>
@@ -371,7 +402,7 @@ export function RecordPaymentDialog({
               type="submit"
               disabled={!invoice || remaining <= 0 || recordMutation.isPending}
               className={cn(
-                'rounded-lg bg-[var(--primary-base,#2563EB)] px-4 py-2 text-sm font-medium text-white',
+                'rounded-lg bg-[var(--institution-primary)] px-4 py-2 text-sm font-medium text-white',
                 'disabled:cursor-not-allowed disabled:opacity-50',
               )}
             >

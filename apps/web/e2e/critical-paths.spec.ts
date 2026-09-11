@@ -49,9 +49,9 @@ test.describe('Critical paths (API-mocked)', () => {
   test('reports page shows overview and export', async ({ page }) => {
     await page.goto('/dashboard/reports');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByText('Overview, fee collection, and performance insights'),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Academic reports')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Finance reports')).toBeVisible();
+    await expect(page.getByText('Admin reports')).toBeVisible();
     await expect(page.getByText('Collection summary')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Export CSV' }).first()).toBeVisible();
   });

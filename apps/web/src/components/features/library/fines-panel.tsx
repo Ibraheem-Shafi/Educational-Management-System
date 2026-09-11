@@ -12,10 +12,9 @@ import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -130,7 +129,10 @@ export function FinesPanel({ branchId }: { branchId: string }) {
                 </tr>
               ) : (
                 rows.map((fine) => (
-                  <tr key={fine.id} className={dataTableRowHoverClass}>
+                  <tr
+                    key={fine.id}
+                    className={statusRowClass(statusBadgeCode(fine.status), formatLabel(fine.status))}
+                  >
                     <td className={dataTableTdClass}>
                       {fine.loan ? borrowerName(fine.loan) : '—'}
                     </td>

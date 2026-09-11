@@ -16,7 +16,7 @@ import {
   PageHeaderActionIcon,
   pageHeaderActionClassName,
 } from '@/components/layout/page-header';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
@@ -266,7 +266,10 @@ export default function LeaveRequestsPage() {
                 </tr>
               ) : (
                 data?.data.map((row) => (
-                  <tr key={row.id} className="transition-colors hover:bg-[var(--neutral-50)]/50">
+                  <tr
+                    key={row.id}
+                    className={cn('transition-colors', statusRowClass(row.status, row.status))}
+                  >
                     <td className={dataTableTdClass}>
                       {row.kind === 'employee' ? 'Staff' : 'Student'}
                     </td>

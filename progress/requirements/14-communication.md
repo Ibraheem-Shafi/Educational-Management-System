@@ -15,5 +15,5 @@
 | Realtime notice delivery | [notices](../modules/notices.md) | done | Supabase Realtime hook |
 | Portal notice display | [notices](../modules/notices.md) | done | Parent + student portals |
 | Email notifications | [phase-3-future](../modules/phase-3-future.md) | done | Resend: invitations, notices, fee reminders |
-| SMS / WhatsApp | [phase-3-future](../modules/phase-3-future.md) | done | Communications dashboard |
+| SMS / WhatsApp | [phase-3-future](../modules/phase-3-future.md) | done | Event alerts (notice, absence, fees, results); institution Twilio keys |
 | Fee reminders | [fees](../modules/fees.md) | done | SMS/WhatsApp + email fallback |

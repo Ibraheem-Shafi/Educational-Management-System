@@ -61,7 +61,7 @@ export function PrintShell({
         <button
           type="button"
           onClick={() => window.print()}
-          className="rounded-lg bg-[var(--primary-base,#2563EB)] px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90"
+              className="rounded-lg bg-[var(--institution-primary)] px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90"
         >
           Print again
         </button>

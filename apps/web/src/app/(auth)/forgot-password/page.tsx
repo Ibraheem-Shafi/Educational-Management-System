@@ -48,7 +48,7 @@ export default function ForgotPasswordPage() {
       description={`Enter the email linked to your ${name} account and we’ll send a reset link.`}
       footer={
         <p className="text-center text-sm text-[#5B6578]">
-          <Link href="/login" className="font-medium text-[#5B2FE0] transition hover:text-[#3B1FA8]">
+          <Link href="/login" className="font-medium text-[var(--palette-teal)] transition hover:text-[var(--palette-navy)]">
             Back to sign in
           </Link>
         </p>

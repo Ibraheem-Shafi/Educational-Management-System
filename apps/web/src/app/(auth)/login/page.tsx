@@ -228,7 +228,7 @@ function LoginPageContent() {
           <p className="text-center text-sm text-[#5B6578]">
             <Link
               href="/forgot-password"
-              className="font-medium text-[#5B2FE0] transition hover:text-[#3B1FA8]"
+              className="font-medium text-[var(--palette-teal)] transition hover:text-[var(--palette-navy)]"
             >
               Forgot password?
             </Link>

@@ -14,6 +14,7 @@ import {
 import { PERMISSIONS } from '@eims/shared';
 import { usePermissions } from '@/hooks/use-permissions';
 import type { Permission } from '@/lib/permissions';
+import { paletteAt, paletteColor } from '@/lib/ui-palette';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -102,22 +103,24 @@ export function QuickActionsCard({ isLoading }: { isLoading?: boolean }) {
             No quick actions available
           </p>
         ) : (
-          actions.map((action) => {
+          actions.map((action, index) => {
             const Icon = action.icon;
+            const accent = paletteAt(index);
             return (
               <Link
                 key={action.label}
                 href={action.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl border border-stroke-soft-200',
-                  'bg-white px-4 py-3 transition-colors hover:bg-neutral-50',
+                  'flex items-center gap-3 rounded-xl',
+                  'px-4 py-3 text-white transition-opacity hover:opacity-90',
                   'sm:flex-col sm:justify-center sm:gap-2 sm:px-3 sm:py-4 sm:text-center',
                 )}
+                style={{ backgroundColor: paletteColor(accent) }}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF]">
-                  <Icon className="h-5 w-5 text-[#2563EB]" strokeWidth={1.75} />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20">
+                  <Icon className="h-5 w-5 text-white" strokeWidth={1.75} />
                 </span>
-                <span className="text-sm font-medium leading-5 text-text-main-900">
+                <span className="text-sm font-medium leading-5 text-white">
                   {action.label}
                 </span>
               </Link>

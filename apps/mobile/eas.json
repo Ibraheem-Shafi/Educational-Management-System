@@ -6,45 +6,19 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "APP_ROLE": "parent"
-      }
-    },
-    "development-student": {
-      "extends": "development",
-      "env": {
-        "APP_ROLE": "student"
-      }
+      "distribution": "internal"
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "APP_ROLE": "parent"
-      }
-    },
-    "preview-student": {
-      "extends": "preview",
-      "env": {
-        "APP_ROLE": "student"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
-      "env": {
-        "APP_ROLE": "parent"
-      }
-    },
-    "production-student": {
-      "extends": "production",
-      "env": {
-        "APP_ROLE": "student"
-      }
+      "ios": {}
     }
   },
   "submit": {

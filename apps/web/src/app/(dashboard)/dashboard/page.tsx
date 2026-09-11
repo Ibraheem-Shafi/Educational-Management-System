@@ -188,10 +188,10 @@ export default function DashboardPage() {
         <DashboardPageSkeleton hideHeader section="full" />
       ) : (
         <>
-          {showStatsSkeleton && <MainStatsSection isLoading stats={[]} />}
+          {showStatsSkeleton && <MainStatsSection isLoading stats={[]} variant="filled" />}
 
           {(showOrgAsPrimary || showFeesAsPrimary) && primaryStats.length > 0 && (
-            <MainStatsSection stats={primaryStats} />
+            <MainStatsSection stats={primaryStats} variant="filled" />
           )}
 
           {(canReadAttendance || canReadFees) && (

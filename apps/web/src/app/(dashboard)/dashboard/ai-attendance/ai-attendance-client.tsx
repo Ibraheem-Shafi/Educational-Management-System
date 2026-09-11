@@ -24,7 +24,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
@@ -33,7 +34,7 @@ import { ComingSoonFrame } from '@/components/coming-soon';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -359,8 +360,14 @@ export default function AiAttendancePage() {
                     </tr>
                   </thead>
                   <tbody className="[&>tr:last-child>td]:border-b-0">
-                    {suggestions.map((s) => (
-                      <tr key={s.studentId} className="hover:bg-[var(--neutral-50)]/50">
+                    {suggestions.map((s) => {
+                      const selectedId = statusByStudent[s.studentId] ?? s.statusId;
+                      const selected = (statuses?.statuses ?? []).find((st) => st.id === selectedId);
+                      return (
+                      <tr
+                        key={s.studentId}
+                        className={statusRowClass(s.statusCode, selected?.label ?? s.statusCode)}
+                      >
                         <td className={tdClass}>
                           <p className="font-medium">{s.fullName}</p>
                           {s.sourceLine && (
@@ -379,7 +386,8 @@ export default function AiAttendancePage() {
                           />
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -418,7 +426,13 @@ export default function AiAttendancePage() {
                 </tr>
               ) : (
                 sessions?.data.map((s) => (
-                <tr key={s.id} className="hover:bg-[var(--neutral-50)]/50">
+                <tr
+                  key={s.id}
+                  className={statusRowClass(
+                    s.status === 'confirmed' ? 'active' : 'pending',
+                    s.status,
+                  )}
+                >
                   <td className={tdClass}>{s.date}</td>
                   <td className={tdClass}>
                     <StatusBadge

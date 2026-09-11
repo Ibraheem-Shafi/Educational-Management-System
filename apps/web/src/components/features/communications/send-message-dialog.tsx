@@ -23,7 +23,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 const emptyForm = {
-  channel: 'sms' as 'sms' | 'whatsapp',
+  channel: 'whatsapp' as 'sms' | 'whatsapp',
   recipient: '',
   body: '',
 };
@@ -82,7 +82,9 @@ export function SendMessageDialog({
           </div>
           <div className="min-w-0 flex-1">
             <DialogTitle>Send message</DialogTitle>
-            <DialogDescription className="mt-1">Send an SMS or WhatsApp message</DialogDescription>
+            <DialogDescription className="mt-1">
+              Send a one-off WhatsApp or SMS to a parent or staff number
+            </DialogDescription>
           </div>
           <button
             type="button"
@@ -116,8 +118,8 @@ export function SendMessageDialog({
                 value={form.channel}
                 onValueChange={(value) => updateField('channel', value as 'sms' | 'whatsapp')}
                 options={[
-                  { value: 'sms', label: 'SMS' },
                   { value: 'whatsapp', label: 'WhatsApp' },
+                  { value: 'sms', label: 'SMS' },
                 ]}
                 className="w-full"
               />

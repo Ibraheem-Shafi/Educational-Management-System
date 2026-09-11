@@ -1,21 +1,11 @@
 import { Redirect } from 'expo-router';
-import { LoadingView } from '@/components/Screen';
+import { LoadingView } from '@/components/ui';
 import { useAuth } from '@/lib/auth-context';
+import { homeHref } from '@/lib/role';
 
 export default function Index() {
-  const { user, loading, roleError } = useAuth();
-
-  if (loading) {
-    return <LoadingView />;
-  }
-
-  if (roleError) {
-    return <Redirect href="/login" />;
-  }
-
-  if (user) {
-    return <Redirect href="/(tabs)" />;
-  }
-
-  return <Redirect href="/login" />;
+  const { user, appRole, loading, roleError } = useAuth();
+  if (loading) return <LoadingView />;
+  if (roleError || !user || !appRole) return <Redirect href="/(auth)/login" />;
+  return <Redirect href={homeHref(appRole)} />;
 }

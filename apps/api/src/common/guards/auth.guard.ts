@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { requiresMfaPolicy, isSuperAdmin } from '@eims/shared';
+import { isSuperAdmin, requiresMfaPolicy, resolveEffectivePermissionCodes } from '@eims/shared';
 import { PrismaService } from '../../prisma/prisma.module';
 import { IS_PUBLIC_KEY, SKIP_MFA_KEY } from '../decorators/auth.decorators';
 import { getJwtAal } from '../utils/jwt.util';
@@ -77,6 +77,12 @@ export class AuthGuard implements CanActivate {
               },
             },
           },
+          userPermissions: {
+            select: {
+              effect: true,
+              permission: { select: { code: true } },
+            },
+          },
         },
       });
 
@@ -97,11 +103,17 @@ export class AuthGuard implements CanActivate {
         });
       }
 
-      const permissionSet = new Set<string>();
+      const roleCodes = new Set<string>();
+      const grants: string[] = [];
+      const denies: string[] = [];
       for (const ur of appUser.userRoles) {
         for (const rp of ur.role.rolePermissions) {
-          permissionSet.add(rp.permission.code);
+          roleCodes.add(rp.permission.code);
         }
+      }
+      for (const row of appUser.userPermissions) {
+        if (row.effect === 'grant') grants.push(row.permission.code);
+        if (row.effect === 'deny') denies.push(row.permission.code);
       }
 
       authUser = {
@@ -111,7 +123,12 @@ export class AuthGuard implements CanActivate {
         fullName: appUser.fullName,
         branchId: appUser.branchId,
         roles,
-        permissions: Array.from(permissionSet),
+        permissions: resolveEffectivePermissionCodes({
+          isSuperAdmin: superAdmin,
+          roleCodes,
+          grants,
+          denies,
+        }),
         isActive: superAdmin ? true : appUser.isActive,
       };
 

@@ -10,10 +10,13 @@ import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { SearchInput } from '@/components/layout/search-input';
 import { PaginationBar } from '@/components/layout/pagination-bar';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import { cn } from '@/lib/utils';
 
 const thClass =
-  'h-9 border-0 bg-[#F8F8F8] px-4 text-left text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-sub-500,#525866)] first:rounded-l-lg last:rounded-r-lg';
+  'h-9 border-0 bg-[var(--palette-teal-soft)] px-4 text-left text-sm font-medium leading-5 tracking-[-0.006em] text-[var(--palette-navy)] first:rounded-l-lg last:rounded-r-lg';
 const tdClass =
   'border-0 border-b border-[var(--stroke-soft-200,#E2E4E9)] px-4 py-3 text-sm font-normal leading-5 tracking-[-0.006em] text-[var(--text-main-900,#0A0D14)]';
 
@@ -115,28 +118,29 @@ export function AuditList({
                     <tr key={i}>
                       {Array.from({ length: 4 }).map((__, j) => (
                         <td key={j} className={tdClass}>
-                          <div className="h-4 w-20 animate-pulse rounded bg-[var(--neutral-50)]" />
+                          <div className="h-4 w-20 animate-pulse rounded bg-[var(--palette-teal-soft)]" />
                         </td>
                       ))}
                     </tr>
                   ))}
 
                 {!isLoading && data?.data.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]">
-                      No audit logs found
-                    </td>
-                  </tr>
+                  <EmptyStateCell colSpan={4} title="No audit logs found" />
                 )}
 
-                {data?.data.map((log) => (
-                  <tr key={log.id} className="font-mono hover:bg-[var(--neutral-50)]/50">
+                {data?.data.map((log, index) => (
+                  <tr key={log.id} className={cn('font-mono', seedRowClass(log.id, index))}>
                     <td className={cn(tdClass, 'break-all')}>{log.action}</td>
                     <td className={cn(tdClass, 'break-all text-[var(--text-sub-500)]')}>
                       {log.entityType}
                       {log.entityId ? ` · ${log.entityId.slice(0, 8)}` : ''}
                     </td>
-                    <td className={tdClass}>{log.user?.fullName ?? 'system'}</td>
+                    <td className={tdClass}>
+                      <div className="flex items-center gap-2 font-sans">
+                        <UserAvatar name={log.user?.fullName ?? 'system'} seed={log.id} size="sm" />
+                        {log.user?.fullName ?? 'system'}
+                      </div>
+                    </td>
                     <td className={cn(tdClass, 'whitespace-nowrap text-[var(--text-sub-500)]')}>
                       {new Date(log.createdAt).toLocaleString()}
                     </td>

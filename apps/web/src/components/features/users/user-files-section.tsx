@@ -20,6 +20,8 @@ import {
   dataTableThClass,
   dataTableWrapperClass,
 } from '@/components/layout/data-table-styles';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
 import { cn } from '@/lib/utils';
 
 const EMPLOYEE_CATEGORIES = [
@@ -186,14 +188,10 @@ export function UserFilesSection({
                 </td>
               </tr>
             ) : docs.length === 0 ? (
-              <tr>
-                <td colSpan={4} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                  No files uploaded
-                </td>
-              </tr>
+              <EmptyStateCell colSpan={4} title="No files uploaded" />
             ) : (
-              docs.map((doc) => (
-                <tr key={doc.id}>
+              docs.map((doc, index) => (
+                <tr key={doc.id} className={seedRowClass(doc.id, index)}>
                   <td className={dataTableTdClass}>{doc.title}</td>
                   <td className={dataTableTdClass}>{categoryLabel(doc.category)}</td>
                   <td className={dataTableTdClass}>

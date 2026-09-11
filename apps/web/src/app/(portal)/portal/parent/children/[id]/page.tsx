@@ -28,7 +28,7 @@ import { formatLearningDueDate } from '@/lib/portal-learning';
 import { PageHeader } from '@/components/layout/page-header';
 import { MainStatsSection } from '@/components/layout/main-stats-section';
 import { ContentPanel } from '@/components/layout/content-panel';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PortalPageSkeleton } from '@/components/layout/portal-page-skeleton';
 import { MetricDonutCard } from '@/components/dashboard/metric-donut-card';
 import { TrendAreaChart } from '@/components/dashboard/trend-area-chart';
@@ -216,9 +216,9 @@ export default function ParentChildOverviewPage() {
           title="Attendance mix"
           subtitle="Last 30 days"
           segments={[
-            { label: 'Present', rate: rates.present, color: '#38C793' },
-            { label: 'Absent', rate: rates.absent, color: '#EF4444' },
-            { label: 'Late', rate: rates.late, color: '#F59E0B' },
+            { label: 'Present', rate: rates.present, color: 'var(--palette-teal)' },
+            { label: 'Absent', rate: rates.absent, color: 'var(--palette-coral)' },
+            { label: 'Late', rate: rates.late, color: 'var(--palette-yellow)' },
           ]}
         />
         <TrendAreaChart
@@ -249,7 +249,10 @@ export default function ParentChildOverviewPage() {
                 </tr>
               ) : (
                 child.attendance?.map((row, i) => (
-                  <tr key={`${row.date}-${i}`}>
+                  <tr
+                    key={`${row.date}-${i}`}
+                    className={statusRowClass(row.status?.code, row.status?.label ?? '')}
+                  >
                     <td className={dataTableTdClass}>{row.date}</td>
                     <td className={dataTableTdClass}>
                       <StatusBadge label={row.status?.label ?? '—'} code={row.status?.code} />
@@ -351,7 +354,10 @@ export default function ParentChildOverviewPage() {
                 </tr>
               ) : (
                 child.fees.recent.map((inv, i) => (
-                  <tr key={i}>
+                  <tr
+                    key={i}
+                    className={statusRowClass(inv.status?.code, inv.status?.label ?? '')}
+                  >
                     <td className={dataTableTdClass}>{inv.feeType?.name ?? 'Fee'}</td>
                     <td className={dataTableTdClass}>{formatCurrency(inv.netAmount)}</td>
                     <td className={dataTableTdClass}>

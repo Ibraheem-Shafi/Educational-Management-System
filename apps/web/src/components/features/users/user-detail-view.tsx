@@ -24,8 +24,9 @@ import { cn } from '@/lib/utils';
 import { UserContractsSection } from '@/components/features/users/user-contracts-section';
 import { UserReviewsSection } from '@/components/features/users/user-reviews-section';
 import { UserFilesSection } from '@/components/features/users/user-files-section';
+import { UserAccessPanel } from '@/components/features/users/user-access-panel';
 import { usePermissions } from '@/hooks/use-permissions';
-import { PERMISSIONS } from '@eims/shared';
+import { PERMISSIONS, isSuperAdmin } from '@eims/shared';
 
 function formatGender(gender: string | null): string {
   if (!gender) return '—';
@@ -135,10 +136,11 @@ export function UserDetailView({
     () => groupPermissions(user.permissions ?? []),
     [user.permissions],
   );
-  const { can } = usePermissions();
+  const { can, user: actor } = usePermissions();
   const canViewHr = can(PERMISSIONS.HR_READ);
   const canViewPayroll = can(PERMISSIONS.PAYROLL_READ);
   const canViewDocs = can(PERMISSIONS.DOCUMENTS_READ);
+  const canEditAccess = isSuperAdmin(actor?.roles ?? []);
 
   const primaryRole = user.roles[0] ?? null;
   const permissionCount = user.permissions?.length ?? 0;
@@ -274,6 +276,10 @@ export function UserDetailView({
 
       <DetailCard title={`Roles & permissions (${permissionCount})`} icon={Shield}>
         <div className="space-y-6 px-5 py-5">
+          {canEditAccess ? (
+            <UserAccessPanel userId={user.id} />
+          ) : (
+            <>
           <div>
             <h3 className="mb-3 text-sm font-medium tracking-[-0.006em] text-[var(--text-main-900)]">
               Roles
@@ -315,7 +321,7 @@ export function UserDetailView({
                     <col className="w-[58%]" />
                   </colgroup>
                   <thead>
-                    <tr className="bg-[#F8F8F8]">
+                    <tr className="bg-[var(--palette-teal-soft)]">
                       <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-sub-500)]">
                         Permission
                       </th>
@@ -337,6 +343,8 @@ export function UserDetailView({
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
       </DetailCard>
     </div>

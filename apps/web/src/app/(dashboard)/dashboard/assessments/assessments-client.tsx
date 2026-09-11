@@ -31,7 +31,6 @@ import {
 } from '@/components/features/assessments/assessment-taxonomy-dialog';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -39,7 +38,7 @@ import {
 import { DataTableSkeletonRows } from '@/components/layout/data-table-skeleton';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { queryKeys } from '@/lib/query-keys';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { cn } from '@/lib/utils';
 
 type AssessmentsTab = 'assessments' | 'series' | 'types';
@@ -453,7 +452,13 @@ export default function AssessmentsPage() {
                     assessments?.data.map((assessment) => (
                       <tr
                         key={assessment.id}
-                        className={cn('transition-colors', dataTableRowHoverClass)}
+                        className={cn(
+                          'transition-colors',
+                          statusRowClass(
+                            assessmentStatusCode(assessment.status),
+                            assessmentStatusLabel(assessment.status),
+                          ),
+                        )}
                       >
                         <td className={dataTableTdClass}>{assessment.name}</td>
                         <td className={dataTableTdClass}>{assessment.type?.name ?? '—'}</td>
@@ -578,7 +583,13 @@ export default function AssessmentsPage() {
                   </tr>
                 ) : (
                   seriesList?.data.map((s) => (
-                    <tr key={s.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <tr
+                      key={s.id}
+                      className={cn(
+                        'transition-colors',
+                        statusRowClass(s.isActive ? 'active' : 'draft', s.isActive ? 'Active' : 'Inactive'),
+                      )}
+                    >
                       <td className={dataTableTdClass}>{s.name}</td>
                       <td className={dataTableTdClass}>{s.code}</td>
                       <td className={dataTableTdClass}>
@@ -665,7 +676,13 @@ export default function AssessmentsPage() {
                   </tr>
                 ) : (
                   types?.data.map((t) => (
-                    <tr key={t.id} className={cn('transition-colors', dataTableRowHoverClass)}>
+                    <tr
+                      key={t.id}
+                      className={cn(
+                        'transition-colors',
+                        statusRowClass(t.isActive ? 'active' : 'draft', t.isActive ? 'Active' : 'Inactive'),
+                      )}
+                    >
                       <td className={dataTableTdClass}>{t.name}</td>
                       <td className={dataTableTdClass}>{t.code}</td>
                       <td className={dataTableTdClass}>

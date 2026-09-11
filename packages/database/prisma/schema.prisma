@@ -70,10 +70,17 @@ model User {
 
   branch               Branch?              @relation(fields: [branchId], references: [id])
   userRoles            UserRole[]
+  userPermissions      UserPermission[]
   userSessions         UserSession[]
   employmentContracts  EmploymentContract[]
   performanceReviews   PerformanceReview[]  @relation("ReviewSubject")
   reviewsAuthored       PerformanceReview[]  @relation("ReviewAuthor")
+  lessonPlansTaught         LessonPlan[]             @relation("LessonPlanTeacher")
+  observationsReceived      ClassroomObservation[]   @relation("ObservationTeacher")
+  observationsGiven         ClassroomObservation[]   @relation("ObservationObserver")
+  academicActionsOwned      AcademicAction[]
+  staffTrainings            StaffTraining[]
+  applicantsHired           Applicant[]
   documents             Document[]
   libraryLoansBorrowed       LibraryLoan[]                @relation("LibraryLoanBorrower")
   libraryLoansIssued         LibraryLoan[]                @relation("LibraryLoanIssuer")
@@ -110,6 +117,7 @@ model Permission {
   createdAt DateTime @default(now())
 
   rolePermissions RolePermission[]
+  userPermissions UserPermission[]
 }
 
 model UserRole {
@@ -134,6 +142,21 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
+}
+
+/** Per-user grant or deny on top of the assigned role template. effect: grant | deny */
+model UserPermission {
+  id           String @id @default(cuid())
+  userId       String
+  permissionId String
+  effect       String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
 }
 
 model LookupCategory {
@@ -192,6 +215,8 @@ model Batch {
   program        Program         @relation(fields: [programId], references: [id])
   students       Student[]
   batchSubjects  BatchSubject[]
+  syllabusUnits  SyllabusUnit[]
+  lessonPlans    LessonPlan[]
 
   @@index([branchId])
   @@index([programId])
@@ -209,6 +234,8 @@ model Subject {
 
   batchSubjects   BatchSubject[]
   studentSubjects StudentSubject[]
+  syllabusUnits   SyllabusUnit[]
+  lessonPlans     LessonPlan[]
 }
 
 model BatchSubject {
@@ -263,6 +290,13 @@ model Student {
   rollNumber       String?
   /// Fixed PKR off monthly tuition; applied on each new monthly fee invoice.
   monthlyFeeDiscount Decimal @default(0) @db.Decimal(12, 2)
+  /// Optional listed monthly tuition override; when set, used instead of FeeStructure.
+  monthlyFeeAmount   Decimal? @db.Decimal(12, 2)
+  monthlyFeeWaived   Boolean  @default(false)
+  /// full | installments | waived | deferred
+  annualChargeMode         String    @default("full")
+  annualDeferredUntil      DateTime?
+  annualInstallmentCount   Int       @default(12)
   customFields     Json      @default("{}")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -284,6 +318,7 @@ model Student {
   libraryReservations  LibraryReservation[]
   transportAssignments StudentTransport[]
   transportAttendance  TransportAttendance[]
+  disciplineIncidents  DisciplineIncident[]
 
   @@unique([branchId, admissionNumber])
   @@unique([branchId, batchId, rollNumber])
@@ -478,6 +513,7 @@ model FeeInvoice {
   @@index([branchId, studentId, billingPeriod])
   @@index([billingPeriod])
   @@index([studentId, feeTypeId, billingPeriod])
+  @@index([branchId, voucherNo])
 }
 
 /// Multi-line fee challan for a student + billing month (bank / school / student copies).
@@ -667,19 +703,54 @@ model AttendanceOcrSession {
   @@index([status])
 }
 
+model CommunicationCampaign {
+  id              String   @id @default(cuid())
+  channel         String
+  templateKey     String
+  audience        String
+  noticeId        String?
+  programId       String?
+  batchId         String?
+  branchScope     Json?
+  customBody      String?
+  smsFallback     Boolean  @default(true)
+  queuedCount     Int      @default(0)
+  sentCount       Int      @default(0)
+  deliveredCount  Int      @default(0)
+  failedCount     Int      @default(0)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logs CommunicationLog[]
+
+  @@index([createdAt])
+  @@index([channel])
+}
+
 model CommunicationLog {
-  id          String   @id @default(cuid())
-  channel     String
-  recipient   String
-  subject     String?
-  body        String
-  status      String   @default("queued")
-  metadata    Json?
-  createdById String?
-  createdAt   DateTime @default(now())
+  id                 String   @id @default(cuid())
+  campaignId         String?
+  channel            String
+  recipient          String
+  subject            String?
+  body               String
+  status             String   @default("queued")
+  templateKey        String?
+  providerMessageSid String?
+  errorCode          String?
+  metadata           Json?
+  createdById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+
+  campaign CommunicationCampaign? @relation(fields: [campaignId], references: [id])
 
   @@index([channel])
   @@index([createdAt])
+  @@index([campaignId])
+  @@index([providerMessageSid])
+  @@index([status])
 }
 
 model LearningResource {
@@ -1246,16 +1317,18 @@ model SalaryComponent {
 }
 
 model PayrollRun {
-  id           String    @id @default(cuid())
-  branchId     String
-  year         Int
-  month        Int
-  status       String    @default("draft")
-  approvedById String?
-  finalizedAt  DateTime?
-  notes        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  branchId       String
+  year           Int
+  month          Int
+  status         String    @default("draft")
+  approvedById   String?
+  finalizedAt    DateTime?
+  paidAt         DateTime?
+  paymentMethod  String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   lines PayrollLine[]
 
@@ -1304,7 +1377,8 @@ model FeePayment {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice     FeeInvoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  bankMatches BankStatementLine[]
 
   @@unique([branchId, receiptNo])
   @@index([invoiceId])
@@ -1326,8 +1400,9 @@ model Account {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  journalLines JournalLine[]
-  budgetLines  BudgetLine[]
+  journalLines   JournalLine[]
+  budgetLines    BudgetLine[]
+  bankStatements BankStatement[]
 
   @@unique([code, branchId])
   @@index([type, isActive])
@@ -1368,8 +1443,9 @@ model JournalLine {
   credit    Decimal @default(0) @db.Decimal(14, 2)
   memo      String?
 
-  voucher JournalVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  account Account        @relation(fields: [accountId], references: [id])
+  voucher    JournalVoucher      @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  account    Account             @relation(fields: [accountId], references: [id])
+  bankMatches BankStatementLine[]
 
   @@index([voucherId])
   @@index([accountId])
@@ -1383,7 +1459,8 @@ model Budget {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines BudgetLine[]
+  lines         BudgetLine[]
+  forecastLines BudgetForecastLine[]
 
   @@index([branchId, year])
 }
@@ -1471,4 +1548,452 @@ model DevicePushToken {
 
   @@index([userId])
   @@index([appRole])
+}
+
+// --- Academic operations ---
+
+model SyllabusUnit {
+  id               String    @id @default(cuid())
+  branchId         String
+  subjectId        String
+  batchId          String?
+  title            String
+  plannedTopics    Int       @default(0)
+  completedTopics  Int       @default(0)
+  status           String    @default("planned")
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  subject Subject @relation(fields: [subjectId], references: [id])
+  batch   Batch?  @relation(fields: [batchId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([subjectId])
+  @@index([batchId])
+}
+
+model LessonPlan {
+  id        String    @id @default(cuid())
+  branchId  String
+  date      DateTime  @db.Date
+  batchId   String
+  subjectId String
+  teacherId String
+  title     String
+  status    String    @default("planned")
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  batch   Batch   @relation(fields: [batchId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  teacher User    @relation("LessonPlanTeacher", fields: [teacherId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([date])
+  @@index([teacherId])
+}
+
+model ClassroomObservation {
+  id         String    @id @default(cuid())
+  branchId   String
+  observedAt DateTime  @db.Date
+  teacherId  String
+  observerId String?
+  score      Decimal?  @db.Decimal(5, 2)
+  summary    String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  teacher  User  @relation("ObservationTeacher", fields: [teacherId], references: [id])
+  observer User? @relation("ObservationObserver", fields: [observerId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([teacherId])
+  @@index([observedAt])
+}
+
+model SchoolEvent {
+  id            String    @id @default(cuid())
+  branchId      String
+  kind          String
+  title         String
+  eventDate     DateTime  @db.Date
+  attendeeCount Int?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([kind, eventDate])
+}
+
+model DisciplineIncident {
+  id           String    @id @default(cuid())
+  branchId     String
+  studentId    String
+  incidentDate DateTime  @db.Date
+  type         String
+  action       String
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, deletedAt])
+  @@index([studentId])
+  @@index([incidentDate])
+}
+
+model AcademicAction {
+  id          String    @id @default(cuid())
+  branchId    String
+  kind        String
+  title       String
+  status      String    @default("open")
+  ownerUserId String?
+  dueDate     DateTime? @db.Date
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  owner User? @relation(fields: [ownerUserId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([kind, status])
+}
+
+model StaffTraining {
+  id        String    @id @default(cuid())
+  branchId  String
+  userId    String
+  title     String
+  trainedAt DateTime  @db.Date
+  hours     Decimal   @db.Decimal(6, 2)
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, deletedAt])
+  @@index([userId])
+  @@index([trainedAt])
+}
+
+// --- Finance operations ---
+
+model Vendor {
+  id        String    @id @default(cuid())
+  branchId  String
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  bills          VendorBill[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([branchId, deletedAt])
+}
+
+model VendorBill {
+  id              String    @id @default(cuid())
+  branchId        String
+  vendorId        String
+  billNo          String?
+  billDate        DateTime  @db.Date
+  dueDate         DateTime? @db.Date
+  amount          Decimal   @db.Decimal(14, 2)
+  paidAmount      Decimal   @default(0) @db.Decimal(14, 2)
+  category        String    @default("general")
+  status          String    @default("open")
+  description     String?
+  journalVoucherId String?
+  purchaseOrderId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  vendor        Vendor          @relation(fields: [vendorId], references: [id])
+  purchaseOrder PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+  payments      VendorPayment[]
+  assets        FixedAsset[]
+  workOrders    WorkOrder[]
+
+  @@index([branchId, deletedAt])
+  @@index([vendorId])
+  @@index([category, status])
+  @@index([purchaseOrderId])
+}
+
+model VendorPayment {
+  id               String   @id @default(cuid())
+  billId           String
+  amount           Decimal  @db.Decimal(14, 2)
+  paidAt           DateTime @db.Date
+  method           String?
+  journalVoucherId String?
+  createdAt        DateTime @default(now())
+
+  bill VendorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+}
+
+model PettyCashFund {
+  id             String   @id @default(cuid())
+  branchId       String
+  name           String
+  openingBalance Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  vouchers PettyCashVoucher[]
+
+  @@index([branchId, deletedAt])
+}
+
+model PettyCashVoucher {
+  id               String    @id @default(cuid())
+  fundId           String
+  branchId         String
+  voucherDate      DateTime  @db.Date
+  amount           Decimal   @db.Decimal(14, 2)
+  payee            String
+  description      String
+  journalVoucherId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  fund PettyCashFund @relation(fields: [fundId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, deletedAt])
+  @@index([fundId])
+  @@index([voucherDate])
+}
+
+model BankStatement {
+  id         String    @id @default(cuid())
+  branchId   String
+  accountId  String?
+  periodFrom DateTime  @db.Date
+  periodTo   DateTime  @db.Date
+  status     String    @default("open")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  account Account?            @relation(fields: [accountId], references: [id])
+  lines   BankStatementLine[]
+
+  @@index([branchId, deletedAt])
+  @@index([accountId])
+}
+
+model BankStatementLine {
+  id                   String    @id @default(cuid())
+  statementId          String
+  lineDate             DateTime  @db.Date
+  amount               Decimal   @db.Decimal(14, 2)
+  description          String
+  matchedJournalLineId String?
+  matchedFeePaymentId  String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  statement          BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  matchedJournalLine JournalLine?  @relation(fields: [matchedJournalLineId], references: [id])
+  matchedFeePayment  FeePayment?   @relation(fields: [matchedFeePaymentId], references: [id])
+
+  @@index([statementId])
+  @@index([matchedJournalLineId])
+  @@index([matchedFeePaymentId])
+}
+
+model PurchaseOrder {
+  id        String    @id @default(cuid())
+  branchId  String
+  vendorId  String
+  poNo      String
+  orderDate DateTime  @db.Date
+  status    String    @default("draft")
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  vendor     Vendor           @relation(fields: [vendorId], references: [id])
+  lines      PurchaseOrderLine[]
+  receipts   GoodsReceipt[]
+  vendorBills VendorBill[]
+
+  @@unique([branchId, poNo])
+  @@index([branchId, deletedAt])
+  @@index([vendorId])
+}
+
+model PurchaseOrderLine {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  description     String
+  quantity        Decimal @db.Decimal(12, 2)
+  unitCost        Decimal @db.Decimal(14, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+}
+
+model GoodsReceipt {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  receivedAt      DateTime @db.Date
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+}
+
+model FixedAsset {
+  id              String    @id @default(cuid())
+  branchId        String
+  name            String
+  category        String
+  purchaseDate    DateTime? @db.Date
+  cost            Decimal   @db.Decimal(14, 2)
+  vendorBillId    String?
+  purchaseOrderId String?
+  status          String    @default("active")
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  vendorBill VendorBill? @relation(fields: [vendorBillId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([vendorBillId])
+  @@index([status])
+}
+
+model BudgetForecastLine {
+  id        String  @id @default(cuid())
+  budgetId  String
+  month     Int
+  amount    Decimal @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, month])
+  @@index([budgetId])
+}
+
+// --- HR lifecycle + campus ops ---
+
+model Applicant {
+  id           String    @id @default(cuid())
+  branchId     String
+  fullName     String
+  email        String?
+  phone        String?
+  roleApplied  String
+  stage        String    @default("applied")
+  appliedAt    DateTime  @db.Date
+  hiredUserId  String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  hiredUser User? @relation(fields: [hiredUserId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([stage])
+}
+
+model WorkOrder {
+  id           String    @id @default(cuid())
+  branchId     String
+  location     String
+  issue        String
+  status       String    @default("open")
+  cost         Decimal?  @db.Decimal(14, 2)
+  vendorBillId String?
+  reportedAt   DateTime  @db.Date
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  vendorBill VendorBill? @relation(fields: [vendorBillId], references: [id])
+
+  @@index([branchId, deletedAt])
+  @@index([status])
+}
+
+model SafetyIncident {
+  id           String    @id @default(cuid())
+  branchId     String
+  incidentDate DateTime  @db.Date
+  severity     String
+  summary      String
+  action       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([incidentDate])
+}
+
+model ItOutage {
+  id        String    @id @default(cuid())
+  branchId  String
+  startedAt DateTime
+  endedAt   DateTime?
+  system    String
+  summary   String
+  resolved  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([startedAt])
+}
+
+model ComplianceControl {
+  id                 String    @id @default(cuid())
+  branchId           String
+  title              String
+  category           String
+  dueDate            DateTime? @db.Date
+  status             String    @default("open")
+  evidenceDocumentId String?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([status])
 }

@@ -37,6 +37,8 @@ import {
   createFeeChallanSchema,
   updateFeeInvoiceSchema,
   updateFeeChallanSchema,
+  incrementFeeRatesSchema,
+  updateStudentFeePolicySchema,
 } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -59,6 +61,8 @@ import type {
   CreateFeeChallanInput,
   UpdateFeeInvoiceInput,
   UpdateFeeChallanInput,
+  IncrementFeeRatesInput,
+  UpdateStudentFeePolicyInput,
 } from '@eims/shared';
 
 @ApiTags('fees')
@@ -164,6 +168,16 @@ export class FeesController {
     return this.feesService.generateBulkInvoices(body, user);
   }
 
+  @Post('fee-structures/increment')
+  @Permissions('fees.collect')
+  incrementFeeRates(
+    @Body(createZodPipe(incrementFeeRatesSchema)) body: IncrementFeeRatesInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.incrementFeeRates(body, user, scope);
+  }
+
   @Get('fee-invoices')
   @Permissions('fees.read')
   findAll(
@@ -257,10 +271,41 @@ export class FeesController {
     return this.feesService.recordFeePayment(id, body, user, scope);
   }
 
+  @Patch('fee-invoices/:id/waive')
+  @Permissions('fees.collect')
+  waiveInvoice(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.waiveInvoice(id, user, scope);
+  }
+
+  @Patch('fee-invoices/:id/unwaive')
+  @Permissions('fees.collect')
+  unwaiveInvoice(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.unwaiveInvoice(id, user, scope);
+  }
+
   @Get('students/:studentId/fees')
   @Permissions('fees.read')
   getStudentFees(@Param('studentId') studentId: string, @BranchScopeParam() scope: BranchScope) {
     return this.feesService.getStudentFees(studentId, scope);
+  }
+
+  @Patch('students/:studentId/fee-policy')
+  @Permissions('fees.collect')
+  updateStudentFeePolicy(
+    @Param('studentId') studentId: string,
+    @Body(createZodPipe(updateStudentFeePolicySchema)) body: UpdateStudentFeePolicyInput,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.updateStudentFeePolicy(studentId, body, user, scope);
   }
 
   @Get('fee-challans')

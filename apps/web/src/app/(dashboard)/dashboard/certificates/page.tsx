@@ -26,9 +26,11 @@ import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { IssueCertificateDialog } from '@/components/features/certificates/issue-certificate-dialog';
 import { Button } from '@/components/ui/button';
 import { DateField } from '@/components/ui/date-field';
+import { seedRowClass } from '@/components/layout/status-badge';
+import { EmptyStateCell } from '@/components/layout/empty-state';
+import { UserAvatar } from '@/components/layout/user-avatar';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -219,15 +221,16 @@ export default function CertificatesPage() {
                   {isLoading ? (
                     <DataTableSkeletonRows columns={6} rows={limit} />
                   ) : issues.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className={cn(dataTableTdClass, 'text-center text-[var(--text-sub-500)]')}>
-                        No certificates issued yet
-                      </td>
-                    </tr>
+                    <EmptyStateCell colSpan={6} title="No certificates issued yet" />
                   ) : (
-                    issues.map((row) => (
-                      <tr key={row.id} className={dataTableRowHoverClass}>
-                        <td className={dataTableTdClass}>{row.student?.fullName ?? '—'}</td>
+                    issues.map((row, index) => (
+                      <tr key={row.id} className={seedRowClass(row.id, index)}>
+                        <td className={dataTableTdClass}>
+                          <div className="flex items-center gap-2">
+                            <UserAvatar name={row.student?.fullName} seed={row.id} size="sm" />
+                            {row.student?.fullName ?? '—'}
+                          </div>
+                        </td>
                         <td className={dataTableTdClass}>{row.title}</td>
                         <td className={dataTableTdClass}>{row.template?.name ?? '—'}</td>
                         <td className={dataTableTdClass}>{row.serialNo ?? '—'}</td>

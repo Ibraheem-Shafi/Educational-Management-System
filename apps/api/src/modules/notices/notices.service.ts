@@ -1,8 +1,9 @@
 import { narrowScope, prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
 import type { BranchScope } from '@eims/shared';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
 import type { AuthUser, NoticesStatsResponse } from '@eims/types';
@@ -12,10 +13,13 @@ const STATS_CACHE_TTL_MS = 45_000;
 
 @Injectable()
 export class NoticesService {
+  private readonly logger = new Logger(NoticesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly ttlCache: TtlCacheService,
+    private readonly communications: CommunicationsService,
   ) {}
 
   async getStats(scope: BranchScope): Promise<NoticesStatsResponse> {
@@ -197,6 +201,15 @@ export class NoticesService {
       newValue: notice,
     });
 
+    if (publishing && input.notifyFamilies !== false) {
+      void this.communications.notifyNoticePublished(notice, user).catch((err) => {
+        this.logger.error(
+          `Failed to queue notice alerts for ${notice.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+      });
+    }
+
     return this.toResponse(notice);
   }
 
@@ -226,15 +239,27 @@ export class NoticesService {
 
   /** Flip scheduled notices whose publish time has arrived. */
   private async promoteDueScheduledNotices(): Promise<void> {
-    const result = await this.prisma.notice.updateMany({
+    const due = await this.prisma.notice.findMany({
       where: {
         isPublished: false,
         publishedAt: { not: null, lte: new Date() },
       },
+    });
+    if (due.length === 0) return;
+
+    await this.prisma.notice.updateMany({
+      where: { id: { in: due.map((n) => n.id) } },
       data: { isPublished: true },
     });
-    if (result.count > 0) {
-      this.invalidateStatsCache();
+    this.invalidateStatsCache();
+
+    for (const notice of due) {
+      void this.communications.notifyNoticePublished(notice).catch((err) => {
+        this.logger.error(
+          `Failed to queue scheduled notice alerts for ${notice.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+      });
     }
   }
 

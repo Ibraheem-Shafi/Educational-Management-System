@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { configuredBranchCodes, staffUserId } from '../branch-helpers';
+import { configuredBranchCodes, staffUserId, swcFinanceDummyBranchCodes } from '../branch-helpers';
 import type { DemoContext } from '../types';
 
 const SYSTEM_ACCOUNTS = [
@@ -41,12 +41,16 @@ export async function seedAccounting(prisma: PrismaClient, ctx: DemoContext): Pr
 
   const year = new Date().getUTCFullYear();
 
-  for (const branchCode of configuredBranchCodes(ctx)) {
+  for (const branchCode of [...configuredBranchCodes(ctx), ...swcFinanceDummyBranchCodes(ctx)]) {
     const branchId = ctx.branchMap.get(branchCode)!;
-    const accountantId = staffUserId(ctx, branchCode, 'accountant');
+    const accountantId =
+      branchCode === 'SWC'
+        ? staffUserId(ctx, branchCode, 'hr_finance')
+        : staffUserId(ctx, branchCode, 'accountant');
 
     // Branch-level utility account (non-system)
-    const utilCode = branchCode === 'LAHORE' ? '5100-LHR' : '5100-ISB';
+    const utilCode =
+      branchCode === 'LAHORE' ? '5100-LHR' : branchCode === 'SWC' ? '5100-SWC' : '5100-ISB';
     let utilAccount = await prisma.account.findFirst({
       where: { code: utilCode, branchId, deletedAt: null },
     });

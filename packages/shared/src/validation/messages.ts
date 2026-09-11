@@ -30,6 +30,20 @@ export function requiredString(label: string, min = 2, max = 200) {
     .max(max, MSG.maxLength(label, max));
 }
 
+/** Accepts `YYYY-MM-DD` or an ISO datetime string. */
+export const calendarDateSchema = z
+  .string({ required_error: MSG.invalidDate })
+  .trim()
+  .refine((value) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return true;
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value) && !Number.isNaN(Date.parse(value))) return true;
+    return false;
+  }, { message: MSG.invalidDate });
+
+export const billingPeriodSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, 'Billing period must be YYYY-MM');
+
 /** Optional text with max length */
 export function optionalString(max = 500) {
   return z.string().max(max, MSG.maxLength('Value', max)).optional();

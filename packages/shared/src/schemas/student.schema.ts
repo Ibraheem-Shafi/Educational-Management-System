@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   MSG,
+  calendarDateSchema,
   optionalCnic,
   optionalEmail,
   optionalPhone,
@@ -9,6 +10,7 @@ import {
   requiredString,
 } from '../validation/messages';
 import { paginationQuerySchema } from './common.schema';
+import { annualChargeModes } from './fee.schema';
 
 export const admissionGuardianSchema = z.object({
   fullName: requiredString('Guardian name'),
@@ -41,6 +43,11 @@ export const createStudentSchema = z.object({
   customFields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   guardians: z.array(admissionGuardianSchema).max(3).optional(),
   monthlyFeeDiscount: z.coerce.number().min(0).optional(),
+  monthlyFeeAmount: z.coerce.number().min(0).nullable().optional(),
+  monthlyFeeWaived: z.boolean().optional(),
+  annualChargeMode: z.enum(annualChargeModes).optional(),
+  annualDeferredUntil: calendarDateSchema.nullable().optional(),
+  annualInstallmentCount: z.coerce.number().int().min(1).max(24).optional(),
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;

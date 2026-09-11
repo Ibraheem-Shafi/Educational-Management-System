@@ -12,7 +12,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { ContentPanel } from '@/components/layout/content-panel';
 import { FilterBar } from '@/components/layout/filter-bar';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
-import { StatusBadge } from '@/components/layout/status-badge';
+import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PermissionGate } from '@/components/auth/permission-gate';
 import {
   PageHeaderActionIcon,
@@ -21,7 +21,6 @@ import {
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import {
   dataTableClass,
-  dataTableRowHoverClass,
   dataTableTdClass,
   dataTableThClass,
   dataTableWrapperClass,
@@ -163,7 +162,10 @@ export function ReservationsPanel({ branchId }: { branchId: string }) {
                     const copies = row.book?.copies ?? [];
                     const available = copies.filter((c) => c.status === 'available').length;
                     return (
-                    <tr key={row.id} className={dataTableRowHoverClass}>
+                    <tr
+                      key={row.id}
+                      className={statusRowClass(statusBadgeCode(row.status), formatLabel(row.status))}
+                    >
                       <td className={dataTableTdClass}>
                         <div>{row.book?.title ?? '—'}</div>
                         {copies.length > 0 ? (
