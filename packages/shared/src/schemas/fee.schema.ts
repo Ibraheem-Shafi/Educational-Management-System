@@ -22,18 +22,46 @@ export const feeIncrementScopes = [
 export type FeeIncrementScope = (typeof feeIncrementScopes)[number];
 import { paginationQuerySchema } from './common.schema';
 
-export const createFeeInvoiceSchema = z.object({
-  branchId: requiredId('Branch'),
-  studentId: requiredId('Student'),
+export const feeInvoiceLineSchema = z.object({
   feeTypeId: requiredId('Fee type'),
+  label: optionalString(120),
   amount: requiredPositiveNumber('Amount'),
-  discount: z.coerce.number().min(0).optional(),
-  fine: z.coerce.number().min(0).optional(),
-  dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
-  remarks: optionalString(500),
-  billingPeriod: billingPeriodSchema.optional(),
-  voucherNo: optionalString(120),
+  sortOrder: z.coerce.number().int().min(0).optional(),
 });
+
+export type FeeInvoiceLineInput = z.infer<typeof feeInvoiceLineSchema>;
+
+export const createFeeInvoiceSchema = z
+  .object({
+    branchId: requiredId('Branch'),
+    studentId: requiredId('Student'),
+    feeTypeId: requiredId('Fee type').optional(),
+    amount: requiredPositiveNumber('Amount').optional(),
+    discount: z.coerce.number().min(0).optional(),
+    fine: z.coerce.number().min(0).optional(),
+    dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
+    remarks: optionalString(500),
+    billingPeriod: billingPeriodSchema.optional(),
+    voucherNo: optionalString(120),
+    lines: z.array(feeInvoiceLineSchema).min(1).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.lines?.length) return;
+    if (!data.feeTypeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.select('fee type'),
+        path: ['feeTypeId'],
+      });
+    }
+    if (data.amount == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Amount'),
+        path: ['amount'],
+      });
+    }
+  });
 
 export type CreateFeeInvoiceInput = z.infer<typeof createFeeInvoiceSchema>;
 
@@ -45,9 +73,22 @@ export const updateFeeInvoiceSchema = z.object({
   remarks: optionalString(500),
   billingPeriod: billingPeriodSchema.nullable().optional(),
   voucherNo: optionalString(120),
+  lines: z.array(feeInvoiceLineSchema).min(1).optional(),
 });
 
 export type UpdateFeeInvoiceInput = z.infer<typeof updateFeeInvoiceSchema>;
+
+export const bulkFeeInvoicePrintQuerySchema = z.object({
+  ids: z
+    .union([z.string(), z.array(z.string())])
+    .transform((value) =>
+      (Array.isArray(value) ? value : value.split(','))
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(requiredId('Invoice')).min(1).max(120)),
+});
+export type BulkFeeInvoicePrintQuery = z.infer<typeof bulkFeeInvoicePrintQuerySchema>;
 
 export const listFeeInvoicesQuerySchema = z
   .object({
@@ -75,7 +116,7 @@ export const recordPaymentSchema = z
   .object({
     amount: requiredPositiveNumber('Amount').optional(),
     method: z
-      .enum(['cash', 'bank', 'online', 'other'], {
+      .enum(['cash', 'bank', 'online', 'other', 'cheque'], {
         errorMap: () => ({ message: MSG.select('payment method') }),
       })
       .optional(),
@@ -103,6 +144,13 @@ export const recordPaymentSchema = z
           path: ['receipt'],
         });
       }
+    }
+    if (data.method === 'cheque' && !data.providerRef?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Cheque number'),
+        path: ['providerRef'],
+      });
     }
   });
 
@@ -173,7 +221,8 @@ export const previewBulkInvoicesSchema = z.object({
     (v) => (v === '' || v === null || v === undefined ? undefined : v),
     requiredId('Batch').optional(),
   ),
-  feeTypeId: requiredId('Fee type'),
+  feeTypeId: requiredId('Fee type').optional(),
+  feeTypeIds: z.array(requiredId('Fee type')).min(1).optional(),
   feeStructureId: requiredId('Fee structure').optional(),
   defaultAmount: requiredPositiveNumber('Default amount').optional(),
 });
@@ -189,19 +238,11 @@ export const generateBulkInvoicesSchema = z
       requiredId('Batch').optional(),
     ),
     feeTypeId: requiredId('Fee type').optional(),
+    feeTypeIds: z.array(requiredId('Fee type')).min(1).optional(),
     feeStructureIds: z.array(requiredId('Fee structure')).optional(),
     dueDate: z.string().datetime({ message: MSG.invalidDate }).optional(),
     billingPeriod: billingPeriodSchema.optional(),
     lines: z.array(bulkInvoiceLineSchema).min(1).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.lines?.length && !data.feeTypeId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: MSG.select('fee type'),
-        path: ['feeTypeId'],
-      });
-    }
   });
 
 export type GenerateBulkInvoicesInput = z.infer<typeof generateBulkInvoicesSchema>;

@@ -168,16 +168,22 @@ export class ReportsService {
   async getFeeDefaulters(
     scope: BranchScope,
     query: ListFeeDefaultersQuery = { page: 1, limit: 8 },
-  ): Promise<PaginatedResponse<{
-    id: string;
-    student: { id: string; fullName: string; phone: string | null; batchId: string | null };
-    feeType: { id: string; name: string; code: string | null } | null;
-    netAmount: number;
-    paidAmount: number;
-    remainingAmount: number;
-    dueDate: string | null;
-    createdAt: string;
-  }>> {
+  ): Promise<
+    PaginatedResponse<{
+      student: { id: string; fullName: string; phone: string | null; batchId: string | null };
+      totalRemaining: number;
+      invoiceCount: number;
+      invoices: Array<{
+        id: string;
+        feeType: { id: string; name: string; code: string | null } | null;
+        netAmount: number;
+        paidAmount: number;
+        remainingAmount: number;
+        dueDate: string | null;
+        createdAt: string;
+      }>;
+    }>
+  > {
     const branchFilter = prismaBranchFilter(scope);
     const today = new Date();
     const search = query.search?.trim();
@@ -210,45 +216,90 @@ export class ReportsService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 
-    const [invoices, total] = await Promise.all([
+    const groups = await this.prisma.feeInvoice.groupBy({
+      by: ['studentId'],
+      where,
+      _count: { id: true },
+      _min: { dueDate: true },
+    });
+    groups.sort((a, b) => {
+      const aTime = a._min.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bTime = b._min.dueDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    });
+
+    const total = groups.length;
+    const pageGroups = groups.slice((page - 1) * limit, page * limit);
+    const studentIds = pageGroups.map((group) => group.studentId);
+
+    if (studentIds.length === 0) {
+      return paginatedResult([], total, page, limit);
+    }
+
+    const [students, invoices] = await Promise.all([
+      this.prisma.student.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, fullName: true, phone: true, batchId: true },
+      }),
       this.prisma.feeInvoice.findMany({
-        where,
+        where: { ...where, studentId: { in: studentIds } },
         include: {
-          student: { select: { id: true, fullName: true, phone: true, batchId: true } },
           payments: {
             where: { status: { in: ['succeeded', 'completed'] } },
             select: { amount: true },
           },
         },
         orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
       }),
-      this.prisma.feeInvoice.count({ where }),
     ]);
 
-    const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
+    const feeTypeIds = [...new Set(invoices.map((invoice) => invoice.feeTypeId))];
     const feeTypes = feeTypeIds.length
       ? await this.prisma.feeType.findMany({ where: { id: { in: feeTypeIds } } })
       : [];
-    const feeTypeMap = new Map(feeTypes.map((f) => [f.id, f]));
+    const feeTypeMap = new Map(feeTypes.map((row) => [row.id, row]));
+    const studentMap = new Map(students.map((row) => [row.id, row]));
+    const invoicesByStudent = new Map<string, typeof invoices>();
+    for (const invoice of invoices) {
+      const list = invoicesByStudent.get(invoice.studentId) ?? [];
+      list.push(invoice);
+      invoicesByStudent.set(invoice.studentId, list);
+    }
+
+    const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
     return paginatedResult(
-      invoices.map((inv) => {
-        const paidAmount = Math.round(
-          ((inv.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0) + Number.EPSILON) * 100,
-        ) / 100;
-        const netAmount = Math.round((Number(inv.netAmount) + Number.EPSILON) * 100) / 100;
-        const remainingAmount = Math.max(0, Math.round((netAmount - paidAmount + Number.EPSILON) * 100) / 100);
+      pageGroups.map((group) => {
+        const student = studentMap.get(group.studentId) ?? {
+          id: group.studentId,
+          fullName: '—',
+          phone: null,
+          batchId: null,
+        };
+        const nested = (invoicesByStudent.get(group.studentId) ?? []).map((inv) => {
+          const paidAmount = roundMoney(
+            (inv.payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0),
+          );
+          const netAmount = roundMoney(Number(inv.netAmount));
+          const remainingAmount = Math.max(0, roundMoney(netAmount - paidAmount));
+          return {
+            id: inv.id,
+            feeType: feeTypeMap.get(inv.feeTypeId) ?? null,
+            netAmount,
+            paidAmount,
+            remainingAmount,
+            dueDate: inv.dueDate?.toISOString().slice(0, 10) ?? null,
+            createdAt: inv.createdAt.toISOString(),
+          };
+        });
+        const totalRemaining = roundMoney(
+          nested.reduce((sum, invoice) => sum + invoice.remainingAmount, 0),
+        );
         return {
-          id: inv.id,
-          student: inv.student,
-          feeType: feeTypeMap.get(inv.feeTypeId) ?? null,
-          netAmount,
-          paidAmount,
-          remainingAmount,
-          dueDate: inv.dueDate?.toISOString().slice(0, 10) ?? null,
-          createdAt: inv.createdAt.toISOString(),
+          student,
+          totalRemaining,
+          invoiceCount: nested.length,
+          invoices: nested,
         };
       }),
       total,

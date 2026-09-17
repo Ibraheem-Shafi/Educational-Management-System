@@ -7,7 +7,7 @@ import {
   requiredString,
 } from '../validation/messages';
 
-export const paymentMethodSchema = z.enum(['cash', 'bank', 'online', 'other'], {
+export const paymentMethodSchema = z.enum(['cash', 'bank', 'online', 'other', 'cheque'], {
   errorMap: () => ({ message: MSG.select('payment method') }),
 });
 
@@ -42,6 +42,13 @@ export const recordFeePaymentSchema = z
           path: ['receipt'],
         });
       }
+    }
+    if (data.method === 'cheque' && !data.providerRef?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Cheque number'),
+        path: ['providerRef'],
+      });
     }
   });
 

@@ -8,16 +8,16 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
-  icon: './assets/logo.png',
+  icon: './assets/icon.png',
   splash: {
-    image: './assets/logo.png',
+    image: './assets/splash.png',
     backgroundColor: '#0b1f3a',
     resizeMode: 'contain',
   },
   android: {
     package: 'pk.edu.nexium.app',
     adaptiveIcon: {
-      foregroundImage: './assets/logo.png',
+      foregroundImage: './assets/icon.png',
       backgroundColor: '#0b1f3a',
     },
   },
@@ -35,6 +35,16 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    'expo-asset',
+    [
+      'expo-splash-screen',
+      {
+        backgroundColor: '#0b1f3a',
+        image: './assets/splash.png',
+        imageWidth: 200,
+        resizeMode: 'contain',
+      },
+    ],
     'expo-secure-store',
     'expo-notifications',
     'expo-document-picker',

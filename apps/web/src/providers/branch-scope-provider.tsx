@@ -13,6 +13,7 @@ import {
   allBranchScope,
   branchScopeKey,
   branchScopeSummary,
+  canSelectAllBranches,
   isSuperAdmin,
   normalizeBranchIds,
   selectedBranchScope,
@@ -85,7 +86,8 @@ export function BranchScopeProvider({ children }: { children: ReactNode }) {
     [branchesData],
   );
 
-  const canSelect = !!user && isSuperAdmin(user.roles);
+  const canSelect =
+    !!user && (isSuperAdmin(user.roles) || (canSelectAllBranches(user.roles) && !user.branchId));
   const isLocked = !!user && !canSelect && !!user.branchId;
 
   const [appScope, setAppScopeState] = useState<BranchScope>(() => allBranchScope());

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   allBranchScope,
+  canSelectAllBranches,
   isSuperAdmin,
   parseBranchScopeFromQuery,
   selectedBranchScope,
@@ -23,8 +24,10 @@ export class BranchGuard implements CanActivate {
 
     const query = request.query ?? {};
     const body = request.body ?? {};
+    const institutionWide =
+      isSuperAdmin(user.roles) || (canSelectAllBranches(user.roles) && !user.branchId);
 
-    if (isSuperAdmin(user.roles)) {
+    if (institutionWide) {
       let scope: BranchScope;
       try {
         // Prefer query for reads; body branchId alone is for writes and does not define list scope.

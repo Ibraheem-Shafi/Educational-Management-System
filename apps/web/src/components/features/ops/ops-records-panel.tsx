@@ -68,6 +68,7 @@ export type OpsField = {
   required?: boolean;
   options?: { value: string; label: string }[];
   createOnly?: boolean;
+  showWhen?: (form: Record<string, string>) => boolean;
 };
 
 export type OpsColumn = {
@@ -113,6 +114,7 @@ export function OpsRecordsPanel({
   createLabel = 'Add record',
   extraQuery,
   extraActions = [],
+  extraFilters,
   allowEdit = true,
   hideCreate = false,
   packCreate,
@@ -129,6 +131,7 @@ export function OpsRecordsPanel({
   createLabel?: string;
   extraQuery?: Record<string, string>;
   extraActions?: OpsExtraAction[];
+  extraFilters?: ReactNode;
   allowEdit?: boolean;
   hideCreate?: boolean;
   packCreate?: (form: Record<string, string>) => Record<string, unknown>;
@@ -202,6 +205,7 @@ export function OpsRecordsPanel({
               }}
               placeholder="Search"
             />
+            {extraFilters}
           </FilterBar>
         </div>
 
@@ -477,6 +481,10 @@ function OpsRecordDialog({
     const payload: Record<string, unknown> = packed ? { ...packed } : {};
     if (!packed) {
       for (const field of visibleFields) {
+        if (field.showWhen && !field.showWhen(form)) {
+          if (field.name === 'batchId') payload[field.name] = null;
+          continue;
+        }
         const raw = form[field.name] ?? '';
         if (raw === '') {
           if (isEdit && !field.required) payload[field.name] = null;
@@ -523,7 +531,9 @@ function OpsRecordDialog({
         </div>
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto px-5 py-4">
           <div className="grid gap-4">
-            {visibleFields.map((field) => {
+            {visibleFields
+              .filter((field) => !field.showWhen || field.showWhen(form))
+              .map((field) => {
               const selectTypes: OpsFieldType[] = [
                 'select',
                 'student',

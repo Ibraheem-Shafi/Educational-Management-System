@@ -6,12 +6,19 @@ const DEFAULT_SYSTEM_ACCOUNTS = [
   { code: '1100', name: 'Bank', type: 'asset' },
   { code: '1600', name: 'Fixed Assets', type: 'asset' },
   { code: '2000', name: 'Accounts Payable', type: 'liability' },
+  { code: '3000', name: 'Drawings', type: 'equity' },
   { code: '4000', name: 'Fee Income', type: 'income' },
   { code: '5000', name: 'Salary Expense', type: 'expense' },
   { code: '5100', name: 'Operating Expense', type: 'expense' },
   { code: '5200', name: 'Utilities Expense', type: 'expense' },
+  { code: '5210', name: 'Electricity Expense', type: 'expense' },
+  { code: '5220', name: 'Gas Expense', type: 'expense' },
+  { code: '5230', name: 'Water Expense', type: 'expense' },
+  { code: '5240', name: 'Phone Expense', type: 'expense' },
   { code: '5300', name: 'Maintenance Expense', type: 'expense' },
 ] as const;
+
+export const DRAWINGS_ACCOUNT_CODE = '3000';
 
 /**
  * Auto-posting helpers for fee payments and payroll runs.
@@ -102,14 +109,15 @@ export class AccountingPostingService implements OnModuleInit {
 
     const payment = await this.prisma.feePayment.findUnique({
       where: { id: paymentId },
-      select: { invoice: { select: { feeTypeId: true } } },
+      select: { method: true, invoice: { select: { feeTypeId: true } } },
     });
     if (!payment) {
       throw new BadRequestException('Fee payment not found');
     }
 
-    const [cash, feeIncome] = await Promise.all([
-      this.getSystemAccount('1000'),
+    const debitCode = payment.method === 'cheque' ? '1100' : '1000';
+    const [debitAccount, feeIncome] = await Promise.all([
+      this.getSystemAccount(debitCode),
       this.getSystemAccount('4000'),
     ]);
 
@@ -131,7 +139,7 @@ export class AccountingPostingService implements OnModuleInit {
         createdById: userId,
         lines: {
           create: [
-            { accountId: cash.id, debit: amount, credit: 0 },
+            { accountId: debitAccount.id, debit: amount, credit: 0 },
             { accountId: feeIncome.id, debit: 0, credit: amount },
           ],
         },

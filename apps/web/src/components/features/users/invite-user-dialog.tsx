@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { createInvitationSchema } from '@eims/shared';
+import { canSelectAllBranches, createInvitationSchema } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { handleFormValidationError } from '@/lib/form-api-error';
@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 interface Role {
   id: string;
   name: string;
+  code?: string;
 }
 
 interface BranchOption {
@@ -57,7 +58,7 @@ export function InviteUserDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
-  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
+  const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors, setFieldError } =
     useFormErrors(createInvitationSchema);
 
   const { data: roles } = useQuery({
@@ -106,8 +107,16 @@ export function InviteUserDialog({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const selectedRole = roles?.data.find((role) => role.id === form.roleId);
+  const allBranchesAllowed = canSelectAllBranches(selectedRole?.code ? [selectedRole.code] : []);
+  const canSubmit = Boolean(form.email.trim() && form.roleId && (allBranchesAllowed || form.branchId));
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!allBranchesAllowed && !form.branchId) {
+      setFieldError('branchId', 'Select a campus for this role');
+      return;
+    }
     const payload = {
       email: form.email.trim(),
       roleId: form.roleId,
@@ -116,8 +125,6 @@ export function InviteUserDialog({
     if (!validate(payload)) return;
     inviteMutation.mutate(payload);
   };
-
-  const canSubmit = form.email.trim() && form.roleId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -182,17 +189,17 @@ export function InviteUserDialog({
                 <FormFieldError message={errors.roleId} />
               </div>
               <div>
-                <FieldLabel>Select Branch</FieldLabel>
+                <FieldLabel required={!allBranchesAllowed}>Campus</FieldLabel>
                 <SelectDropdown
-                  aria-label="Select branch"
-                  placeholder="Select Branch"
+                  aria-label="Select campus"
+                  placeholder="All branches"
                   value={form.branchId}
                   onValueChange={(value) => {
                     update('branchId', value);
                     clearField('branchId');
                   }}
                   options={[
-                    { value: '', label: 'All / none' },
+                    { value: '', label: 'All branches' },
                     ...(branches?.data.map((branch) => ({
                       value: branch.id,
                       label: branch.name,
@@ -201,6 +208,11 @@ export function InviteUserDialog({
                   className="w-full"
                 />
                 <FormFieldError message={errors.branchId} />
+                {form.roleId && !allBranchesAllowed ? (
+                  <p className="mt-1.5 text-xs text-[var(--text-sub-500,#525866)]">
+                    This role must be assigned to one campus.
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

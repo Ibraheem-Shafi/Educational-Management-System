@@ -48,11 +48,19 @@ export async function apiClient<T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_URL}/api/v1${path}`, {
-    ...fetchOptions,
-    body: serializedBody,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/v1${path}`, {
+      ...fetchOptions,
+      body: serializedBody,
+      headers,
+    });
+  } catch {
+    throw new ApiError(
+      `Can't reach the API at ${API_URL}. On the Android emulator this must be http://10.0.2.2:3001, and the API must be running.`,
+      0,
+    );
+  }
 
   if (!response.ok) {
     const error = (await response.json().catch(() => ({

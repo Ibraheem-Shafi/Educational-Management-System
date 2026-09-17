@@ -164,4 +164,111 @@ export async function seedAccounting(prisma: PrismaClient, ctx: DemoContext): Pr
     void draft;
     void budget;
   }
+
+  await seedShahwaliChequeRegister(prisma, ctx);
+}
+
+async function seedShahwaliChequeRegister(prisma: PrismaClient, ctx: DemoContext): Promise<void> {
+  const branchId = ctx.branchMap.get('SWC') ?? ctx.branchMap.get('MAIN');
+  if (!branchId) return;
+
+  const existing = await prisma.bankStatement.findFirst({
+    where: { branchId, year: 2026, month: 8, bankName: 'Al Flah Bank', deletedAt: null },
+  });
+  if (!existing) {
+    await prisma.bankStatement.create({
+      data: {
+        branchId,
+        year: 2026,
+        month: 8,
+        bankName: 'Al Flah Bank',
+        chequeBookSerialFrom: '46267817',
+        chequeBookSerialTo: '46267825',
+        status: 'open',
+        lines: {
+          create: [
+            { issueDate: new Date('2026-08-04'), chequeNumber: '46267817', payee: 'Bakhshish Ellahi', onAccountOf: 'Salary', amount: 18500 },
+            { issueDate: new Date('2026-08-10'), chequeNumber: '46267818', payee: 'Nosheen', onAccountOf: 'Salary Staff', amount: 112400 },
+            { issueDate: new Date('2026-08-11'), chequeNumber: '46267819', payee: 'Nosheen', onAccountOf: 'Petty Cash', amount: 10000 },
+            { issueDate: new Date('2026-08-11'), chequeNumber: '46267820', payee: 'Nosheen', onAccountOf: 'Mobile + Ptcl', amount: 5000 },
+            { issueDate: new Date('2026-08-13'), chequeNumber: '46267821', payee: 'Nosheen', onAccountOf: 'Staff Salary', amount: 30350 },
+            { issueDate: new Date('2026-08-20'), chequeNumber: '46267822', payee: 'Zahid Hussain', onAccountOf: 'Building Rent', amount: 95000 },
+            { issueDate: new Date('2026-08-21'), chequeNumber: '46267823', payee: 'Hasham Ali', onAccountOf: 'Labour Work', amount: 33400 },
+            { issueDate: new Date('2026-08-24'), chequeNumber: '46267824', payee: 'Bakhshish Ellahi', onAccountOf: 'Advance Salary', amount: 18500 },
+            { issueDate: new Date('2026-08-25'), chequeNumber: '46267825', payee: 'Saeed Butt', onAccountOf: 'By Sir Anjum', amount: 20000 },
+          ],
+        },
+      },
+    });
+  }
+
+  let drawingsAccount = await prisma.account.findFirst({
+    where: { code: '3000', branchId: null, deletedAt: null },
+  });
+  if (!drawingsAccount) {
+    drawingsAccount = await prisma.account.create({
+      data: { code: '3000', name: 'Drawings', type: 'equity', branchId: null, isSystem: true, isActive: true },
+    });
+  }
+  let bankAccount = await prisma.account.findFirst({
+    where: { code: '1100', branchId: null, deletedAt: null },
+  });
+  if (!bankAccount) {
+    bankAccount = await prisma.account.create({
+      data: { code: '1100', name: 'Bank', type: 'asset', branchId: null, isSystem: true, isActive: true },
+    });
+  }
+
+  const drawing = await prisma.ownerDrawing.findFirst({
+    where: { branchId, chequeNumber: '46267825', deletedAt: null },
+  });
+  if (drawing) return;
+
+  const created = await prisma.ownerDrawing.create({
+    data: {
+      branchId,
+      drawingDate: new Date('2026-08-25'),
+      payee: 'Saeed Butt',
+      amount: 20000,
+      method: 'cheque',
+      chequeNumber: '46267825',
+      notes: 'By Sir Anjum',
+    },
+  });
+
+  const voucherNo = 'PAY-2026-DRAW-001';
+  const existingVoucher = await prisma.journalVoucher.findUnique({
+    where: { branchId_voucherNo: { branchId, voucherNo } },
+  });
+  if (existingVoucher) {
+    await prisma.ownerDrawing.update({
+      where: { id: created.id },
+      data: { journalVoucherId: existingVoucher.id },
+    });
+    return;
+  }
+
+  const voucher = await prisma.journalVoucher.create({
+    data: {
+      branchId,
+      voucherType: 'payment',
+      voucherNo,
+      voucherDate: new Date('2026-08-25'),
+      narration: 'Owner drawing — Saeed Butt (By Sir Anjum)',
+      status: 'posted',
+      sourceType: 'owner_drawing',
+      sourceId: created.id,
+      postedAt: new Date('2026-08-25'),
+      lines: {
+        create: [
+          { accountId: drawingsAccount.id, debit: 20000, credit: 0 },
+          { accountId: bankAccount.id, debit: 0, credit: 20000 },
+        ],
+      },
+    },
+  });
+  await prisma.ownerDrawing.update({
+    where: { id: created.id },
+    data: { journalVoucherId: voucher.id },
+  });
 }

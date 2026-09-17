@@ -10,7 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
-import { AccountingPostingService } from './accounting-posting.service';
+import { AccountingPostingService, DRAWINGS_ACCOUNT_CODE } from './accounting-posting.service';
 import type { AuthUser } from '@eims/types';
 import type {
   AccountStatementQuery,
@@ -911,11 +911,21 @@ export class AccountingService {
     const lines = await this.postedLinesForBranch(effectiveBranchId, query.from, query.to);
     const income = new Map<string, { accountId: string; code: string; name: string; amount: number }>();
     const expense = new Map<string, { accountId: string; code: string; name: string; amount: number }>();
+    const drawings = new Map<string, { accountId: string; code: string; name: string; amount: number }>();
 
     for (const line of lines) {
       const debit = Number(line.debit);
       const credit = Number(line.credit);
-      if (line.account.type === 'income') {
+      if (line.account.code === DRAWINGS_ACCOUNT_CODE) {
+        const current = drawings.get(line.accountId) ?? {
+          accountId: line.accountId,
+          code: line.account.code,
+          name: line.account.name,
+          amount: 0,
+        };
+        current.amount += debit - credit;
+        drawings.set(line.accountId, current);
+      } else if (line.account.type === 'income') {
         const current = income.get(line.accountId) ?? {
           accountId: line.accountId,
           code: line.account.code,
@@ -938,8 +948,10 @@ export class AccountingService {
 
     const incomeRows = [...income.values()].sort((a, b) => a.code.localeCompare(b.code));
     const expenseRows = [...expense.values()].sort((a, b) => a.code.localeCompare(b.code));
+    const drawingRows = [...drawings.values()].sort((a, b) => a.code.localeCompare(b.code));
     const totalIncome = incomeRows.reduce((sum, row) => sum + row.amount, 0);
     const totalExpense = expenseRows.reduce((sum, row) => sum + row.amount, 0);
+    const totalDrawings = drawingRows.reduce((sum, row) => sum + row.amount, 0);
 
     return {
       branchId: effectiveBranchId,
@@ -947,10 +959,12 @@ export class AccountingService {
       to: query.to ?? null,
       income: incomeRows,
       expense: expenseRows,
+      drawings: drawingRows,
       totals: {
         income: totalIncome,
         expense: totalExpense,
-        net: totalIncome - totalExpense,
+        drawings: totalDrawings,
+        net: totalIncome - totalExpense - totalDrawings,
       },
     };
   }

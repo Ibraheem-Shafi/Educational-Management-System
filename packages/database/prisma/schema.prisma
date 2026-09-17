@@ -217,6 +217,7 @@ model Batch {
   batchSubjects  BatchSubject[]
   syllabusUnits  SyllabusUnit[]
   lessonPlans    LessonPlan[]
+  fixedAssets    FixedAsset[]
 
   @@index([branchId])
   @@index([programId])
@@ -502,6 +503,7 @@ model FeeInvoice {
   student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
   payments     FeePayment[]
   challanLines FeeChallanLine[]
+  lines        FeeInvoiceLine[]
 
   @@unique([branchId, invoiceNo])
   @@index([branchId])
@@ -514,6 +516,21 @@ model FeeInvoice {
   @@index([billingPeriod])
   @@index([studentId, feeTypeId, billingPeriod])
   @@index([branchId, voucherNo])
+}
+
+/// Particulars on a fee invoice (tuition, annual, party, …). Header amount is the sum of lines.
+model FeeInvoiceLine {
+  id        String  @id @default(cuid())
+  invoiceId String
+  feeTypeId String
+  label     String
+  amount    Decimal @db.Decimal(12, 2)
+  sortOrder Int     @default(0)
+
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([feeTypeId])
 }
 
 /// Multi-line fee challan for a student + billing month (bank / school / student copies).
@@ -1745,6 +1762,7 @@ model VendorPayment {
   amount           Decimal  @db.Decimal(14, 2)
   paidAt           DateTime @db.Date
   method           String?
+  chequeNumber     String?
   journalVoucherId String?
   createdAt        DateTime @default(now())
 
@@ -1788,29 +1806,39 @@ model PettyCashVoucher {
 }
 
 model BankStatement {
-  id         String    @id @default(cuid())
-  branchId   String
-  accountId  String?
-  periodFrom DateTime  @db.Date
-  periodTo   DateTime  @db.Date
-  status     String    @default("open")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  id                   String    @id @default(cuid())
+  branchId             String
+  accountId            String?
+  year                 Int
+  month                Int
+  bankName             String
+  chequeBookNo         String    @default("")
+  chequeBookSerialFrom String?
+  chequeBookSerialTo   String?
+  status               String    @default("open")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
 
   account Account?            @relation(fields: [accountId], references: [id])
   lines   BankStatementLine[]
 
+  @@unique([branchId, year, month, chequeBookNo])
   @@index([branchId, deletedAt])
+  @@index([branchId, year, month])
   @@index([accountId])
 }
 
 model BankStatementLine {
   id                   String    @id @default(cuid())
   statementId          String
-  lineDate             DateTime  @db.Date
+  issueDate            DateTime  @db.Date
+  chequeNumber         String
+  payee                String
+  onAccountOf          String
   amount               Decimal   @db.Decimal(14, 2)
-  description          String
+  useInCampus          String?
+  clearingDate         DateTime? @db.Date
   matchedJournalLineId String?
   matchedFeePaymentId  String?
   createdAt            DateTime  @default(now())
@@ -1821,8 +1849,27 @@ model BankStatementLine {
   matchedFeePayment  FeePayment?   @relation(fields: [matchedFeePaymentId], references: [id])
 
   @@index([statementId])
+  @@index([chequeNumber])
   @@index([matchedJournalLineId])
   @@index([matchedFeePaymentId])
+}
+
+model OwnerDrawing {
+  id               String    @id @default(cuid())
+  branchId         String
+  drawingDate      DateTime  @db.Date
+  payee            String
+  amount           Decimal   @db.Decimal(14, 2)
+  method           String
+  chequeNumber     String?
+  notes            String?
+  journalVoucherId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  @@index([branchId, deletedAt])
+  @@index([drawingDate])
 }
 
 model PurchaseOrder {
@@ -1875,7 +1922,12 @@ model FixedAsset {
   id              String    @id @default(cuid())
   branchId        String
   name            String
+  /// furniture | chairs | equipment | electronics | other
   category        String
+  /// school (campus-wide) | class
+  scope           String    @default("school")
+  quantity        Int       @default(1)
+  batchId         String?
   purchaseDate    DateTime? @db.Date
   cost            Decimal   @db.Decimal(14, 2)
   vendorBillId    String?
@@ -1887,10 +1939,13 @@ model FixedAsset {
   deletedAt       DateTime?
 
   vendorBill VendorBill? @relation(fields: [vendorBillId], references: [id])
+  batch      Batch?      @relation(fields: [batchId], references: [id])
 
   @@index([branchId, deletedAt])
   @@index([vendorBillId])
   @@index([status])
+  @@index([scope])
+  @@index([batchId])
 }
 
 model BudgetForecastLine {

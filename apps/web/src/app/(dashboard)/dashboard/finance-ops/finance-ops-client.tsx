@@ -4,36 +4,43 @@ import { useState } from 'react';
 import { Calculator } from 'lucide-react';
 import { getSingleBranchId } from '@eims/shared';
 import {
-  bankStatementStatuses,
-  createBankStatementSchema,
   createBudgetForecastLineSchema,
   createFixedAssetSchema,
+  createOwnerDrawingSchema,
   createPettyCashFundSchema,
   createPettyCashVoucherSchema,
   createPurchaseOrderSchema,
   createVendorBillSchema,
   createVendorSchema,
+  drawingMethods,
+  fixedAssetCategories,
+  fixedAssetScopes,
   fixedAssetStatuses,
   PERMISSIONS,
   purchaseOrderStatuses,
-  updateBankStatementSchema,
   updateFixedAssetSchema,
   updatePettyCashFundSchema,
   updateVendorBillSchema,
   updateVendorSchema,
   vendorBillCategories,
+  vendorPaymentMethods,
 } from '@eims/shared';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageBranchScopeControl } from '@/components/layout/branch-scope-controls';
 import { Tabs } from '@/components/ui/tabs';
+import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { OpsRecordsPanel } from '@/components/features/ops/ops-records-panel';
+import { ChequeRegisterPanel } from '@/components/features/finance-ops/cheque-register-panel';
 import { useEffectiveBranchScope } from '@/hooks/use-page-branch-scope';
+import { useBatches } from '@/hooks/use-batches';
+import { useAuth } from '@/providers/auth-provider';
 
 const TABS = [
   { id: 'petty', label: 'Petty cash' },
   { id: 'vendors', label: 'Vendors' },
   { id: 'bills', label: 'Bills / AP' },
-  { id: 'bank', label: 'Bank rec' },
+  { id: 'bank', label: 'Cheques' },
+  { id: 'drawings', label: 'Drawings' },
   { id: 'procurement', label: 'Procurement' },
   { id: 'assets', label: 'Assets' },
   { id: 'forecast', label: 'Forecast' },
@@ -46,15 +53,20 @@ const enumOptions = (values?: readonly string[]) =>
 
 export default function FinanceOpsPage() {
   const [tab, setTab] = useState<TabId>('petty');
+  const [assetScope, setAssetScope] = useState('');
+  const [assetBatchId, setAssetBatchId] = useState('');
+  const { session } = useAuth();
+  const token = session?.access_token;
   const { effectiveScope, canSelect, isLocked, singleBranchId } = useEffectiveBranchScope();
   const branchId = singleBranchId ?? getSingleBranchId(effectiveScope);
+  const { data: assetBatches } = useBatches(token, branchId ?? '', undefined, tab === 'assets' && !!branchId);
 
   return (
     <div className="space-y-6 font-[family-name:var(--font-inter)]">
       <PageHeader
         icon={Calculator}
         title="Finance operations"
-        description="Petty cash, vendor bills, bank rec, procurement, assets, and monthly forecasts — posted through the ledger"
+        description="Petty cash, vendor bills, issued cheques, drawings, procurement, assets, and monthly forecasts — posted through the ledger"
       />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -182,50 +194,50 @@ export default function FinanceOpsPage() {
               fields: [
                 { name: 'amount', label: 'Amount', type: 'number', required: true },
                 { name: 'paidAt', label: 'Paid at', type: 'date', required: true },
-                { name: 'method', label: 'Method', type: 'text' },
+                {
+                  name: 'method',
+                  label: 'Method',
+                  type: 'select',
+                  options: enumOptions(vendorPaymentMethods),
+                },
+                { name: 'chequeNumber', label: 'Cheque number', type: 'text' },
               ],
             },
           ]}
         />
       ) : tab === 'bank' ? (
+        <ChequeRegisterPanel branchId={branchId} />
+      ) : tab === 'drawings' ? (
         <OpsRecordsPanel
-          title="Bank statements"
-          path="/finance-ops/bank-statements"
-          queryKeyPrefix="bank-statements"
+          title="Owner drawings"
+          path="/finance-ops/drawings"
+          queryKeyPrefix="owner-drawings"
           branchId={branchId}
           managePermission={PERMISSIONS.ACCOUNTING_MANAGE}
-          createSchema={createBankStatementSchema}
-          updateSchema={updateBankStatementSchema}
-          createLabel="Add statement"
+          createSchema={createOwnerDrawingSchema}
+          createLabel="Add drawing"
+          allowEdit={false}
           columns={[
-            { key: 'periodFrom', header: 'From' },
-            { key: 'periodTo', header: 'To' },
-            { key: 'account', header: 'Account', nested: 'account.name' },
-            { key: 'lineCount', header: 'Lines' },
-            { key: 'matchedCount', header: 'Matched' },
-            { key: 'status', header: 'Status', badge: true },
+            { key: 'drawingDate', header: 'Date' },
+            { key: 'payee', header: 'Payee' },
+            { key: 'amount', header: 'Amount' },
+            { key: 'method', header: 'Method', badge: true },
+            { key: 'chequeNumber', header: 'Cheque no' },
+            { key: 'notes', header: 'Notes' },
           ]}
           fields={[
-            { name: 'periodFrom', label: 'Period from', type: 'date', required: true },
-            { name: 'periodTo', label: 'Period to', type: 'date', required: true },
+            { name: 'drawingDate', label: 'Date', type: 'date', required: true },
+            { name: 'payee', label: 'Payee', type: 'text', required: true },
+            { name: 'amount', label: 'Amount', type: 'number', required: true },
             {
-              name: 'status',
-              label: 'Status',
+              name: 'method',
+              label: 'Method',
               type: 'select',
-              options: enumOptions(bankStatementStatuses),
+              required: true,
+              options: enumOptions(drawingMethods),
             },
-          ]}
-          extraActions={[
-            {
-              label: 'Add line',
-              path: (row) => `/finance-ops/bank-statements/${row.id}/lines`,
-              successMessage: 'Line added',
-              fields: [
-                { name: 'lineDate', label: 'Date', type: 'date', required: true },
-                { name: 'amount', label: 'Amount', type: 'number', required: true },
-                { name: 'description', label: 'Description', type: 'text', required: true },
-              ],
-            },
+            { name: 'chequeNumber', label: 'Cheque number', type: 'text' },
+            { name: 'notes', label: 'Notes', type: 'textarea' },
           ]}
         />
       ) : tab === 'procurement' ? (
@@ -297,16 +309,80 @@ export default function FinanceOpsPage() {
           createSchema={createFixedAssetSchema}
           updateSchema={updateFixedAssetSchema}
           createLabel="Add asset"
+          extraQuery={{
+            ...(assetScope ? { scope: assetScope } : {}),
+            ...(assetBatchId ? { batchId: assetBatchId } : {}),
+          }}
+          extraFilters={
+            <>
+              <SelectDropdown
+                aria-label="Filter by scope"
+                placeholder="All scopes"
+                value={assetScope}
+                onValueChange={(value) => {
+                  setAssetScope(value);
+                  if (value !== 'class') setAssetBatchId('');
+                }}
+                options={[
+                  { value: '', label: 'All scopes' },
+                  ...enumOptions(fixedAssetScopes).map((opt) => ({
+                    ...opt,
+                    label: opt.value === 'school' ? 'School-wise' : 'Class-wise',
+                  })),
+                ]}
+              />
+              <SelectDropdown
+                aria-label="Filter by class"
+                placeholder="All classes"
+                value={assetBatchId}
+                onValueChange={setAssetBatchId}
+                options={[
+                  { value: '', label: 'All classes' },
+                  ...((assetBatches?.data ?? []).map((b) => ({
+                    value: b.id,
+                    label: b.name,
+                  })) as Array<{ value: string; label: string }>),
+                ]}
+              />
+            </>
+          }
           columns={[
             { key: 'name', header: 'Name' },
             { key: 'category', header: 'Category' },
+            { key: 'scope', header: 'Scope' },
+            { key: 'quantity', header: 'Qty' },
+            { key: 'batch', header: 'Class', nested: 'batch.name' },
             { key: 'purchaseDate', header: 'Purchased' },
             { key: 'cost', header: 'Cost' },
             { key: 'status', header: 'Status', badge: true },
           ]}
           fields={[
             { name: 'name', label: 'Name', type: 'text', required: true },
-            { name: 'category', label: 'Category', type: 'text', required: true },
+            {
+              name: 'category',
+              label: 'Category',
+              type: 'select',
+              required: true,
+              options: enumOptions(fixedAssetCategories),
+            },
+            {
+              name: 'scope',
+              label: 'Scope',
+              type: 'select',
+              required: true,
+              options: [
+                { value: 'school', label: 'School-wise' },
+                { value: 'class', label: 'Class-wise' },
+              ],
+            },
+            { name: 'quantity', label: 'Quantity', type: 'number', required: true },
+            {
+              name: 'batchId',
+              label: 'Class',
+              type: 'batch',
+              required: true,
+              showWhen: (form) => form.scope === 'class',
+            },
             { name: 'purchaseDate', label: 'Purchase date', type: 'date' },
             { name: 'cost', label: 'Cost', type: 'number', required: true },
             {

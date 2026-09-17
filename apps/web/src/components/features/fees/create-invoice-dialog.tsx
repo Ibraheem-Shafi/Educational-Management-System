@@ -30,10 +30,10 @@ interface FeeType {
   code?: string;
 }
 
+type LineDraft = { feeTypeId: string; amount: string };
+
 const emptyForm = {
   studentId: '',
-  feeTypeId: '',
-  amount: '',
   discount: '',
   fine: '',
   dueDate: '',
@@ -52,6 +52,7 @@ export function CreateInvoiceDialog({
   const token = session?.access_token;
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
+  const [lines, setLines] = useState<LineDraft[]>([{ feeTypeId: '', amount: '' }]);
   const [pickedBranchId, setPickedBranchId] = useState('');
   const effectiveBranchId = branchId || pickedBranchId;
   const { errors, validate, clearField, clearAll, fieldClassName, applyApiErrors } =
@@ -67,7 +68,7 @@ export function CreateInvoiceDialog({
 
   const feeTypesList = feeTypes?.data ?? [];
   const hasNoFeeTypes = !!feeTypes && feeTypesList.length === 0;
-  const selectedFeeType = feeTypesList.find((t) => t.id === form.feeTypeId);
+  const selectedFeeType = feeTypesList.find((t) => t.id === lines[0]?.feeTypeId);
 
   const { data: selectedStudent } = useQuery({
     queryKey: ['student', form.studentId],
@@ -83,6 +84,7 @@ export function CreateInvoiceDialog({
   useEffect(() => {
     if (!open) {
       setForm(emptyForm);
+      setLines([{ feeTypeId: '', amount: '' }]);
       setPickedBranchId('');
       clearAll();
     }
@@ -121,11 +123,17 @@ export function CreateInvoiceDialog({
   });
 
   function buildPayload() {
+    const particulars = lines
+      .filter((line) => line.feeTypeId && Number(line.amount) > 0)
+      .map((line, index) => ({
+        feeTypeId: line.feeTypeId,
+        amount: Number(line.amount),
+        sortOrder: index,
+      }));
     return {
       branchId: effectiveBranchId,
       studentId: form.studentId,
-      feeTypeId: form.feeTypeId,
-      amount: Number(form.amount),
+      lines: particulars,
       ...(form.discount ? { discount: Number(form.discount) } : {}),
       ...(form.fine ? { fine: Number(form.fine) } : {}),
       ...(form.dueDate ? { dueDate: new Date(form.dueDate).toISOString() } : {}),
@@ -193,23 +201,65 @@ export function CreateInvoiceDialog({
               <FormFieldError message={errors.studentId} />
             </div>
 
-            <div>
-              <FormFieldLabel required>Fee type</FormFieldLabel>
-              <SelectDropdown
-                aria-label="Fee type"
-                placeholder="Select fee type"
-                value={form.feeTypeId}
-                onValueChange={(value) => {
-                  clearField('feeTypeId');
-                  setForm((prev) => ({ ...prev, feeTypeId: value }));
-                }}
-                options={[
-                  { value: '', label: 'Select fee type' },
-                  ...feeTypesList.map((f) => ({ value: f.id, label: f.name })),
-                ]}
-                className={fieldClassName('feeTypeId', 'w-full')}
-              />
-              <FormFieldError message={errors.feeTypeId} />
+            <div className="space-y-2">
+              <FormFieldLabel required>Particulars</FormFieldLabel>
+              {lines.map((line, index) => (
+                <div key={`${index}-${line.feeTypeId}`} className="grid grid-cols-[1fr_7rem_auto] gap-2">
+                  <SelectDropdown
+                    aria-label={`Fee type ${index + 1}`}
+                    placeholder="Fee type"
+                    value={line.feeTypeId}
+                    onValueChange={(value) => {
+                      clearField('lines');
+                      setLines((prev) =>
+                        prev.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, feeTypeId: value } : row,
+                        ),
+                      );
+                    }}
+                    options={[
+                      { value: '', label: 'Fee type' },
+                      ...feeTypesList.map((type) => ({ value: type.id, label: type.name })),
+                    ]}
+                    className="w-full"
+                  />
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    className={modalFieldClassName}
+                    placeholder="Amount"
+                    value={line.amount}
+                    onChange={(e) => {
+                      clearField('lines');
+                      setLines((prev) =>
+                        prev.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, amount: e.target.value } : row,
+                        ),
+                      );
+                    }}
+                  />
+                  {lines.length > 1 ? (
+                    <button
+                      type="button"
+                      className="text-sm text-[var(--text-sub-500)]"
+                      onClick={() => setLines((prev) => prev.filter((_, rowIndex) => rowIndex !== index))}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                className="text-sm font-medium text-[var(--palette-teal)]"
+                onClick={() => setLines((prev) => [...prev, { feeTypeId: '', amount: '' }])}
+              >
+                Add fee type
+              </button>
+              <FormFieldError message={errors.lines ?? errors.feeTypeId ?? errors.amount} />
               {hasNoFeeTypes && (
                 <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
                   No fee types yet. Add types like Exam or Digitization on the Fee types tab first.
@@ -218,20 +268,6 @@ export function CreateInvoiceDialog({
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <FormFieldLabel required>Amount (PKR)</FormFieldLabel>
-                <input
-                  type="number"
-                  className={fieldClassName('amount', modalFieldClassName)}
-                  placeholder="Amount (PKR)"
-                  value={form.amount}
-                  onChange={(e) => {
-                    clearField('amount');
-                    setForm((prev) => ({ ...prev, amount: e.target.value }));
-                  }}
-                />
-                <FormFieldError message={errors.amount} />
-              </div>
               <div>
                 <FormFieldLabel>Discount</FormFieldLabel>
                 <input
@@ -252,9 +288,6 @@ export function CreateInvoiceDialog({
                 ) : null}
                 <FormFieldError message={errors.discount} />
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel>Late fine</FormFieldLabel>
                 <input

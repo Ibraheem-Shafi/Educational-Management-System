@@ -21,7 +21,7 @@ export const payrollRunStatuses = [
   'approved',
   'finalized',
 ] as const;
-export const payrollPaymentMethods = ['cash', 'bank'] as const;
+export const payrollPaymentMethods = ['cash', 'bank', 'cheque'] as const;
 export type SalaryComponentKind = (typeof salaryComponentKinds)[number];
 export type PayrollPaymentMethod = (typeof payrollPaymentMethods)[number];
 

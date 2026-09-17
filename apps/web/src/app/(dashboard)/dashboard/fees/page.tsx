@@ -81,6 +81,7 @@ interface Invoice {
   status?: { label: string; code: string };
   paidAt: string | null;
   latestPaymentId?: string | null;
+  lines?: Array<{ feeTypeId: string; label: string; amount: number }>;
 }
 
 interface StudentInvoiceGroup {
@@ -209,6 +210,8 @@ function InvoiceTableRow({
   requestWaive,
   requestUnwaive,
   nested,
+  selected,
+  onToggleSelect,
 }: {
   inv: Invoice;
   canCollect: boolean;
@@ -217,14 +220,30 @@ function InvoiceTableRow({
   requestWaive?: (invoice: Invoice) => void;
   requestUnwaive?: (invoice: Invoice) => void;
   nested?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (invoiceId: string) => void;
 }) {
   const remaining = inv.remainingAmount ?? inv.netAmount;
   const statusCode = inv.status?.code;
   const statusLabel = inv.status?.label ?? '';
   const isOverdue = `${statusCode ?? ''} ${statusLabel}`.toLowerCase().includes('overdue');
+  const feeLabel =
+    inv.lines && inv.lines.length > 0
+      ? inv.lines.map((line) => line.label).join(', ')
+      : (inv.feeType?.name ?? '—');
 
   return (
     <tr className={cn('transition-colors', statusRowClass(statusCode, statusLabel))}>
+      {onToggleSelect ? (
+        <td className={cn(dataTableTdClass, nested && 'pl-10')}>
+          <input
+            type="checkbox"
+            aria-label={`Select invoice for ${inv.student?.fullName ?? 'student'}`}
+            checked={Boolean(selected)}
+            onChange={() => onToggleSelect(inv.id)}
+          />
+        </td>
+      ) : null}
       <td
         className={cn(
           dataTableTdClass,
@@ -233,7 +252,7 @@ function InvoiceTableRow({
       >
         {nested ? '' : (inv.student?.fullName ?? '—')}
       </td>
-      <td className={dataTableTdClass}>{inv.feeType?.name ?? '—'}</td>
+      <td className={dataTableTdClass}>{feeLabel}</td>
       <td className={cn(dataTableTdClass, 'whitespace-nowrap')}>{formatCurrency(inv.netAmount)}</td>
       <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(remaining))}>
         {formatCurrency(remaining)}
@@ -277,6 +296,8 @@ function StudentInvoiceExpandRows({
   requestWaive,
   requestUnwaive,
   token,
+  selectedIds,
+  onToggleSelect,
 }: {
   studentId: string;
   studentName: string;
@@ -295,6 +316,8 @@ function StudentInvoiceExpandRows({
   requestWaive?: (invoice: Invoice) => void;
   requestUnwaive?: (invoice: Invoice) => void;
   token: string | undefined;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (invoiceId: string) => void;
 }) {
   const { data, isLoading, error } = useQuery({
     queryKey: [
@@ -328,7 +351,7 @@ function StudentInvoiceExpandRows({
   if (isLoading) {
     return (
       <tr>
-        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
+        <td colSpan={8} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
           Loading more invoices for {studentName}…
         </td>
       </tr>
@@ -338,7 +361,7 @@ function StudentInvoiceExpandRows({
   if (error) {
     return (
       <tr>
-        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-red-600">
+        <td colSpan={8} className="px-4 py-3 pl-10 text-sm text-red-600">
           Failed to load remaining invoices
         </td>
       </tr>
@@ -348,7 +371,7 @@ function StudentInvoiceExpandRows({
   if (rest.length === 0) {
     return (
       <tr>
-        <td colSpan={7} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
+        <td colSpan={8} className="px-4 py-3 pl-10 text-sm text-[var(--base-muted-foreground,#71717A)]">
           No additional invoices
         </td>
       </tr>
@@ -367,6 +390,8 @@ function StudentInvoiceExpandRows({
           requestWaive={requestWaive}
           requestUnwaive={requestUnwaive}
           nested
+          selected={selectedIds?.has(inv.id)}
+          onToggleSelect={onToggleSelect}
         />
       ))}
     </>
@@ -400,6 +425,8 @@ export default function FeesPage() {
   const [dueFrom, setDueFrom] = useState('');
   const [dueTo, setDueTo] = useState('');
   const [expandedStudentIds, setExpandedStudentIds] = useState<Set<string>>(() => new Set());
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(() => new Set());
+  const [expandedDefaulterIds, setExpandedDefaulterIds] = useState<Set<string>>(() => new Set());
   const [defaulterPage, setDefaulterPage] = useState(1);
   const [defaulterLimit, setDefaulterLimit] = useState(8);
   const [defaulterSearch, setDefaulterSearch] = useState('');
@@ -498,6 +525,24 @@ export default function FeesPage() {
     });
   }, []);
 
+  const toggleInvoiceSelected = useCallback((invoiceId: string) => {
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(invoiceId)) next.delete(invoiceId);
+      else next.add(invoiceId);
+      return next;
+    });
+  }, []);
+
+  const toggleDefaulterExpanded = useCallback((studentId: string) => {
+    setExpandedDefaulterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }, []);
+
   const {
     data: completedInvoices,
     isLoading: completedLoading,
@@ -540,11 +585,16 @@ export default function FeesPage() {
     queryFn: () =>
       apiClient<{
         data: Array<{
-          id: string;
-          student: { fullName: string };
-          netAmount: number;
-          remainingAmount?: number;
-          dueDate: string | null;
+          student: { id: string; fullName: string };
+          totalRemaining: number;
+          invoiceCount: number;
+          invoices: Array<{
+            id: string;
+            feeType?: { name: string } | null;
+            netAmount: number;
+            remainingAmount?: number;
+            dueDate: string | null;
+          }>;
         }>;
         total: number;
         meta: { total: number; page: number; limit: number; totalPages: number };
@@ -955,6 +1005,19 @@ export default function FeesPage() {
                 Clear filters
               </Button>
             )}
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={selectedInvoiceIds.size === 0}
+              onClick={() => {
+                window.open(
+                  `/print/fee-invoices/bulk?ids=${[...selectedInvoiceIds].join(',')}`,
+                  '_blank',
+                );
+              }}
+            >
+              Print selected{selectedInvoiceIds.size ? ` (${selectedInvoiceIds.size})` : ''}
+            </Button>
           </FilterBar>
 
           <div className="bg-white">
@@ -962,6 +1025,7 @@ export default function FeesPage() {
               <table className={dataTableClass}>
                 <thead>
                   <tr>
+                    <th className={cn(dataTableThClass, 'w-10')} />
                     <th className={dataTableThClass}>Student</th>
                     <th className={dataTableThClass}>Fee type</th>
                     <th className={dataTableThClass}>Amount</th>
@@ -972,11 +1036,11 @@ export default function FeesPage() {
                   </tr>
                 </thead>
                 <tbody className="[&>tr:last-child>td]:border-b-0">
-                  {isLoading && <DataTableSkeletonRows columns={7} rows={invoiceLimit} />}
+                  {isLoading && <DataTableSkeletonRows columns={8} rows={invoiceLimit} />}
 
                   {error && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-600">
+                      <td colSpan={8} className="px-4 py-8 text-center text-sm text-red-600">
                         Failed to load invoices
                       </td>
                     </tr>
@@ -985,7 +1049,7 @@ export default function FeesPage() {
                   {!isLoading && !error && invoiceGroups?.data.length === 0 && (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-4 py-10 text-center text-sm text-[var(--base-muted-foreground,#71717A)]"
                       >
                         No invoices found
@@ -1002,7 +1066,7 @@ export default function FeesPage() {
                       return (
                         <Fragment key={group.student.id}>
                           <tr className="bg-[var(--palette-orange-soft)]">
-                            <td colSpan={7} className={cn(dataTableTdClass, 'border-b-[var(--palette-orange)]/20 py-2.5')}>
+                            <td colSpan={8} className={cn(dataTableTdClass, 'border-b-[var(--palette-orange)]/20 py-2.5')}>
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2.5">
                                   <UserAvatar
@@ -1077,6 +1141,8 @@ export default function FeesPage() {
                               requestWaive={requestWaive}
                               requestUnwaive={requestUnwaive}
                               nested
+                              selected={selectedInvoiceIds.has(inv.id)}
+                              onToggleSelect={toggleInvoiceSelected}
                             />
                           ))}
                           {expanded && moreCount > 0 ? (
@@ -1098,6 +1164,8 @@ export default function FeesPage() {
                               requestWaive={requestWaive}
                               requestUnwaive={requestUnwaive}
                               token={token}
+                              selectedIds={selectedInvoiceIds}
+                              onToggleSelect={toggleInvoiceSelected}
                             />
                           ) : null}
                         </Fragment>
@@ -1436,8 +1504,8 @@ export default function FeesPage() {
                 <thead>
                   <tr>
                     <th className={dataTableThClass}>Student</th>
-                    <th className={dataTableThClass}>Due date</th>
-                    <th className={dataTableThClass}>Amount</th>
+                    <th className={dataTableThClass}>Invoices</th>
+                    <th className={dataTableThClass}>Total remaining</th>
                     <th className={cn(dataTableThClass, 'w-12')} />
                   </tr>
                 </thead>
@@ -1464,57 +1532,111 @@ export default function FeesPage() {
                   )}
                   {!defaultersLoading &&
                     !defaultersError &&
-                    defaulters?.data.map((inv) => (
-                      <tr
-                        key={inv.id}
-                        className={cn('transition-colors', statusRowClass('overdue', 'Overdue'))}
-                      >
-                        <td className={dataTableTdClass}>
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <UserAvatar name={inv.student.fullName} size="sm" />
-                            <span className="truncate">{inv.student.fullName}</span>
-                          </div>
-                        </td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap font-medium text-[var(--palette-coral)]')}>
-                          {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
-                        </td>
-                        <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(inv.remainingAmount ?? inv.netAmount))}>
-                          {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
-                        </td>
-                        <td className={cn(dataTableTdClass, 'text-right')}>
-                          {canCollect ? (
-                            <RowActionsMenu
-                              items={[
-                                {
-                                  label: 'Edit',
-                                  onClick: () => openEditInvoice(inv.id),
-                                },
-                                {
-                                  label: 'Record payment',
-                                  onClick: () => openRecordPayment(toPayTarget(inv), 'partial'),
-                                },
-                                {
-                                  label: 'Pay in full',
-                                  onClick: () => openRecordPayment(toPayTarget(inv), 'full'),
-                                },
-                                {
-                                  label: 'Waive remaining',
-                                  onClick: () =>
-                                    requestWaive({
-                                      id: inv.id,
-                                      netAmount: inv.netAmount,
-                                      remainingAmount: inv.remainingAmount,
-                                      dueDate: inv.dueDate,
-                                      student: inv.student,
-                                      paidAt: null,
-                                    }),
-                                },
-                              ]}
-                            />
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
+                    defaulters?.data.map((group) => {
+                      const expanded = expandedDefaulterIds.has(group.student.id);
+                      const canExpand = group.invoiceCount > 0;
+                      return (
+                        <Fragment key={group.student.id}>
+                          <tr className={cn('transition-colors', statusRowClass('overdue', 'Overdue'))}>
+                            <td className={dataTableTdClass}>
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                <UserAvatar name={group.student.fullName} seed={group.student.id} size="sm" />
+                                {canExpand ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDefaulterExpanded(group.student.id)}
+                                    className="inline-flex min-w-0 items-center gap-1.5 text-left text-sm font-semibold"
+                                    aria-expanded={expanded}
+                                  >
+                                    <ChevronDown
+                                      className={cn(
+                                        'h-4 w-4 shrink-0 text-[var(--palette-coral)] transition-transform',
+                                        expanded && 'rotate-180',
+                                      )}
+                                    />
+                                    <span className="truncate">{group.student.fullName}</span>
+                                  </button>
+                                ) : (
+                                  <span className="truncate">{group.student.fullName}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className={dataTableTdClass}>
+                              {group.invoiceCount} invoice{group.invoiceCount === 1 ? '' : 's'}
+                            </td>
+                            <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(group.totalRemaining))}>
+                              {formatCurrency(group.totalRemaining)}
+                            </td>
+                            <td className={cn(dataTableTdClass, 'text-right')} />
+                          </tr>
+                          {expanded
+                            ? group.invoices.map((inv) => (
+                                <tr key={inv.id} className={cn('transition-colors', statusRowClass('overdue', 'Overdue'))}>
+                                  <td className={cn(dataTableTdClass, 'pl-10 text-[var(--base-muted-foreground,#71717A)]')}>
+                                    {inv.feeType?.name ?? 'Invoice'}
+                                  </td>
+                                  <td className={cn(dataTableTdClass, 'whitespace-nowrap font-medium text-[var(--palette-coral)]')}>
+                                    {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}
+                                  </td>
+                                  <td className={cn(dataTableTdClass, 'whitespace-nowrap', remainingClass(inv.remainingAmount ?? inv.netAmount))}>
+                                    {formatCurrency(inv.remainingAmount ?? inv.netAmount)}
+                                  </td>
+                                  <td className={cn(dataTableTdClass, 'text-right')}>
+                                    {canCollect ? (
+                                      <RowActionsMenu
+                                        items={[
+                                          {
+                                            label: 'Edit',
+                                            onClick: () => openEditInvoice(inv.id),
+                                          },
+                                          {
+                                            label: 'Record payment',
+                                            onClick: () =>
+                                              openRecordPayment(
+                                                toPayTarget({
+                                                  id: inv.id,
+                                                  netAmount: inv.netAmount,
+                                                  remainingAmount: inv.remainingAmount,
+                                                  student: group.student,
+                                                }),
+                                                'partial',
+                                              ),
+                                          },
+                                          {
+                                            label: 'Pay in full',
+                                            onClick: () =>
+                                              openRecordPayment(
+                                                toPayTarget({
+                                                  id: inv.id,
+                                                  netAmount: inv.netAmount,
+                                                  remainingAmount: inv.remainingAmount,
+                                                  student: group.student,
+                                                }),
+                                                'full',
+                                              ),
+                                          },
+                                          {
+                                            label: 'Waive remaining',
+                                            onClick: () =>
+                                              requestWaive({
+                                                id: inv.id,
+                                                netAmount: inv.netAmount,
+                                                remainingAmount: inv.remainingAmount,
+                                                dueDate: inv.dueDate,
+                                                student: group.student,
+                                                paidAt: null,
+                                              }),
+                                          },
+                                        ]}
+                                      />
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              ))
+                            : null}
+                        </Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -1523,7 +1645,10 @@ export default function FeesPage() {
                 page={defaulterPage}
                 totalPages={defaulters.meta.totalPages}
                 limit={defaulterLimit}
-                onPageChange={setDefaulterPage}
+                onPageChange={(p) => {
+                  setDefaulterPage(p);
+                  setExpandedDefaulterIds(new Set());
+                }}
                 onLimitChange={handleDefaulterLimitChange}
               />
             )}

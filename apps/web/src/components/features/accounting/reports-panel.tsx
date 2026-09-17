@@ -135,12 +135,16 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
     if (report === 'income-expense') {
       const income = (data.income as Array<Record<string, unknown>>) ?? [];
       const expense = (data.expense as Array<Record<string, unknown>>) ?? [];
+      const drawings = (data.drawings as Array<Record<string, unknown>>) ?? [];
+      const totals = (data.totals as { income?: number; expense?: number; drawings?: number; net?: number }) ?? {};
       downloadCsv(
         'income-expense.csv',
         ['Section', 'Code', 'Name', 'Amount'],
         [
           ...income.map((row) => csvRow(['Income', row.code, row.name, row.amount])),
           ...expense.map((row) => csvRow(['Expense', row.code, row.name, row.amount])),
+          ...drawings.map((row) => csvRow(['Drawings', row.code, row.name, row.amount])),
+          csvRow(['Profit', '', '', totals.net ?? 0]),
         ],
       );
       return;
@@ -241,7 +245,7 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
       ) : report === 'income-expense' ? (
         <div className="space-y-6 px-5 py-4">
           <ReportTable
-            title="Income"
+            title="Income (fees)"
             headers={['Code', 'Name', 'Amount']}
             rows={((data?.income as Array<Record<string, unknown>>) ?? []).map((row) =>
               csvRow([row.code, row.name, `PKR ${formatMoney(Number(row.amount))}`]),
@@ -254,9 +258,27 @@ export function ReportsPanel({ branchId }: { branchId: string }) {
               csvRow([row.code, row.name, `PKR ${formatMoney(Number(row.amount))}`]),
             )}
           />
-          <p className="text-sm font-medium">
-            Net: PKR {formatMoney(Number((data?.totals as { net?: number })?.net ?? 0))}
-          </p>
+          <ReportTable
+            title="Drawings"
+            headers={['Code', 'Name', 'Amount']}
+            rows={((data?.drawings as Array<Record<string, unknown>>) ?? []).map((row) =>
+              csvRow([row.code, row.name, `PKR ${formatMoney(Number(row.amount))}`]),
+            )}
+          />
+          <div className="space-y-1 text-sm">
+            <p>
+              Income: PKR {formatMoney(Number((data?.totals as { income?: number })?.income ?? 0))}
+            </p>
+            <p>
+              Expenses: PKR {formatMoney(Number((data?.totals as { expense?: number })?.expense ?? 0))}
+            </p>
+            <p>
+              Drawings: PKR {formatMoney(Number((data?.totals as { drawings?: number })?.drawings ?? 0))}
+            </p>
+            <p className="font-medium">
+              Profit: PKR {formatMoney(Number((data?.totals as { net?: number })?.net ?? 0))}
+            </p>
+          </div>
         </div>
       ) : report === 'account-statement' ? (
         <ReportTable
