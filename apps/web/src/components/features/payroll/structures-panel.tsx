@@ -96,7 +96,7 @@ export function StructuresPanel({
     mutationFn: (id: string) =>
       apiClient(`/payroll/structures/${id}`, { method: 'DELETE', token }),
     onSuccess: async () => {
-      toast.success('Salary structure removed');
+      toast.success('Salary card removed');
       await queryClient.invalidateQueries({ queryKey: queryKeys.payrollStructures(branchId) });
     },
     onError: () => toast.error('Unable to remove structure'),
@@ -107,7 +107,7 @@ export function StructuresPanel({
   return (
     <>
       <ContentPanel
-        title={`Salary structures (${data?.meta.total ?? 0})`}
+        title={`Staff salary cards (${data?.meta.total ?? 0})`}
         actions={
           <PermissionGate permission={PERMISSIONS.PAYROLL_MANAGE}>
             <button
@@ -116,7 +116,7 @@ export function StructuresPanel({
               onClick={() => setCreateOpen(true)}
             >
               <PageHeaderActionIcon />
-              Add structure
+              Add staff card
             </button>
           </PermissionGate>
         }
@@ -166,26 +166,27 @@ export function StructuresPanel({
             <thead>
               <tr>
                 <th className={dataTableThClass}>Staff</th>
-                <th className={dataTableThClass}>Basic salary</th>
-                <th className={dataTableThClass}>Effective</th>
-                <th className={dataTableThClass}>Components</th>
+                <th className={dataTableThClass}>Group</th>
+                <th className={dataTableThClass}>Basic pay</th>
+                <th className={dataTableThClass}>Account</th>
+                <th className={dataTableThClass}>EOBI / PESSI</th>
                 <th className={dataTableThClass}>Status</th>
                 {canManage && <th className={cn(dataTableThClass, 'w-24')} />}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <DataTableSkeletonRows columns={canManage ? 6 : 5} rows={limit} />
+                <DataTableSkeletonRows columns={canManage ? 7 : 6} rows={limit} />
               ) : error ? (
                 <tr>
-                  <td colSpan={canManage ? 6 : 5} className={dataTableTdClass}>
-                    <p className="text-sm text-red-600">Unable to load structures</p>
+                  <td colSpan={canManage ? 7 : 6} className={dataTableTdClass}>
+                    <p className="text-sm text-red-600">Unable to load salary cards</p>
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={canManage ? 6 : 5} className={dataTableTdClass}>
-                    <p className="text-sm text-[var(--text-sub-500)]">No salary structures found</p>
+                  <td colSpan={canManage ? 7 : 6} className={dataTableTdClass}>
+                    <p className="text-sm text-[var(--text-sub-500)]">No staff salary cards yet</p>
                   </td>
                 </tr>
               ) : (
@@ -199,12 +200,18 @@ export function StructuresPanel({
                         {row.user?.staffCode ?? row.userId}
                       </p>
                     </td>
-                    <td className={dataTableTdClass}>{formatCurrency(row.basicSalary)}</td>
                     <td className={dataTableTdClass}>
-                      {row.effectiveFrom}
-                      {row.effectiveTo ? ` → ${row.effectiveTo}` : ''}
+                      {row.staffGroup === 'admin'
+                        ? 'Admin'
+                        : row.staffGroup === 'visiting'
+                          ? 'Visiting'
+                          : 'Permanent'}
                     </td>
-                    <td className={dataTableTdClass}>{row.components.length}</td>
+                    <td className={dataTableTdClass}>{formatCurrency(row.basicSalary)}</td>
+                    <td className={dataTableTdClass}>{row.bankAccount || '—'}</td>
+                    <td className={dataTableTdClass}>
+                      {formatCurrency(row.eobi ?? 0)} / {formatCurrency(row.pessi ?? 0)}
+                    </td>
                     <td className={dataTableTdClass}>
                       <StatusBadge
                         label={row.isActive ? 'Active' : 'Inactive'}

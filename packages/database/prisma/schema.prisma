@@ -1299,16 +1299,22 @@ model TransportVehicleDocument {
 // --- Phase 6: Payroll ---
 
 model SalaryStructure {
-  id           String    @id @default(cuid())
-  userId       String
-  branchId     String
-  basicSalary  Decimal   @db.Decimal(12, 2)
-  effectiveFrom DateTime @db.Date
-  effectiveTo  DateTime? @db.Date
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+  id            String    @id @default(cuid())
+  userId        String
+  branchId      String
+  basicSalary   Decimal   @db.Decimal(12, 2)
+  staffGroup    String    @default("permanent")
+  bankAccount   String?
+  eobi          Decimal   @default(0) @db.Decimal(12, 2)
+  pessi         Decimal   @default(0) @db.Decimal(12, 2)
+  extraLecRate  Decimal   @default(150) @db.Decimal(12, 2)
+  ratePerClass  Decimal   @default(0) @db.Decimal(12, 2)
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   components SalaryComponent[]
@@ -1316,6 +1322,7 @@ model SalaryStructure {
   @@index([userId, deletedAt])
   @@index([branchId, deletedAt])
   @@index([userId, isActive])
+  @@index([branchId, staffGroup, deletedAt])
 }
 
 model SalaryComponent {
@@ -1338,7 +1345,7 @@ model PayrollRun {
   branchId       String
   year           Int
   month          Int
-  status         String    @default("draft")
+  status         String    @default("open")
   approvedById   String?
   finalizedAt    DateTime?
   paidAt         DateTime?
@@ -1354,26 +1361,53 @@ model PayrollRun {
 }
 
 model PayrollLine {
-  id                   String   @id @default(cuid())
-  runId                String
-  userId               String
-  basicSalary          Decimal  @db.Decimal(12, 2)
-  allowancesTotal      Decimal  @default(0) @db.Decimal(12, 2)
-  deductionsTotal      Decimal  @default(0) @db.Decimal(12, 2)
-  adjustmentsTotal     Decimal  @default(0) @db.Decimal(12, 2)
-  netPay               Decimal  @db.Decimal(12, 2)
-  attendancePresentDays Int     @default(0)
-  attendanceAbsentDays Int      @default(0)
-  workingDays          Int      @default(0)
-  breakdown            Json?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String    @id @default(cuid())
+  runId                 String
+  userId                String
+  staffGroup            String    @default("permanent")
+  designation           String?
+  accountNumber         String?
+  basicSalary           Decimal   @db.Decimal(12, 2)
+  allowancesTotal       Decimal   @default(0) @db.Decimal(12, 2)
+  deductionsTotal       Decimal   @default(0) @db.Decimal(12, 2)
+  adjustmentsTotal      Decimal   @default(0) @db.Decimal(12, 2)
+  netPay                Decimal   @db.Decimal(12, 2)
+  attendancePresentDays Int       @default(0)
+  attendanceAbsentDays  Int       @default(0)
+  workingDays           Int       @default(30)
+  absents               Int       @default(0)
+  deductedDays          Int       @default(0)
+  extraLectures         Int       @default(0)
+  lectureCount          Int       @default(0)
+  ratePerClass          Decimal   @default(0) @db.Decimal(12, 2)
+  extraLecRate          Decimal   @default(150) @db.Decimal(12, 2)
+  extraLecAmount        Decimal   @default(0) @db.Decimal(12, 2)
+  lecturesAmount        Decimal   @default(0) @db.Decimal(12, 2)
+  otherAllowance        Decimal   @default(0) @db.Decimal(12, 2)
+  absentFine            Decimal   @default(0) @db.Decimal(12, 2)
+  advanceDeduction      Decimal   @default(0) @db.Decimal(12, 2)
+  securityDeduct        Decimal   @default(0) @db.Decimal(12, 2)
+  eobi                  Decimal   @default(0) @db.Decimal(12, 2)
+  pessi                 Decimal   @default(0) @db.Decimal(12, 2)
+  previousAdvance       Decimal   @default(0) @db.Decimal(12, 2)
+  currentAdvance        Decimal   @default(0) @db.Decimal(12, 2)
+  pendingAdvance        Decimal   @default(0) @db.Decimal(12, 2)
+  securityPrevious      Decimal   @default(0) @db.Decimal(12, 2)
+  securityTillDate      Decimal   @default(0) @db.Decimal(12, 2)
+  remarks               String?
+  paymentDate           DateTime? @db.Date
+  amountIssued          Decimal   @default(0) @db.Decimal(12, 2)
+  paymentType           String?
+  breakdown             Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([runId, userId])
   @@index([userId])
+  @@index([runId, staffGroup])
 }
 
 // --- Phase 6: Fee payments ---

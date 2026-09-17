@@ -1137,7 +1137,7 @@ export class FinanceOpsService {
         },
       }),
       this.prisma.payrollRun.findFirst({
-        where: { branchId, status: 'finalized' },
+        where: { branchId, OR: [{ status: 'paid' }, { paidAt: { not: null } }] },
         orderBy: [{ year: 'desc' }, { month: 'desc' }],
         include: { lines: true },
       }),

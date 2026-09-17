@@ -34,7 +34,7 @@ export function CreateRunDialog({
   branchId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated?: (runId: string) => void;
+  onCreated?: (run: { id: string; year: number; month: number }) => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -65,16 +65,16 @@ export function CreateRunDialog({
 
   const createMutation = useMutation({
     mutationFn: (payload: ReturnType<typeof buildPayload>) =>
-      apiClient<{ id: string }>('/payroll/runs', {
+      apiClient<{ id: string; year: number; month: number }>('/payroll/runs/open-month', {
         method: 'POST',
         token,
         body: JSON.stringify(payload),
       }),
     onSuccess: async (run) => {
-      toast.success('Payroll run created');
+      toast.success('Salary month opened');
       await queryClient.invalidateQueries({ queryKey: queryKeys.payrollRuns(branchId) });
       onOpenChange(false);
-      onCreated?.(run.id);
+      onCreated?.(run);
     },
     onError: (err: Error) => {
       if (handleFormValidationError(err, applyApiErrors)) return;
@@ -106,9 +106,9 @@ export function CreateRunDialog({
             <CalendarDays className="h-6 w-6 text-[#57646F]" strokeWidth={1.5} />
           </div>
           <div className="min-w-0 flex-1">
-            <DialogTitle>New payroll run</DialogTitle>
+            <DialogTitle>Open salary month</DialogTitle>
             <DialogDescription className="mt-1">
-              Create a draft run for a branch and period
+              Create the campus sheet for a month from staff cards, last month’s balances, and attendance
             </DialogDescription>
           </div>
           <button
@@ -193,7 +193,7 @@ export function CreateRunDialog({
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',
               )}
             >
-              {createMutation.isPending ? 'Creating…' : 'Create run'}
+              {createMutation.isPending ? 'Opening…' : 'Open month'}
             </button>
           </div>
         </form>

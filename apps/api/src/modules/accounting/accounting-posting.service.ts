@@ -22,7 +22,7 @@ export const DRAWINGS_ACCOUNT_CODE = '3000';
 
 /**
  * Auto-posting helpers for fee payments and payroll runs.
- * PayrollModule should import AccountingModule and call postPayrollRun after finalize.
+ * PayrollModule should import AccountingModule and call postPayrollRun after mark paid.
  */
 @Injectable()
 export class AccountingPostingService implements OnModuleInit {

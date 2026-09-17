@@ -181,6 +181,7 @@ export const queryKeys = {
   payrollHistory: (branchId?: string, params?: Params) =>
     branchListKey('payroll-history', branchId, params),
   payrollLinePrint: (lineId: string) => ['payroll-line-print', lineId] as const,
+  payrollSheetPrint: (runId: string) => ['payroll-sheet-print', runId] as const,
   accountingAccounts: (branchId?: string, params?: Params) =>
     branchListKey('accounting-accounts', branchId, params),
   accountingVouchers: (branchId?: string, params?: Params) =>

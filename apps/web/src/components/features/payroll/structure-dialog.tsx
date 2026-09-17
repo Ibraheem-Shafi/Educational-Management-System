@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Wallet, X } from 'lucide-react';
+import { Wallet, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createSalaryStructureSchema,
+  DEFAULT_EXTRA_LEC_RATE,
   updateSalaryStructureSchema,
 } from '@eims/shared';
 import { useAuth } from '@/providers/auth-provider';
@@ -25,22 +26,13 @@ import { FormFieldLabel, modalFieldClassName } from '@/components/features/users
 import { DateField } from '@/components/ui/date-field';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-import type { SalaryComponent, SalaryComponentKind, SalaryStructure } from './types';
+import type { SalaryStructure, StaffGroup } from './types';
 
-const COMPONENT_KIND_OPTIONS: Array<{ value: SalaryComponentKind; label: string }> = [
-  { value: 'allowance', label: 'Allowance' },
-  { value: 'deduction', label: 'Deduction' },
-  { value: 'tax', label: 'Tax' },
-  { value: 'eobi', label: 'EOBI' },
-  { value: 'provident_fund', label: 'Provident fund' },
+const GROUP_OPTIONS: Array<{ value: StaffGroup; label: string }> = [
+  { value: 'permanent', label: 'Permanent staff' },
+  { value: 'admin', label: 'Admin staff' },
+  { value: 'visiting', label: 'Visiting staff' },
 ];
-
-const emptyComponent = (): SalaryComponent => ({
-  kind: 'allowance',
-  name: '',
-  amount: 0,
-  percentOfBasic: null,
-});
 
 export function StructureDialog({
   branchId,
@@ -66,10 +58,15 @@ export function StructureDialog({
   const [form, setForm] = useState({
     userId: userId ?? '',
     basicSalary: '',
+    staffGroup: 'permanent' as StaffGroup,
+    bankAccount: '',
+    eobi: '0',
+    pessi: '0',
+    extraLecRate: String(DEFAULT_EXTRA_LEC_RATE),
+    ratePerClass: '0',
     effectiveFrom: '',
     effectiveTo: '',
     isActive: true,
-    components: [emptyComponent()] as SalaryComponent[],
   });
 
   useEffect(() => {
@@ -78,28 +75,30 @@ export function StructureDialog({
       setForm({
         userId: structure.userId,
         basicSalary: String(structure.basicSalary),
+        staffGroup: structure.staffGroup ?? 'permanent',
+        bankAccount: structure.bankAccount ?? '',
+        eobi: String(structure.eobi ?? 0),
+        pessi: String(structure.pessi ?? 0),
+        extraLecRate: String(structure.extraLecRate ?? DEFAULT_EXTRA_LEC_RATE),
+        ratePerClass: String(structure.ratePerClass ?? 0),
         effectiveFrom: structure.effectiveFrom,
         effectiveTo: structure.effectiveTo ?? '',
         isActive: structure.isActive,
-        components:
-          structure.components.length > 0
-            ? structure.components.map((c) => ({
-                kind: c.kind,
-                name: c.name,
-                amount: c.amount,
-                percentOfBasic: c.percentOfBasic,
-              }))
-            : [emptyComponent()],
       });
       return;
     }
     setForm({
       userId: userId ?? '',
       basicSalary: '',
+      staffGroup: 'permanent',
+      bankAccount: '',
+      eobi: '0',
+      pessi: '0',
+      extraLecRate: String(DEFAULT_EXTRA_LEC_RATE),
+      ratePerClass: '0',
       effectiveFrom: new Date().toISOString().slice(0, 10),
       effectiveTo: '',
       isActive: true,
-      components: [emptyComponent()],
     });
     clearAll();
   }, [open, structure, userId, clearAll]);
@@ -114,17 +113,17 @@ export function StructureDialog({
         return apiClient(`/payroll/structures/${structure.id}`, {
           method: 'PATCH',
           token,
-          body: JSON.stringify(payload),
+          body: payload,
         });
       }
       return apiClient('/payroll/structures', {
         method: 'POST',
         token,
-        body: JSON.stringify(payload),
+        body: payload,
       });
     },
     onSuccess: async () => {
-      toast.success(isEdit ? 'Structure updated' : 'Structure created');
+      toast.success(isEdit ? 'Salary card updated' : 'Salary card saved');
       await queryClient.invalidateQueries({ queryKey: queryKeys.payrollStructures(branchId) });
       onOpenChange(false);
     },
@@ -140,37 +139,21 @@ export function StructureDialog({
   }));
 
   function buildPayload() {
-    const components = form.components
-      .filter((c) => c.name.trim())
-      .map((c) => ({
-        kind: c.kind,
-        name: c.name.trim(),
-        amount: Number(c.amount) || 0,
-        percentOfBasic:
-          c.percentOfBasic != null && c.percentOfBasic !== ('' as unknown as number)
-            ? Number(c.percentOfBasic)
-            : null,
-      }));
-
-    if (isEdit) {
-      return {
-        basicSalary: Number(form.basicSalary),
-        effectiveFrom: form.effectiveFrom,
-        effectiveTo: form.effectiveTo || null,
-        isActive: form.isActive,
-        components,
-      };
-    }
-
-    return {
-      userId: form.userId,
-      branchId,
-      basicSalary: Number(form.basicSalary),
+    const shared = {
+      basicSalary: Number(form.basicSalary) || 0,
+      staffGroup: form.staffGroup,
+      bankAccount: form.bankAccount.trim() || null,
+      eobi: Number(form.eobi) || 0,
+      pessi: Number(form.pessi) || 0,
+      extraLecRate: Number(form.extraLecRate) || DEFAULT_EXTRA_LEC_RATE,
+      ratePerClass: Number(form.ratePerClass) || 0,
       effectiveFrom: form.effectiveFrom,
       effectiveTo: form.effectiveTo || null,
       isActive: form.isActive,
-      components,
+      components: [] as Array<never>,
     };
+    if (isEdit) return shared;
+    return { ...shared, userId: form.userId, branchId };
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -188,10 +171,9 @@ export function StructureDialog({
             <Wallet className="h-6 w-6 text-[#57646F]" strokeWidth={1.5} />
           </div>
           <div className="min-w-0 flex-1">
-            <DialogTitle>{isEdit ? 'Edit salary structure' : 'Add salary structure'}</DialogTitle>
+            <DialogTitle>{isEdit ? 'Edit salary card' : 'Add salary card'}</DialogTitle>
             <DialogDescription className="mt-1">
-              Define basic salary plus allowances, deductions, and statutory amounts (tax, EOBI,
-              provident fund)
+              Basic pay, group, bank account, and default EOBI/PESSI for the monthly sheet
             </DialogDescription>
           </div>
           <button
@@ -227,10 +209,23 @@ export function StructureDialog({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <FormFieldLabel label="Basic salary (PKR)" required />
+                <FormFieldLabel label="Staff group" required />
+                <SelectDropdown
+                  aria-label="Staff group"
+                  fullWidth
+                  value={form.staffGroup}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, staffGroup: value as StaffGroup }))
+                  }
+                  options={GROUP_OPTIONS}
+                />
+              </div>
+              <div>
+                <FormFieldLabel label="Basic pay" required />
                 <input
                   type="number"
                   min={0}
+                  step="0.01"
                   value={form.basicSalary}
                   onChange={(e) => {
                     clearField('basicSalary');
@@ -240,32 +235,77 @@ export function StructureDialog({
                 />
                 <FormFieldError message={errors.basicSalary} />
               </div>
+            </div>
+
+            <div>
+              <FormFieldLabel label="Bank account number" />
+              <input
+                type="text"
+                value={form.bankAccount}
+                onChange={(e) => setForm((prev) => ({ ...prev, bankAccount: e.target.value }))}
+                className={modalFieldClassName}
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <FormFieldLabel label="Status" />
-                <SelectDropdown
-                  aria-label="Status"
-                  fullWidth
-                  value={form.isActive ? 'true' : 'false'}
-                  onValueChange={(value) =>
-                    setForm((prev) => ({ ...prev, isActive: value === 'true' }))
-                  }
-                  options={[
-                    { value: 'true', label: 'Active' },
-                    { value: 'false', label: 'Inactive' },
-                  ]}
-                  className="w-full"
+                <FormFieldLabel label="EOBI" />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.eobi}
+                  onChange={(e) => setForm((prev) => ({ ...prev, eobi: e.target.value }))}
+                  className={modalFieldClassName}
+                />
+              </div>
+              <div>
+                <FormFieldLabel label="PESSI" />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.pessi}
+                  onChange={(e) => setForm((prev) => ({ ...prev, pessi: e.target.value }))}
+                  className={modalFieldClassName}
                 />
               </div>
             </div>
+
+            {form.staffGroup === 'visiting' ? (
+              <div>
+                <FormFieldLabel label="Rate per class" />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.ratePerClass}
+                  onChange={(e) => setForm((prev) => ({ ...prev, ratePerClass: e.target.value }))}
+                  className={modalFieldClassName}
+                />
+              </div>
+            ) : (
+              <div>
+                <FormFieldLabel label="Extra lecture rate" />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.extraLecRate}
+                  onChange={(e) => setForm((prev) => ({ ...prev, extraLecRate: e.target.value }))}
+                  className={modalFieldClassName}
+                />
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FormFieldLabel label="Effective from" required />
                 <DateField
                   value={form.effectiveFrom}
-                  onValueChange={(next) => {
+                  onValueChange={(value) => {
                     clearField('effectiveFrom');
-                    setForm((prev) => ({ ...prev, effectiveFrom: next }));
+                    setForm((prev) => ({ ...prev, effectiveFrom: value }));
                   }}
                   className={fieldClassName('effectiveFrom', modalFieldClassName)}
                 />
@@ -275,145 +315,20 @@ export function StructureDialog({
                 <FormFieldLabel label="Effective to" />
                 <DateField
                   value={form.effectiveTo}
-                  min={form.effectiveFrom || undefined}
-                  onValueChange={(next) => {
-                    clearField('effectiveTo');
-                    setForm((prev) => ({ ...prev, effectiveTo: next }));
-                  }}
-                  className={fieldClassName('effectiveTo', modalFieldClassName)}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, effectiveTo: value }))}
+                  className={modalFieldClassName}
                 />
-                <FormFieldError message={errors.effectiveTo} />
               </div>
             </div>
 
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <FormFieldLabel label="Components" />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      components: [...prev.components, emptyComponent()],
-                    }))
-                  }
-                  className="inline-flex items-center gap-1 text-xs font-medium text-[var(--midnight-blue-950,#01366C)]"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add
-                </button>
-              </div>
-              <FormFieldError message={errors.components} />
-              <div className="space-y-3">
-                {form.components.map((component, index) => (
-                  <div
-                    key={index}
-                    className="rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] p-3"
-                  >
-                    <div className="mb-2 grid gap-2 sm:grid-cols-2">
-                      <SelectDropdown
-                        aria-label="Component kind"
-                        fullWidth
-                        value={component.kind}
-                        onValueChange={(value) => {
-                          clearField(`components.${index}.kind`);
-                          const kind = (COMPONENT_KIND_OPTIONS.some((o) => o.value === value)
-                            ? value
-                            : 'allowance') as SalaryComponentKind;
-                          setForm((prev) => ({
-                            ...prev,
-                            components: prev.components.map((c, i) =>
-                              i === index ? { ...c, kind } : c,
-                            ),
-                          }));
-                        }}
-                        options={COMPONENT_KIND_OPTIONS}
-                        className={fieldClassName(`components.${index}.kind`, 'w-full')}
-                      />
-                      <input
-                        placeholder="Name"
-                        value={component.name}
-                        onChange={(e) => {
-                          clearField(`components.${index}.name`);
-                          setForm((prev) => ({
-                            ...prev,
-                            components: prev.components.map((c, i) =>
-                              i === index ? { ...c, name: e.target.value } : c,
-                            ),
-                          }));
-                        }}
-                        className={fieldClassName(`components.${index}.name`, modalFieldClassName)}
-                      />
-                    </div>
-                    <FormFieldError message={errors[`components.${index}.kind`]} />
-                    <FormFieldError message={errors[`components.${index}.name`]} />
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <input
-                        type="number"
-                        min={0}
-                        placeholder="Fixed amount"
-                        value={component.amount || ''}
-                        onChange={(e) => {
-                          clearField(`components.${index}.amount`);
-                          setForm((prev) => ({
-                            ...prev,
-                            components: prev.components.map((c, i) =>
-                              i === index ? { ...c, amount: Number(e.target.value) || 0 } : c,
-                            ),
-                          }));
-                        }}
-                        className={fieldClassName(`components.${index}.amount`, modalFieldClassName)}
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        placeholder="% of basic (optional)"
-                        value={component.percentOfBasic ?? ''}
-                        onChange={(e) => {
-                          clearField(`components.${index}.percentOfBasic`);
-                          setForm((prev) => ({
-                            ...prev,
-                            components: prev.components.map((c, i) =>
-                              i === index
-                                ? {
-                                    ...c,
-                                    percentOfBasic: e.target.value ? Number(e.target.value) : null,
-                                  }
-                                : c,
-                            ),
-                          }));
-                        }}
-                        className={fieldClassName(
-                          `components.${index}.percentOfBasic`,
-                          modalFieldClassName,
-                        )}
-                      />
-                    </div>
-                    <FormFieldError message={errors[`components.${index}.amount`]} />
-                    <FormFieldError message={errors[`components.${index}.percentOfBasic`]} />
-                    <p className="mt-1 text-xs text-[var(--text-sub-500)]">
-                      Use a fixed amount or % of full basic. If both are filled, % of basic is used.
-                    </p>
-                    {form.components.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((prev) => ({
-                            ...prev,
-                            components: prev.components.filter((_, i) => i !== index),
-                          }))
-                        }
-                        className="mt-2 inline-flex items-center gap-1 text-xs text-red-600"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <label className="flex items-center gap-2 text-sm text-[var(--text-main-900)]">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+              />
+              Active card (included when opening a month)
+            </label>
           </div>
 
           <div className="flex shrink-0 gap-4 border-t border-[var(--stroke-soft-200,#E2E4E9)] px-5 pb-5 pt-4">
@@ -436,7 +351,7 @@ export function StructureDialog({
                 'text-sm font-medium leading-5 tracking-[-0.006em] text-white hover:opacity-90 disabled:opacity-50',
               )}
             >
-              {saveMutation.isPending ? 'Saving…' : isEdit ? 'Update structure' : 'Create structure'}
+              {saveMutation.isPending ? 'Saving…' : isEdit ? 'Save card' : 'Add card'}
             </button>
           </div>
         </form>
