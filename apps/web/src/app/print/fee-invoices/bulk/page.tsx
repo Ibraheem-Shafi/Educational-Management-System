@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/providers/auth-provider';
@@ -8,7 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { PrintShell, printQueryUiState } from '@/components/print/print-shell';
 import { FeeInvoiceSlip, type FeeInvoicePrintData } from '@/components/print/fee-invoice-slip';
 
-export default function PrintFeeInvoicesBulkPage() {
+function PrintFeeInvoicesBulkContent() {
   const searchParams = useSearchParams();
   const ids = useMemo(
     () =>
@@ -68,5 +68,13 @@ export default function PrintFeeInvoicesBulkPage() {
         ))}
       </div>
     </PrintShell>
+  );
+}
+
+export default function PrintFeeInvoicesBulkPage() {
+  return (
+    <Suspense fallback={<PrintShell title="Fee invoices (3 per A4)" loading />}>
+      <PrintFeeInvoicesBulkContent />
+    </Suspense>
   );
 }
