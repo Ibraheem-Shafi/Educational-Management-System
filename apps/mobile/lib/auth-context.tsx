@@ -66,7 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const supabase = getSupabase();
+    let supabase;
+    try {
+      supabase = getSupabase();
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : 'Auth is not configured');
+      setLoading(false);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       bootstrap(data.session);
     });

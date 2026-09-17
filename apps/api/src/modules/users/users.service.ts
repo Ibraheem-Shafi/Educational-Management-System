@@ -22,7 +22,7 @@ import type {
   UsersStatsResponse,
 } from '@eims/types';
 import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
-import { isSuperAdmin } from '@eims/shared';
+import { canSelectAllBranches, isSuperAdmin } from '@eims/shared';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
@@ -511,6 +511,9 @@ export class UsersService {
   async createInvitation(input: CreateInvitationInput, user: AuthUser) {
     const role = await this.prisma.role.findUnique({ where: { id: input.roleId } });
     if (!role) throw new BadRequestException('Invalid role');
+    if (!input.branchId && !canSelectAllBranches([role.code])) {
+      throw new BadRequestException('Select a campus for this role');
+    }
 
     const existingUser = await this.prisma.user.findFirst({
       where: { email: input.email, deletedAt: null },

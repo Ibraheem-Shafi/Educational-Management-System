@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.module';
 import { paginatedResult } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
-import { AccountingPostingService } from '../accounting/accounting-posting.service';
+import { AccountingPostingService, DRAWINGS_ACCOUNT_CODE } from '../accounting/accounting-posting.service';
 import { asNumber, containsSearch, parseYmd, toIso, toYmd } from '../../common/ops/date.util';
 import type { AuthUser } from '@eims/types';
 import type {
@@ -13,6 +13,7 @@ import type {
   CreateBankStatementLineInput,
   CreateBudgetForecastLineInput,
   CreateFixedAssetInput,
+  CreateOwnerDrawingInput,
   CreatePettyCashFundInput,
   CreatePettyCashVoucherInput,
   CreatePurchaseOrderInput,
@@ -22,6 +23,7 @@ import type {
   ListBankStatementsQuery,
   ListBudgetForecastLinesQuery,
   ListFixedAssetsQuery,
+  ListOwnerDrawingsQuery,
   ListPettyCashFundsQuery,
   ListPettyCashVouchersQuery,
   ListPurchaseOrdersQuery,
@@ -43,11 +45,36 @@ const vendorSelect = { select: { id: true, name: true } } as const;
 const namedSelect = { select: { id: true, name: true, code: true } } as const;
 
 function expenseCodeForCategory(category: string): string {
+  if (category === 'electricity') return '5210';
+  if (category === 'gas') return '5220';
+  if (category === 'water') return '5230';
+  if (category === 'phone') return '5240';
   if (category === 'utility') return '5200';
   if (category === 'maintenance') return '5300';
   if (category === 'asset') return '1600';
   return '5100';
 }
+
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function monthLabel(year: number, month: number): string {
+  return `${MONTH_NAMES[month - 1] ?? month} ${year}`;
+}
+
+const statementLineInclude = { orderBy: [{ issueDate: 'asc' as const }, { chequeNumber: 'asc' as const }] };
 
 function billStatus(amount: number, paidAmount: number, current?: string): string {
   if (current === 'void') return 'void';
@@ -242,6 +269,7 @@ export class FinanceOpsService {
         amount: input.amount,
         paidAt: parseYmd(input.paidAt, 'paidAt'),
         method: input.method ?? null,
+        chequeNumber: input.chequeNumber?.trim() || null,
       },
     });
 
@@ -252,7 +280,7 @@ export class FinanceOpsService {
       sourceId: payment.id,
       narration: `AP payment ${bill.billNo ?? bill.id}`,
       debitAccountCode: '2000',
-      creditAccountCode: '1000',
+      creditAccountCode: input.method === 'cheque' ? '1100' : '1000',
       amount: input.amount,
       userId: user.id,
       voucherDate: parseYmd(input.paidAt, 'paidAt'),
@@ -440,65 +468,99 @@ export class FinanceOpsService {
     return { success: true };
   }
 
-  // --- Bank rec ---
+  // --- Issued cheque register ---
 
   async listStatements(query: ListBankStatementsQuery, scope: BranchScope) {
     const where: Prisma.BankStatementWhereInput = {
       deletedAt: null,
       ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.year ? { year: query.year } : {}),
+      ...(query.month ? { month: query.month } : {}),
+      ...containsSearch(query.search, ['bankName', 'chequeBookNo']),
     };
     return this.page(
       this.prisma.bankStatement,
       where,
-      { periodFrom: 'desc' },
+      [{ year: 'desc' }, { month: 'desc' }] as object,
       query,
       (row) => this.toStatement(row),
-      { account: namedSelect, lines: true },
+      { account: namedSelect, lines: statementLineInclude },
     );
   }
 
+  async getStatement(id: string, scope: BranchScope) {
+    return this.toStatement(await this.requireStatement(id, scope));
+  }
+
   async createStatement(input: CreateBankStatementInput, user: AuthUser) {
-    const row = await this.prisma.bankStatement.create({
-      data: {
-        branchId: input.branchId,
-        accountId: input.accountId ?? null,
-        periodFrom: parseYmd(input.periodFrom, 'periodFrom'),
-        periodTo: parseYmd(input.periodTo, 'periodTo'),
-      },
-      include: { account: namedSelect, lines: true },
-    });
-    await this.audit.log({
-      userId: user.id,
-      action: 'finance_ops.bank_statement.created',
-      entityType: 'BankStatement',
-      entityId: row.id,
-      newValue: row,
-    });
-    return this.toStatement(row);
+    try {
+      const row = await this.prisma.bankStatement.create({
+        data: {
+          branchId: input.branchId,
+          accountId: input.accountId ?? null,
+          year: input.year,
+          month: input.month,
+          bankName: input.bankName,
+          chequeBookNo: input.chequeBookNo?.trim() || '',
+          chequeBookSerialFrom: input.chequeBookSerialFrom?.trim() || null,
+          chequeBookSerialTo: input.chequeBookSerialTo?.trim() || null,
+          status: input.status ?? 'open',
+        },
+        include: { account: namedSelect, lines: statementLineInclude },
+      });
+      await this.audit.log({
+        userId: user.id,
+        action: 'finance_ops.bank_statement.created',
+        entityType: 'BankStatement',
+        entityId: row.id,
+        newValue: row,
+      });
+      return this.toStatement(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('A cheque register already exists for this month and cheque book');
+      }
+      throw error;
+    }
   }
 
   async updateStatement(id: string, input: UpdateBankStatementInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.requireStatement(id, scope);
-    const row = await this.prisma.bankStatement.update({
-      where: { id },
-      data: {
-        ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
-        ...(input.periodFrom !== undefined ? { periodFrom: parseYmd(input.periodFrom, 'periodFrom') } : {}),
-        ...(input.periodTo !== undefined ? { periodTo: parseYmd(input.periodTo, 'periodTo') } : {}),
-        ...(input.status !== undefined ? { status: input.status } : {}),
-      },
-      include: { account: namedSelect, lines: true },
-    });
-    await this.audit.log({
-      userId: user.id,
-      action: 'finance_ops.bank_statement.updated',
-      entityType: 'BankStatement',
-      entityId: id,
-      previousValue: existing,
-      newValue: row,
-    });
-    return this.toStatement(row);
+    try {
+      const row = await this.prisma.bankStatement.update({
+        where: { id },
+        data: {
+          ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
+          ...(input.year !== undefined ? { year: input.year } : {}),
+          ...(input.month !== undefined ? { month: input.month } : {}),
+          ...(input.bankName !== undefined ? { bankName: input.bankName } : {}),
+          ...(input.chequeBookNo !== undefined ? { chequeBookNo: input.chequeBookNo?.trim() || '' } : {}),
+          ...(input.chequeBookSerialFrom !== undefined
+            ? { chequeBookSerialFrom: input.chequeBookSerialFrom?.trim() || null }
+            : {}),
+          ...(input.chequeBookSerialTo !== undefined
+            ? { chequeBookSerialTo: input.chequeBookSerialTo?.trim() || null }
+            : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+        },
+        include: { account: namedSelect, lines: statementLineInclude },
+      });
+      await this.audit.log({
+        userId: user.id,
+        action: 'finance_ops.bank_statement.updated',
+        entityType: 'BankStatement',
+        entityId: id,
+        previousValue: existing,
+        newValue: row,
+      });
+      return this.toStatement(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('A cheque register already exists for this month and cheque book');
+      }
+      throw error;
+    }
   }
 
   async addStatementLine(statementId: string, input: CreateBankStatementLineInput, user: AuthUser, scope: BranchScope) {
@@ -506,9 +568,13 @@ export class FinanceOpsService {
     const line = await this.prisma.bankStatementLine.create({
       data: {
         statementId: statement.id,
-        lineDate: parseYmd(input.lineDate, 'lineDate'),
+        issueDate: parseYmd(input.issueDate, 'issueDate'),
+        chequeNumber: input.chequeNumber.trim(),
+        payee: input.payee,
+        onAccountOf: input.onAccountOf,
         amount: input.amount,
-        description: input.description,
+        useInCampus: input.useInCampus?.trim() || null,
+        clearingDate: input.clearingDate ? parseYmd(input.clearingDate, 'clearingDate') : null,
       },
     });
     await this.audit.log({
@@ -519,6 +585,23 @@ export class FinanceOpsService {
       newValue: line,
     });
     return this.toStatementLine(line);
+  }
+
+  async removeStatementLine(statementId: string, lineId: string, user: AuthUser, scope: BranchScope) {
+    await this.requireStatement(statementId, scope);
+    const line = await this.prisma.bankStatementLine.findFirst({
+      where: { id: lineId, statementId },
+    });
+    if (!line) throw new NotFoundException('Cheque line not found');
+    await this.prisma.bankStatementLine.delete({ where: { id: lineId } });
+    await this.audit.log({
+      userId: user.id,
+      action: 'finance_ops.bank_line.deleted',
+      entityType: 'BankStatementLine',
+      entityId: lineId,
+      previousValue: line,
+    });
+    return { success: true };
   }
 
   async matchStatementLine(
@@ -558,6 +641,80 @@ export class FinanceOpsService {
       userId: user.id,
       action: 'finance_ops.bank_statement.deleted',
       entityType: 'BankStatement',
+      entityId: id,
+      previousValue: existing,
+    });
+    return { success: true };
+  }
+
+  // --- Owner drawings ---
+
+  async listDrawings(query: ListOwnerDrawingsQuery, scope: BranchScope) {
+    const where: Prisma.OwnerDrawingWhereInput = {
+      deletedAt: null,
+      ...prismaBranchFilter(narrowScope(scope, query.branchId)),
+      ...containsSearch(query.search, ['payee', 'notes', 'chequeNumber']),
+    };
+    return this.page(
+      this.prisma.ownerDrawing,
+      where,
+      { drawingDate: 'desc' },
+      query,
+      (row) => this.toDrawing(row),
+    );
+  }
+
+  async createDrawing(input: CreateOwnerDrawingInput, user: AuthUser) {
+    const row = await this.prisma.ownerDrawing.create({
+      data: {
+        branchId: input.branchId,
+        drawingDate: parseYmd(input.drawingDate, 'drawingDate'),
+        payee: input.payee,
+        amount: input.amount,
+        method: input.method,
+        chequeNumber: input.chequeNumber?.trim() || null,
+        notes: input.notes?.trim() || null,
+      },
+    });
+
+    const voucher = await this.posting.postDoubleEntry({
+      branchId: input.branchId,
+      voucherType: 'payment',
+      sourceType: 'owner_drawing',
+      sourceId: row.id,
+      narration: `Owner drawing — ${row.payee}`,
+      debitAccountCode: DRAWINGS_ACCOUNT_CODE,
+      creditAccountCode: input.method === 'cheque' ? '1100' : '1000',
+      amount: input.amount,
+      userId: user.id,
+      voucherDate: parseYmd(input.drawingDate, 'drawingDate'),
+    });
+
+    const posted = await this.prisma.ownerDrawing.update({
+      where: { id: row.id },
+      data: { journalVoucherId: voucher.id },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'finance_ops.drawing.created',
+      entityType: 'OwnerDrawing',
+      entityId: posted.id,
+      newValue: posted,
+    });
+    return this.toDrawing(posted);
+  }
+
+  async removeDrawing(id: string, user: AuthUser, scope: BranchScope) {
+    const existing = await this.prisma.ownerDrawing.findFirst({
+      where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+    });
+    if (!existing) throw new NotFoundException('Drawing not found');
+    await this.prisma.ownerDrawing.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.audit.log({
+      userId: user.id,
+      action: 'finance_ops.drawing.deleted',
+      entityType: 'OwnerDrawing',
       entityId: id,
       previousValue: existing,
     });
@@ -706,9 +863,13 @@ export class FinanceOpsService {
       deletedAt: null,
       ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.scope ? { scope: query.scope } : {}),
+      ...(query.batchId ? { batchId: query.batchId } : {}),
       ...containsSearch(query.search, ['name', 'category', 'notes']),
     };
-    return this.page(this.prisma.fixedAsset, where, { name: 'asc' }, query, (row) => this.toAsset(row));
+    return this.page(this.prisma.fixedAsset, where, { name: 'asc' }, query, (row) => this.toAsset(row), {
+      batch: { select: { id: true, name: true } },
+    });
   }
 
   async createAsset(input: CreateFixedAssetInput, user: AuthUser) {
@@ -717,6 +878,9 @@ export class FinanceOpsService {
         branchId: input.branchId,
         name: input.name,
         category: input.category,
+        scope: input.scope ?? 'school',
+        quantity: input.quantity ?? 1,
+        batchId: input.scope === 'class' ? (input.batchId ?? null) : null,
         purchaseDate: input.purchaseDate ? parseYmd(input.purchaseDate, 'purchaseDate') : null,
         cost: input.cost,
         vendorBillId: input.vendorBillId ?? null,
@@ -724,6 +888,7 @@ export class FinanceOpsService {
         status: input.status ?? 'active',
         notes: input.notes ?? null,
       },
+      include: { batch: { select: { id: true, name: true } } },
     });
     await this.audit.log({
       userId: user.id,
@@ -737,11 +902,17 @@ export class FinanceOpsService {
 
   async updateAsset(id: string, input: UpdateFixedAssetInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.requireAsset(id, scope);
+    const nextScope = input.scope ?? existing.scope;
     const row = await this.prisma.fixedAsset.update({
       where: { id },
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),
+        ...(input.scope !== undefined ? { scope: input.scope } : {}),
+        ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
+        ...(input.batchId !== undefined || input.scope !== undefined
+          ? { batchId: nextScope === 'class' ? (input.batchId ?? existing.batchId) : null }
+          : {}),
         ...(input.purchaseDate !== undefined
           ? { purchaseDate: input.purchaseDate ? parseYmd(input.purchaseDate, 'purchaseDate') : null }
           : {}),
@@ -751,6 +922,7 @@ export class FinanceOpsService {
         ...(input.vendorBillId !== undefined ? { vendorBillId: input.vendorBillId } : {}),
         ...(input.purchaseOrderId !== undefined ? { purchaseOrderId: input.purchaseOrderId } : {}),
       },
+      include: { batch: { select: { id: true, name: true } } },
     });
     await this.audit.log({
       userId: user.id,
@@ -921,9 +1093,15 @@ export class FinanceOpsService {
     });
     let income = 0;
     let expense = 0;
+    let drawings = 0;
     for (const line of lines) {
-      if (line.account.type === 'income') income += asNumber(line.credit) - asNumber(line.debit);
-      if (line.account.type === 'expense') expense += asNumber(line.debit) - asNumber(line.credit);
+      if (line.account.code === DRAWINGS_ACCOUNT_CODE) {
+        drawings += asNumber(line.debit) - asNumber(line.credit);
+      } else if (line.account.type === 'income') {
+        income += asNumber(line.credit) - asNumber(line.debit);
+      } else if (line.account.type === 'expense') {
+        expense += asNumber(line.debit) - asNumber(line.credit);
+      }
     }
     const branch = await this.prisma.branch.findUnique({ where: { id: branchId }, select: { name: true } });
     return {
@@ -933,7 +1111,8 @@ export class FinanceOpsService {
       to: query.to ?? null,
       income,
       expense,
-      net: income - expense,
+      drawings,
+      net: income - expense - drawings,
     };
   }
 
@@ -1079,9 +1258,9 @@ export class FinanceOpsService {
   private async requireStatement(id: string, scope: BranchScope) {
     const row = await this.prisma.bankStatement.findFirst({
       where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
-      include: { account: namedSelect, lines: true },
+      include: { account: namedSelect, lines: statementLineInclude },
     });
-    if (!row) throw new NotFoundException('Bank statement not found');
+    if (!row) throw new NotFoundException('Cheque register not found');
     return row;
   }
 
@@ -1097,6 +1276,7 @@ export class FinanceOpsService {
   private async requireAsset(id: string, scope: BranchScope) {
     const row = await this.prisma.fixedAsset.findFirst({
       where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
+      include: { batch: { select: { id: true, name: true } } },
     });
     if (!row) throw new NotFoundException('Asset not found');
     return row;
@@ -1221,32 +1401,50 @@ export class FinanceOpsService {
     id: string;
     branchId: string;
     accountId: string | null;
-    periodFrom: Date;
-    periodTo: Date;
+    year: number;
+    month: number;
+    bankName: string;
+    chequeBookNo: string;
+    chequeBookSerialFrom: string | null;
+    chequeBookSerialTo: string | null;
     status: string;
     createdAt: Date;
     updatedAt: Date;
     account?: { id: string; name: string; code: string } | null;
     lines?: Array<{
       id: string;
-      lineDate: Date;
+      issueDate: Date;
+      chequeNumber: string;
+      payee: string;
+      onAccountOf: string;
       amount: Prisma.Decimal | number;
-      description: string;
+      useInCampus: string | null;
+      clearingDate: Date | null;
       matchedJournalLineId: string | null;
       matchedFeePaymentId: string | null;
     }>;
   }) {
     const lines = (row.lines ?? []).map((line) => this.toStatementLine(line));
+    const total = lines.reduce((sum, line) => sum + line.amount, 0);
+    const serialFrom = row.chequeBookSerialFrom || lines[0]?.chequeNumber || null;
+    const serialTo = row.chequeBookSerialTo || lines[lines.length - 1]?.chequeNumber || null;
     return {
       id: row.id,
       branchId: row.branchId,
       accountId: row.accountId,
-      periodFrom: toYmd(row.periodFrom),
-      periodTo: toYmd(row.periodTo),
+      year: row.year,
+      month: row.month,
+      monthLabel: monthLabel(row.year, row.month),
+      bankName: row.bankName,
+      chequeBookNo: row.chequeBookNo,
+      chequeBookSerialFrom: serialFrom,
+      chequeBookSerialTo: serialTo,
+      serialRange: serialFrom && serialTo ? `${serialFrom} to ${serialTo}` : serialFrom || serialTo || null,
       status: row.status,
       account: row.account,
       matchedCount: lines.filter((l) => l.matched).length,
       lineCount: lines.length,
+      total,
       lines,
       createdAt: toIso(row.createdAt),
       updatedAt: toIso(row.updatedAt),
@@ -1255,20 +1453,56 @@ export class FinanceOpsService {
 
   private toStatementLine(row: {
     id: string;
-    lineDate: Date;
+    issueDate: Date;
+    chequeNumber: string;
+    payee: string;
+    onAccountOf: string;
     amount: Prisma.Decimal | number;
-    description: string;
+    useInCampus?: string | null;
+    clearingDate?: Date | null;
     matchedJournalLineId: string | null;
     matchedFeePaymentId: string | null;
   }) {
     return {
       id: row.id,
-      lineDate: toYmd(row.lineDate),
+      issueDate: toYmd(row.issueDate),
+      chequeNumber: row.chequeNumber,
+      payee: row.payee,
+      onAccountOf: row.onAccountOf,
       amount: asNumber(row.amount),
-      description: row.description,
+      useInCampus: row.useInCampus ?? null,
+      clearingDate: row.clearingDate ? toYmd(row.clearingDate) : null,
       matchedJournalLineId: row.matchedJournalLineId,
       matchedFeePaymentId: row.matchedFeePaymentId,
       matched: Boolean(row.matchedJournalLineId || row.matchedFeePaymentId),
+    };
+  }
+
+  private toDrawing(row: {
+    id: string;
+    branchId: string;
+    drawingDate: Date;
+    payee: string;
+    amount: Prisma.Decimal | number;
+    method: string;
+    chequeNumber: string | null;
+    notes: string | null;
+    journalVoucherId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: row.id,
+      branchId: row.branchId,
+      drawingDate: toYmd(row.drawingDate),
+      payee: row.payee,
+      amount: asNumber(row.amount),
+      method: row.method,
+      chequeNumber: row.chequeNumber,
+      notes: row.notes,
+      journalVoucherId: row.journalVoucherId,
+      createdAt: toIso(row.createdAt),
+      updatedAt: toIso(row.updatedAt),
     };
   }
 
@@ -1324,6 +1558,9 @@ export class FinanceOpsService {
     branchId: string;
     name: string;
     category: string;
+    scope?: string;
+    quantity?: number;
+    batchId?: string | null;
     purchaseDate: Date | null;
     cost: Prisma.Decimal | number;
     vendorBillId: string | null;
@@ -1332,12 +1569,17 @@ export class FinanceOpsService {
     notes: string | null;
     createdAt: Date;
     updatedAt: Date;
+    batch?: { id: string; name: string } | null;
   }) {
     return {
       id: row.id,
       branchId: row.branchId,
       name: row.name,
       category: row.category,
+      scope: row.scope ?? 'school',
+      quantity: row.quantity ?? 1,
+      batchId: row.batchId ?? null,
+      batch: row.batch ?? null,
       purchaseDate: toYmd(row.purchaseDate),
       cost: asNumber(row.cost),
       vendorBillId: row.vendorBillId,

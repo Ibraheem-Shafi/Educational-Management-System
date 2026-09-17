@@ -29,11 +29,16 @@ const METHOD_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bank', label: 'Bank transfer' },
   { value: 'online', label: 'Online' },
+  { value: 'cheque', label: 'Cheque' },
   { value: 'other', label: 'Other' },
 ];
 
 function needsReceipt(method: string): boolean {
   return method === 'bank' || method === 'online';
+}
+
+function needsChequeNumber(method: string): boolean {
+  return method === 'cheque';
 }
 
 export type PaymentDialogMode = 'partial' | 'full';
@@ -81,6 +86,7 @@ export function RecordPaymentDialog({
     : 0;
   const isFull = mode === 'full';
   const showReceiptFields = needsReceipt(method);
+  const showChequeNumber = needsChequeNumber(method);
 
   useEffect(() => {
     if (open && invoice) {
@@ -204,7 +210,7 @@ export function RecordPaymentDialog({
     const trimmedRef = providerRef.trim();
     const payload = {
       amount: isFull ? remaining : numericAmount,
-      method: method as 'cash' | 'bank' | 'online' | 'other',
+      method: method as 'cash' | 'bank' | 'online' | 'other' | 'cheque',
       paidAt,
       ...(trimmedRef ? { providerRef: trimmedRef } : {}),
       // Placeholder so schema refine passes before upload; real path set in mutation
@@ -304,10 +310,13 @@ export function RecordPaymentDialog({
                 onValueChange={(value) => {
                   clearField('method');
                   clearField('receipt');
+                  clearField('providerRef');
                   setMethod(value);
                   if (!needsReceipt(value)) {
-                    setProviderRef('');
                     setReceiptFile(null);
+                  }
+                  if (!needsChequeNumber(value) && !needsReceipt(value)) {
+                    setProviderRef('');
                   }
                 }}
                 options={METHOD_OPTIONS}
@@ -316,6 +325,26 @@ export function RecordPaymentDialog({
               />
               <FormFieldError message={errors.method} />
             </div>
+
+            {showChequeNumber ? (
+              <div>
+                <FormFieldLabel htmlFor="payment-provider-ref" required>
+                  Cheque number
+                </FormFieldLabel>
+                <input
+                  id="payment-provider-ref"
+                  type="text"
+                  value={providerRef}
+                  placeholder="Cheque number"
+                  onChange={(e) => {
+                    clearField('providerRef');
+                    setProviderRef(e.target.value);
+                  }}
+                  className={fieldClassName('providerRef', modalFieldClassName)}
+                />
+                <FormFieldError message={errors.providerRef} />
+              </div>
+            ) : null}
 
             {showReceiptFields ? (
               <>

@@ -231,7 +231,14 @@ export class FeesService {
         ...prismaBranchFilter(effective),
         ...(query.studentId ? { studentId: query.studentId } : {}),
         ...(query.statusId ? { statusId: query.statusId } : {}),
-        ...(query.feeTypeId ? { feeTypeId: query.feeTypeId } : {}),
+        ...(query.feeTypeId
+          ? {
+              OR: [
+                { feeTypeId: query.feeTypeId },
+                { lines: { some: { feeTypeId: query.feeTypeId } } },
+              ],
+            }
+          : {}),
         ...(query.billingPeriod ? { billingPeriod: query.billingPeriod } : {}),
         ...(dueDate ? { dueDate } : {}),
         ...(search
@@ -267,6 +274,12 @@ export class FeesService {
       remarks: string | null;
       createdAt: Date;
       student?: { id: string; fullName: string };
+      lines?: Array<{
+        feeTypeId: string;
+        label: string;
+        amount: { toString(): string } | number;
+        sortOrder: number;
+      }>;
     }>,
   ): Promise<
     Array<
@@ -282,7 +295,13 @@ export class FeesService {
     if (invoices.length === 0) return [];
 
     const invoiceIds = invoices.map((i) => i.id);
-    const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
+    const headerTypeIds = invoices.map((i) => i.feeTypeId);
+    const lineTypeIds = invoices.flatMap((i) =>
+      Array.isArray((i as { lines?: Array<{ feeTypeId: string }> }).lines)
+        ? (i as { lines: Array<{ feeTypeId: string }> }).lines.map((line) => line.feeTypeId)
+        : [],
+    );
+    const feeTypeIds = [...new Set([...headerTypeIds, ...lineTypeIds])];
     const statusIds = [...new Set(invoices.map((i) => i.statusId))];
 
     const [feeTypes, statuses, paidAggs, latestPayments] = await Promise.all([
@@ -337,6 +356,7 @@ export class FeesService {
         where,
         include: {
           student: { select: { id: true, fullName: true } },
+          lines: { orderBy: { sortOrder: 'asc' as const } },
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -443,6 +463,7 @@ export class FeesService {
         where: { ...where, studentId: { in: studentIds } },
         include: {
           student: { select: { id: true, fullName: true } },
+          lines: { orderBy: { sortOrder: 'asc' as const } },
         },
         orderBy: [{ billingPeriod: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
       }),
@@ -494,7 +515,11 @@ export class FeesService {
   }
 
   async create(input: CreateFeeInvoiceInput, user: AuthUser) {
-    const [student, feeType, pendingStatus] = await Promise.all([
+    const lineSpecs = await this.resolveInvoiceLineSpecs(input);
+    const headerFeeTypeId = lineSpecs[0]!.feeTypeId;
+    const amount = this.roundMoney(lineSpecs.reduce((sum, line) => sum + line.amount, 0));
+
+    const [student, feeTypes, pendingStatus] = await Promise.all([
       this.prisma.student.findFirst({
         where: { id: input.studentId, branchId: input.branchId, deletedAt: null },
         select: {
@@ -509,33 +534,41 @@ export class FeesService {
           annualInstallmentCount: true,
         },
       }),
-      this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } }),
+      this.prisma.feeType.findMany({
+        where: { id: { in: [...new Set(lineSpecs.map((line) => line.feeTypeId))] } },
+      }),
       this.prisma.lookupStatus.findFirst({
         where: { code: 'pending', category: { code: 'fee_status' } },
       }),
     ]);
 
     if (!student) throw new BadRequestException('Invalid student for this branch');
-    if (!feeType) throw new BadRequestException('Invalid fee type');
     if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
+    const feeTypeMap = new Map(feeTypes.map((row) => [row.id, row]));
+    const feeType = feeTypeMap.get(headerFeeTypeId);
+    if (!feeType) throw new BadRequestException('Invalid fee type');
+    for (const line of lineSpecs) {
+      if (!feeTypeMap.has(line.feeTypeId)) throw new BadRequestException('Invalid fee type');
+    }
 
-    const siblingDiscount = await this.computeSiblingDiscount(input.studentId, input.amount);
+    const siblingDiscount = await this.computeSiblingDiscount(input.studentId, amount);
+    const monthlyLine = lineSpecs.find((line) => feeTypeMap.get(line.feeTypeId)?.code === 'monthly');
     const monthlyRecurring = this.monthlyFeeDiscountForType(
-      feeType.code,
+      monthlyLine ? 'monthly' : feeType.code,
       Number(student.monthlyFeeDiscount),
-      input.amount,
+      monthlyLine?.amount ?? amount,
     );
     const { discount, remarks } = this.composeInvoiceDiscount({
-      amount: input.amount,
+      amount,
       extraDiscount: input.discount ?? 0,
       siblingDiscount,
       monthlyRecurring,
       existingRemarks: input.remarks,
     });
-    const waivedMonthly = feeType.code === 'monthly' && student.monthlyFeeWaived;
+    const waivedMonthly = Boolean(monthlyLine) && student.monthlyFeeWaived;
     const fine = waivedMonthly ? 0 : (input.fine ?? 0);
-    const effectiveDiscount = waivedMonthly ? input.amount : discount;
-    const netAmount = this.roundMoney(input.amount - effectiveDiscount + fine);
+    const effectiveDiscount = waivedMonthly ? amount : discount;
+    const netAmount = this.roundMoney(amount - effectiveDiscount + fine);
     const waivedStatus = waivedMonthly
       ? await this.prisma.lookupStatus.findFirst({
           where: { code: 'waived', category: { code: 'fee_status' } },
@@ -556,11 +589,11 @@ export class FeesService {
       data: {
         branchId: input.branchId,
         studentId: input.studentId,
-        feeTypeId: input.feeTypeId,
+        feeTypeId: headerFeeTypeId,
         invoiceNo,
         billingPeriod,
         voucherNo,
-        amount: input.amount,
+        amount,
         discount: effectiveDiscount,
         fine,
         netAmount,
@@ -570,8 +603,19 @@ export class FeesService {
           ? [remarks, 'Monthly fee waived'].filter(Boolean).join(' · ')
           : remarks,
         createdById: user.id,
+        lines: {
+          create: lineSpecs.map((line, index) => ({
+            feeTypeId: line.feeTypeId,
+            label: line.label || feeTypeMap.get(line.feeTypeId)?.name || 'Fee',
+            amount: line.amount,
+            sortOrder: line.sortOrder ?? index,
+          })),
+        },
       },
-      include: { student: { select: { id: true, fullName: true } } },
+      include: {
+        student: { select: { id: true, fullName: true } },
+        lines: { orderBy: { sortOrder: 'asc' } },
+      },
     });
 
     await this.applyLateFeesToOverdue(selectedBranchScope([input.branchId]));
@@ -584,7 +628,6 @@ export class FeesService {
       newValue: invoice,
     });
 
-    const feeTypeMap = new Map([[feeType.id, feeType]]);
     const statusMap = new Map([[pendingStatus.id, pendingStatus]]);
     return {
       ...this.toResponse(invoice, feeTypeMap, statusMap),
@@ -604,14 +647,24 @@ export class FeesService {
       include: {
         payments: { where: { status: { in: ['succeeded', 'completed'] } } },
         student: { select: { id: true, fullName: true } },
+        lines: { orderBy: { sortOrder: 'asc' } },
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    const nextLines = input.lines?.length
+      ? await this.resolveInvoiceLineSpecs({
+          feeTypeId: input.lines[0]?.feeTypeId,
+          amount: input.lines[0]?.amount,
+          lines: input.lines,
+        })
+      : null;
     const amount =
-      input.amount !== undefined
-        ? this.roundMoney(input.amount)
-        : this.roundMoney(Number(invoice.amount));
+      nextLines
+        ? this.roundMoney(nextLines.reduce((sum, line) => sum + line.amount, 0))
+        : input.amount !== undefined
+          ? this.roundMoney(input.amount)
+          : this.roundMoney(Number(invoice.amount));
     const discount =
       input.discount !== undefined
         ? Math.max(0, this.roundMoney(input.discount))
@@ -640,22 +693,56 @@ export class FeesService {
       remarks: invoice.remarks,
     };
 
-    await this.prisma.feeInvoice.update({
-      where: { id },
-      data: {
-        amount,
-        discount,
-        fine,
-        netAmount,
-        ...(input.dueDate !== undefined
-          ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
-          : {}),
-        ...(input.billingPeriod !== undefined
-          ? { billingPeriod: input.billingPeriod || null }
-          : {}),
-        ...(input.voucherNo !== undefined ? { voucherNo: input.voucherNo || null } : {}),
-        ...(input.remarks !== undefined ? { remarks: input.remarks || null } : {}),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      if (nextLines) {
+        await tx.feeInvoiceLine.deleteMany({ where: { invoiceId: id } });
+        await tx.feeInvoiceLine.createMany({
+          data: nextLines.map((line, index) => ({
+            invoiceId: id,
+            feeTypeId: line.feeTypeId,
+            label: line.label,
+            amount: line.amount,
+            sortOrder: line.sortOrder ?? index,
+          })),
+        });
+      } else if (input.amount !== undefined && invoice.lines.length <= 1) {
+        if (invoice.lines[0]) {
+          await tx.feeInvoiceLine.update({
+            where: { id: invoice.lines[0].id },
+            data: { amount },
+          });
+        } else {
+          const headerType = await tx.feeType.findUnique({ where: { id: invoice.feeTypeId } });
+          await tx.feeInvoiceLine.create({
+            data: {
+              invoiceId: id,
+              feeTypeId: invoice.feeTypeId,
+              label: headerType?.name ?? 'Fee',
+              amount,
+              sortOrder: 0,
+            },
+          });
+        }
+      }
+
+      await tx.feeInvoice.update({
+        where: { id },
+        data: {
+          amount,
+          discount,
+          fine,
+          netAmount,
+          ...(nextLines ? { feeTypeId: nextLines[0]!.feeTypeId } : {}),
+          ...(input.dueDate !== undefined
+            ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+            : {}),
+          ...(input.billingPeriod !== undefined
+            ? { billingPeriod: input.billingPeriod || null }
+            : {}),
+          ...(input.voucherNo !== undefined ? { voucherNo: input.voucherNo || null } : {}),
+          ...(input.remarks !== undefined ? { remarks: input.remarks || null } : {}),
+        },
+      });
     });
 
     const updated = await this.syncInvoiceAfterPayment(id);
@@ -666,10 +753,10 @@ export class FeesService {
     const feeTypeMap = feeType ? new Map([[feeType.id, feeType]]) : new Map();
     const statusMap = status ? new Map([[status.id, status]]) : new Map();
 
-    // Propagate discount to later months (same student + fee type).
+    // Propagate discount and amount to later unpaid months.
     let cascadedCount = 0;
     if (input.discount !== undefined) {
-      cascadedCount = await this.cascadeDiscountToFutureInvoices({
+      cascadedCount += await this.cascadeDiscountToFutureInvoices({
         sourceInvoiceId: id,
         studentId: invoice.studentId,
         feeTypeId: invoice.feeTypeId,
@@ -686,6 +773,18 @@ export class FeesService {
           data: { monthlyFeeDiscount: discount },
         });
       }
+    }
+    if (input.amount !== undefined || nextLines) {
+      cascadedCount += await this.cascadeAmountToFutureInvoices({
+        sourceInvoiceId: id,
+        studentId: invoice.studentId,
+        feeTypeId: nextLines?.[0]?.feeTypeId ?? invoice.feeTypeId,
+        billingPeriod: updated.billingPeriod ?? invoice.billingPeriod,
+        dueDate: updated.dueDate ?? invoice.dueDate,
+        amount,
+        lines: nextLines,
+        scope,
+      });
     }
 
     const newValue = {
@@ -770,6 +869,132 @@ export class FeesService {
       await this.prisma.feeInvoice.update({
         where: { id: inv.id },
         data: { discount, netAmount },
+      });
+      await this.syncInvoiceAfterPayment(inv.id);
+      cascaded += 1;
+    }
+    return cascaded;
+  }
+
+  /**
+   * Apply amount / line amount changes to later unpaid invoices for this student.
+   * Skips paid and partially paid rows. Matches lines by fee type.
+   */
+  private async cascadeAmountToFutureInvoices(opts: {
+    sourceInvoiceId: string;
+    studentId: string;
+    feeTypeId: string;
+    billingPeriod: string | null;
+    dueDate: Date | null;
+    amount: number;
+    lines: Array<{ feeTypeId: string; label: string; amount: number; sortOrder?: number }> | null;
+    scope: BranchScope;
+  }): Promise<number> {
+    const period = opts.billingPeriod?.trim() || null;
+    const futureWhere = period
+      ? { billingPeriod: { gt: period } }
+      : opts.dueDate
+        ? { dueDate: { gt: opts.dueDate } }
+        : null;
+    if (!futureWhere) return 0;
+
+    const futures = await this.prisma.feeInvoice.findMany({
+      where: {
+        id: { not: opts.sourceInvoiceId },
+        studentId: opts.studentId,
+        paidAt: null,
+        ...prismaBranchFilter(opts.scope),
+        ...futureWhere,
+      },
+      include: {
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+        lines: { orderBy: { sortOrder: 'asc' } },
+      },
+      orderBy: [{ billingPeriod: 'asc' }, { dueDate: 'asc' }],
+    });
+
+    let cascaded = 0;
+    for (const inv of futures) {
+      const paidTotal = this.getPaidAmount(inv);
+      if (paidTotal > 0) continue;
+
+      const discount = this.roundMoney(Number(inv.discount));
+      const fine = this.roundMoney(Number(inv.fine));
+      const sourceByType = new Map((opts.lines ?? []).map((line) => [line.feeTypeId, line]));
+
+      if (sourceByType.size > 0 && inv.lines.length > 0) {
+        let changed = false;
+        const nextLines = inv.lines.map((line) => {
+          const source = sourceByType.get(line.feeTypeId);
+          if (!source) return { ...line, amount: this.roundMoney(Number(line.amount)) };
+          const nextAmount = this.roundMoney(source.amount);
+          if (nextAmount !== this.roundMoney(Number(line.amount))) changed = true;
+          return { ...line, amount: nextAmount, label: source.label || line.label };
+        });
+        if (!changed) continue;
+        const amount = this.roundMoney(nextLines.reduce((sum, line) => sum + line.amount, 0));
+        const netAmount = this.roundMoney(amount - discount + fine);
+        await this.prisma.$transaction(async (tx) => {
+          for (const line of nextLines) {
+            await tx.feeInvoiceLine.update({
+              where: { id: line.id },
+              data: { amount: line.amount, label: line.label },
+            });
+          }
+          await tx.feeInvoice.update({
+            where: { id: inv.id },
+            data: { amount, netAmount },
+          });
+        });
+        await this.syncInvoiceAfterPayment(inv.id);
+        cascaded += 1;
+        continue;
+      }
+
+      const headerMatches =
+        inv.feeTypeId === opts.feeTypeId ||
+        inv.lines.some((line) => line.feeTypeId === opts.feeTypeId);
+      if (!headerMatches && inv.lines.length > 1) continue;
+
+      const amount = this.roundMoney(opts.amount);
+      const netAmount = this.roundMoney(amount - discount + fine);
+      if (
+        this.roundMoney(Number(inv.amount)) === amount &&
+        this.roundMoney(Number(inv.netAmount)) === netAmount
+      ) {
+        continue;
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        if (inv.lines.length === 1) {
+          await tx.feeInvoiceLine.update({
+            where: { id: inv.lines[0]!.id },
+            data: { amount },
+          });
+        } else if (inv.lines.length === 0) {
+          const headerType = await tx.feeType.findUnique({ where: { id: inv.feeTypeId } });
+          await tx.feeInvoiceLine.create({
+            data: {
+              invoiceId: inv.id,
+              feeTypeId: inv.feeTypeId,
+              label: headerType?.name ?? 'Fee',
+              amount,
+              sortOrder: 0,
+            },
+          });
+        } else {
+          const match = inv.lines.find((line) => line.feeTypeId === opts.feeTypeId);
+          if (match) {
+            await tx.feeInvoiceLine.update({
+              where: { id: match.id },
+              data: { amount },
+            });
+          }
+        }
+        await tx.feeInvoice.update({
+          where: { id: inv.id },
+          data: { amount, netAmount },
+        });
       });
       await this.syncInvoiceAfterPayment(inv.id);
       cascaded += 1;
@@ -1616,12 +1841,20 @@ export class FeesService {
 
     const invoices = await this.prisma.feeInvoice.findMany({
       where: { studentId },
-      include: { payments: { where: { status: { in: ['succeeded', 'completed'] } } } },
+      include: {
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+        lines: { orderBy: { sortOrder: 'asc' as const } },
+      },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
 
-    const feeTypeIds = [...new Set(invoices.map((i) => i.feeTypeId))];
+    const feeTypeIds = [
+      ...new Set([
+        ...invoices.map((i) => i.feeTypeId),
+        ...invoices.flatMap((i) => i.lines.map((line) => line.feeTypeId)),
+      ]),
+    ];
     const statusIds = [...new Set(invoices.map((i) => i.statusId))];
     const [feeTypes, statuses] = await Promise.all([
       this.prisma.feeType.findMany({ where: { id: { in: feeTypeIds } } }),
@@ -1750,8 +1983,14 @@ export class FeesService {
   }
 
   async previewBulkInvoices(input: PreviewBulkInvoicesInput) {
-    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
-    if (!feeType) throw new BadRequestException('Invalid fee type');
+    const typeIds = await this.resolveBulkFeeTypeIds(input);
+    const feeTypes = await this.prisma.feeType.findMany({ where: { id: { in: typeIds } } });
+    if (feeTypes.length === 0) throw new BadRequestException('Invalid fee type');
+    const feeTypeById = new Map(feeTypes.map((row) => [row.id, row]));
+    const orderedTypes = typeIds
+      .map((id) => feeTypeById.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    const feeType = orderedTypes[0]!;
 
     const activeStatus = await this.prisma.lookupStatus.findFirst({
       where: { code: 'active', category: { code: 'student_status' } },
@@ -1781,27 +2020,56 @@ export class FeesService {
       orderBy: { fullName: 'asc' },
     });
 
-    const structures = await this.loadFeeStructuresForBulk({
-      branchId: input.branchId,
-      feeTypeId: input.feeTypeId,
-      feeStructureId: input.feeStructureId,
-    });
+    const structuresByType = new Map<string, Awaited<ReturnType<FeesService['loadFeeStructuresForBulk']>>>();
+    for (const type of orderedTypes) {
+      structuresByType.set(
+        type.id,
+        await this.loadFeeStructuresForBulk({
+          branchId: input.branchId,
+          feeTypeId: type.id,
+          feeStructureId: orderedTypes.length === 1 ? input.feeStructureId : undefined,
+        }),
+      );
+    }
 
     const overrideAmount =
       input.defaultAmount !== undefined ? this.roundMoney(input.defaultAmount) : null;
 
     const previewStudents = students.map((student) => {
-      const structure = this.matchFeeStructureForStudent(structures, {
-        batchId: student.batchId,
-        programId: student.programId,
-        feeStructureId: input.feeStructureId,
-      });
-      const structureAmount = structure ? this.roundMoney(Number(structure.amount)) : null;
-      const listedAmount =
-        feeType.code === 'monthly' && student.monthlyFeeAmount != null
-          ? this.roundMoney(Number(student.monthlyFeeAmount))
-          : structureAmount;
-      const suggestedAmount = listedAmount ?? overrideAmount;
+      const linePreviews: Array<{
+        feeTypeId: string;
+        label: string;
+        amount: number;
+        feeStructureId: string | null;
+        dueDayOfMonth: number | null;
+      }> = [];
+      for (const type of orderedTypes) {
+        const structures = structuresByType.get(type.id) ?? [];
+        const structure = this.matchFeeStructureForStudent(structures, {
+          batchId: student.batchId,
+          programId: student.programId,
+          feeStructureId: orderedTypes.length === 1 ? input.feeStructureId : undefined,
+        });
+        const structureAmount = structure ? this.roundMoney(Number(structure.amount)) : null;
+        const listedAmount =
+          type.code === 'monthly' && student.monthlyFeeAmount != null
+            ? this.roundMoney(Number(student.monthlyFeeAmount))
+            : structureAmount;
+        const suggested = listedAmount ?? (orderedTypes.length === 1 ? overrideAmount : null);
+        if (suggested != null && suggested > 0) {
+          linePreviews.push({
+            feeTypeId: type.id,
+            label: type.name,
+            amount: suggested,
+            feeStructureId: structure?.id ?? null,
+            dueDayOfMonth: structure?.dueDayOfMonth ?? null,
+          });
+        }
+      }
+      const suggestedAmount =
+        linePreviews.length > 0
+          ? this.roundMoney(linePreviews.reduce((sum, line) => sum + line.amount, 0))
+          : null;
 
       return {
         studentId: student.id,
@@ -1810,17 +2078,20 @@ export class FeesService {
         batchId: student.batchId,
         programName: student.program?.name ?? null,
         batchName: student.batch?.name ?? null,
-        feeStructureId: structure?.id ?? null,
+        feeStructureId: linePreviews.length === 1 ? linePreviews[0]!.feeStructureId : null,
         defaultAmount: suggestedAmount,
         suggestedAmount,
-        dueDayOfMonth: structure?.dueDayOfMonth ?? null,
+        dueDayOfMonth: linePreviews[0]?.dueDayOfMonth ?? null,
         monthlyFeeWaived: student.monthlyFeeWaived,
         annualChargeMode: student.annualChargeMode,
+        lines: linePreviews,
       };
     });
 
-    const matchedWithStructure = previewStudents.filter((s) => s.feeStructureId);
-    const uniqueStructureIds = new Set(matchedWithStructure.map((s) => s.feeStructureId));
+    const matchedWithStructure = previewStudents.filter((s) => (s.lines?.length ?? 0) > 0);
+    const uniqueStructureIds = new Set(
+      matchedWithStructure.map((s) => s.feeStructureId).filter((id): id is string => Boolean(id)),
+    );
     const amounts = matchedWithStructure
       .map((s) => s.suggestedAmount)
       .filter((a): a is number => a !== null);
@@ -1828,6 +2099,7 @@ export class FeesService {
 
     return {
       feeType: { id: feeType.id, name: feeType.name, code: feeType.code },
+      feeTypes: orderedTypes.map((type) => ({ id: type.id, name: type.name, code: type.code })),
       scope: input.batchId ? 'batch' : 'branch',
       feeStructureId: uniqueStructureIds.size === 1 ? [...uniqueStructureIds][0]! : null,
       defaultAmount: uniqueAmounts.size === 1 ? [...uniqueAmounts][0]! : null,
@@ -1843,196 +2115,35 @@ export class FeesService {
   }
 
   async generateBulkInvoices(input: GenerateBulkInvoicesInput, user: AuthUser) {
-    if (input.lines?.length) {
-      return this.generateBulkInvoicesFromLines(input, user);
-    }
-
-    if (!input.batchId) {
-      throw new BadRequestException(
-        'Batch is required when generating without per-student lines; use preview lines for branch-wide runs',
-      );
+    const selectedLines = (input.lines ?? []).filter((line) => line.include !== false);
+    if (selectedLines.length > 0) {
+      return this.generateBulkInvoicesFromLines({ ...input, lines: selectedLines }, user);
     }
 
     const students = await this.prisma.student.findMany({
-      where: { branchId: input.branchId, batchId: input.batchId, deletedAt: null },
-      select: {
-        id: true,
-        programId: true,
-        batchId: true,
-        monthlyFeeDiscount: true,
-        monthlyFeeAmount: true,
-        monthlyFeeWaived: true,
-        annualChargeMode: true,
-        annualDeferredUntil: true,
-        annualInstallmentCount: true,
+      where: {
+        branchId: input.branchId,
+        deletedAt: null,
+        ...(input.batchId ? { batchId: input.batchId } : {}),
       },
+      select: { id: true },
     });
-    if (students.length === 0) throw new BadRequestException('No students in batch');
-
-    if (!input.feeTypeId && !input.feeStructureIds?.length) {
-      throw new BadRequestException('Fee type or fee structures are required');
+    if (students.length === 0) {
+      throw new BadRequestException(input.batchId ? 'No students in batch' : 'No students in branch');
     }
 
-    const [pendingStatus, waivedStatus, siblingInfo, branch, structures] = await Promise.all([
-      this.prisma.lookupStatus.findFirst({
-        where: { code: 'pending', category: { code: 'fee_status' } },
-      }),
-      this.prisma.lookupStatus.findFirst({
-        where: { code: 'waived', category: { code: 'fee_status' } },
-      }),
-      this.loadSiblingDiscountContext(students.map((s) => s.id)),
-      this.prisma.branch.findUnique({
-        where: { id: input.branchId },
-        select: { code: true },
-      }),
-      input.feeStructureIds?.length
-        ? this.prisma.feeStructure.findMany({
-            where: {
-              id: { in: input.feeStructureIds },
-              branchId: input.branchId,
-              isActive: true,
-            },
-          })
-        : this.loadFeeStructuresForBulk({
-            branchId: input.branchId,
-            feeTypeId: input.feeTypeId!,
-          }),
-    ]);
-
-    if (!pendingStatus) throw new BadRequestException('Fee status lookup not configured');
-    if (structures.length === 0) throw new BadRequestException('No fee structures for batch');
-
-    const feeTypeIds = [...new Set(structures.map((s) => s.feeTypeId))];
-    if (input.feeTypeId) feeTypeIds.push(input.feeTypeId);
-    const feeTypes = await this.prisma.feeType.findMany({
-      where: { id: { in: [...new Set(feeTypeIds)] } },
-      select: { id: true, code: true },
-    });
-    const feeTypeCodeById = new Map(feeTypes.map((f) => [f.id, f.code]));
-
-    const dueDate = this.resolveBulkDueDate(input.dueDate);
-    const year = new Date().getFullYear();
-    const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
-    const useExplicitStructures = Boolean(input.feeStructureIds?.length);
-
-    type Row = {
-      branchId: string;
-      studentId: string;
-      feeTypeId: string;
-      invoiceNo: string;
-      billingPeriod: string | null;
-      voucherNo: string | null;
-      amount: number;
-      discount: number;
-      fine: number;
-      netAmount: number;
-      dueDate: Date;
-      statusId: string;
-      remarks: string | null;
-      createdById: string;
-    };
-
-    const billingPeriod = input.billingPeriod ?? billingPeriodFromDate(dueDate);
-
-    const draft: Omit<Row, 'invoiceNo'>[] = [];
-    for (const student of students) {
-      const matched = useExplicitStructures
-        ? structures
-        : (() => {
-            const one = this.matchFeeStructureForStudent(structures, {
-              batchId: student.batchId,
-              programId: student.programId,
-            });
-            return one ? [one] : [];
-          })();
-
-      for (const structure of matched) {
-        const listedAmount = this.roundMoney(Number(structure.amount));
-        const charge = await this.resolveGenerateAmount({
-          student,
-          feeType: {
-            id: structure.feeTypeId,
-            code: feeTypeCodeById.get(structure.feeTypeId) ?? '',
-          },
-          requestedAmount: listedAmount,
-          billingPeriod,
-        });
-        if (charge.skip) continue;
-        const amount = charge.amount;
-        const siblingDiscount = charge.waived
-          ? 0
-          : siblingInfo.eligibleIds.has(student.id)
-            ? Math.round((amount * siblingInfo.percent) / 100)
-            : 0;
-        const monthlyRecurring = charge.waived
-          ? 0
-          : this.monthlyFeeDiscountForType(
-              feeTypeCodeById.get(structure.feeTypeId),
-              Number(student.monthlyFeeDiscount),
-              amount,
-            );
-        const { discount, remarks } = this.composeInvoiceDiscount({
-          amount,
-          siblingDiscount,
-          monthlyRecurring,
-        });
-        const effectiveDiscount = charge.waived ? amount : discount;
-        draft.push({
-          branchId: input.branchId,
-          studentId: student.id,
-          feeTypeId: structure.feeTypeId,
-          billingPeriod,
-          voucherNo: await this.allocateMonthlyVoucherNo({
-            branchId: input.branchId,
-            studentId: student.id,
-            billingPeriod,
-          }),
-          amount,
-          discount: effectiveDiscount,
-          fine: 0,
-          netAmount: this.roundMoney(amount - effectiveDiscount),
-          dueDate: structure.dueDayOfMonth
-            ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
-            : dueDate,
-          statusId: charge.waived && waivedStatus ? waivedStatus.id : pendingStatus.id,
-          remarks: charge.waived
-            ? [remarks, charge.reason].filter(Boolean).join(' · ')
-            : remarks,
-          createdById: user.id,
-        });
-      }
-    }
-
-    if (draft.length === 0) {
-      throw new BadRequestException('No fee structures matched students in batch');
-    }
-
-    const created = await this.prisma.$transaction(async (tx) => {
-      const existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
-      const rows: Row[] = draft.map((row, index) => ({
-        ...row,
-        invoiceNo: `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`,
-      }));
-      await tx.feeInvoice.createMany({ data: rows });
-      return rows.length;
-    });
-
-    await this.audit.log({
-      userId: user.id,
-      action: 'fee_invoices.bulk_generated',
-      entityType: 'Batch',
-      entityId: input.batchId,
-      newValue: { count: created },
-    });
-
-    return { created };
+    return this.generateBulkInvoicesFromLines(
+      {
+        ...input,
+        lines: students.map((student) => ({ studentId: student.id, amount: 0, include: true })),
+      },
+      user,
+    );
   }
 
   private async generateBulkInvoicesFromLines(input: GenerateBulkInvoicesInput, user: AuthUser) {
-    // Lines with include:false are ignored; amounts validated only for included students.
-    if (!input.feeTypeId) throw new BadRequestException('Fee type is required');
-    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
-    if (!feeType) throw new BadRequestException('Invalid fee type');
+    const typeIds = await this.resolveBulkFeeTypeIds(input);
+    if (typeIds.length === 0) throw new BadRequestException('Fee type is required');
 
     const selectedLines = (input.lines ?? []).filter((line) => line.include !== false);
     if (selectedLines.length === 0) {
@@ -2040,8 +2151,14 @@ export class FeesService {
     }
 
     const studentIds = selectedLines.map((l) => l.studentId);
+    const feeTypes = await this.prisma.feeType.findMany({ where: { id: { in: typeIds } } });
+    const feeTypeById = new Map(feeTypes.map((row) => [row.id, row]));
+    const orderedTypes = typeIds
+      .map((id) => feeTypeById.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    if (orderedTypes.length === 0) throw new BadRequestException('Invalid fee type');
 
-    const [scopeStudents, pendingStatus, waivedStatus, structures, siblingInfo, branch] = await Promise.all([
+    const [scopeStudents, pendingStatus, waivedStatus, siblingInfo, branch] = await Promise.all([
       this.prisma.student.findMany({
         where: {
           branchId: input.branchId,
@@ -2069,16 +2186,20 @@ export class FeesService {
       this.prisma.lookupStatus.findFirst({
         where: { code: 'waived', category: { code: 'fee_status' } },
       }),
-      this.loadFeeStructuresForBulk({
-        branchId: input.branchId,
-        feeTypeId: input.feeTypeId,
-      }),
       this.loadSiblingDiscountContext(studentIds),
       this.prisma.branch.findUnique({
         where: { id: input.branchId },
         select: { code: true },
       }),
     ]);
+
+    const structuresByType = new Map<string, Awaited<ReturnType<FeesService['loadFeeStructuresForBulk']>>>();
+    for (const type of orderedTypes) {
+      structuresByType.set(
+        type.id,
+        await this.loadFeeStructuresForBulk({ branchId: input.branchId, feeTypeId: type.id }),
+      );
+    }
 
     const scopeStudentIds = new Set(scopeStudents.map((s) => s.id));
     for (const line of selectedLines) {
@@ -2095,120 +2216,197 @@ export class FeesService {
 
     const studentById = new Map(scopeStudents.map((s) => [s.id, s]));
     const dueDate = this.resolveBulkDueDate(input.dueDate);
-    const billingPeriod =
-      input.billingPeriod ?? billingPeriodFromDate(dueDate);
+    const billingPeriod = input.billingPeriod ?? billingPeriodFromDate(dueDate);
     const year = new Date().getFullYear();
     const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
+    const lineAmountByStudent = new Map(selectedLines.map((line) => [line.studentId, line.amount]));
 
-    type PreparedLine = {
-      studentId: string;
-      amount: number;
-      discount: number;
-      netAmount: number;
-      remarks: string | null;
-      statusId: string;
-      voucherNo: string | null;
-      dueDate: Date;
-    };
+    const created = await this.prisma.$transaction(async (tx) => {
+      let existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
+      let createdCount = 0;
 
-    const prepared: PreparedLine[] = [];
-    for (const line of selectedLines) {
-      const student = studentById.get(line.studentId)!;
-      const charge = await this.resolveGenerateAmount({
-        student,
-        feeType,
-        requestedAmount: this.roundMoney(line.amount),
-        billingPeriod,
-      });
-      if (charge.skip) continue;
+      for (const selected of selectedLines) {
+        const student = studentById.get(selected.studentId)!;
+        const particulars: Array<{
+          feeTypeId: string;
+          label: string;
+          amount: number;
+          waived: boolean;
+          reason?: string;
+          dueDate: Date;
+        }> = [];
 
-      const amount = charge.amount;
-      if (amount <= 0 && !charge.waived) {
-        throw new BadRequestException('Amount must be greater than 0');
+        for (const feeType of orderedTypes) {
+          const structures = structuresByType.get(feeType.id) ?? [];
+          const structure = this.matchFeeStructureForStudent(structures, {
+            batchId: student.batchId,
+            programId: student.programId,
+          });
+          const listed = structure ? this.roundMoney(Number(structure.amount)) : null;
+          const override = lineAmountByStudent.get(student.id);
+          const requested =
+            orderedTypes.length === 1 && override != null && override > 0
+              ? this.roundMoney(override)
+              : listed;
+          if (requested == null || requested <= 0) continue;
+          const charge = await this.resolveGenerateAmount({
+            student,
+            feeType,
+            requestedAmount: requested,
+            billingPeriod,
+          });
+          if (charge.skip) continue;
+          particulars.push({
+            feeTypeId: feeType.id,
+            label: feeType.name,
+            amount: charge.amount,
+            waived: charge.waived,
+            reason: charge.reason,
+            dueDate: structure?.dueDayOfMonth
+              ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
+              : dueDate,
+          });
+        }
+
+        if (particulars.length === 0) continue;
+
+        const amount = this.roundMoney(particulars.reduce((sum, line) => sum + line.amount, 0));
+        const monthlyType = orderedTypes.find((type) => type.code === 'monthly');
+        const monthlyLine = particulars.find((line) => line.feeTypeId === monthlyType?.id);
+        const siblingDiscount = particulars.some((line) => line.waived)
+          ? 0
+          : siblingInfo.eligibleIds.has(student.id)
+            ? Math.round((amount * siblingInfo.percent) / 100)
+            : 0;
+        const monthlyRecurring = this.monthlyFeeDiscountForType(
+          monthlyType?.code,
+          Number(student.monthlyFeeDiscount),
+          monthlyLine?.amount ?? amount,
+        );
+        const { discount, remarks } = this.composeInvoiceDiscount({
+          amount,
+          siblingDiscount,
+          monthlyRecurring,
+        });
+        const waivedAll = particulars.every((line) => line.waived);
+        const effectiveDiscount = waivedAll ? amount : discount;
+        const netAmount = this.roundMoney(amount - effectiveDiscount);
+        const statusId =
+          waivedAll && waivedStatus ? waivedStatus.id : pendingStatus.id;
+        const remarkText = [
+          remarks,
+          ...particulars.map((line) => line.reason).filter(Boolean),
+        ]
+          .filter(Boolean)
+          .join(' · ');
+
+        const existing = await tx.feeInvoice.findFirst({
+          where: {
+            branchId: input.branchId,
+            studentId: student.id,
+            billingPeriod,
+            paidAt: null,
+          },
+          include: {
+            payments: { where: { status: { in: ['succeeded', 'completed'] } } },
+            lines: true,
+          },
+        });
+        const paidTotal = existing
+          ? this.roundMoney(
+              (existing.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0),
+            )
+          : 0;
+
+        if (existing && paidTotal > 0) continue;
+
+        if (existing && paidTotal === 0) {
+          const byType = new Map(existing.lines.map((line) => [line.feeTypeId, line]));
+          for (const [index, line] of particulars.entries()) {
+            const current = byType.get(line.feeTypeId);
+            if (current) {
+              await tx.feeInvoiceLine.update({
+                where: { id: current.id },
+                data: { amount: line.amount, label: line.label },
+              });
+            } else {
+              await tx.feeInvoiceLine.create({
+                data: {
+                  invoiceId: existing.id,
+                  feeTypeId: line.feeTypeId,
+                  label: line.label,
+                  amount: line.amount,
+                  sortOrder: existing.lines.length + index,
+                },
+              });
+            }
+          }
+          const nextLines = await tx.feeInvoiceLine.findMany({ where: { invoiceId: existing.id } });
+          const nextAmount = this.roundMoney(
+            nextLines.reduce((sum, line) => sum + Number(line.amount), 0),
+          );
+          const nextNet = this.roundMoney(nextAmount - Number(existing.discount) + Number(existing.fine));
+          await tx.feeInvoice.update({
+            where: { id: existing.id },
+            data: {
+              amount: nextAmount,
+              netAmount: nextNet,
+              feeTypeId: nextLines[0]?.feeTypeId ?? existing.feeTypeId,
+            },
+          });
+          createdCount += 1;
+          continue;
+        }
+
+        existingCount += 1;
+        await tx.feeInvoice.create({
+          data: {
+            branchId: input.branchId,
+            studentId: student.id,
+            feeTypeId: particulars[0]!.feeTypeId,
+            invoiceNo: `INV-${code}-${year}-${String(existingCount).padStart(5, '0')}`,
+            billingPeriod,
+            voucherNo: await this.allocateMonthlyVoucherNo({
+              branchId: input.branchId,
+              studentId: student.id,
+              billingPeriod,
+            }),
+            amount,
+            discount: effectiveDiscount,
+            fine: 0,
+            netAmount,
+            dueDate: particulars[0]!.dueDate,
+            statusId,
+            remarks: remarkText || null,
+            createdById: user.id,
+            lines: {
+              create: particulars.map((line, index) => ({
+                feeTypeId: line.feeTypeId,
+                label: line.label,
+                amount: line.amount,
+                sortOrder: index,
+              })),
+            },
+          },
+        });
+        createdCount += 1;
       }
 
-      const siblingDiscount = charge.waived
-        ? 0
-        : siblingInfo.eligibleIds.has(line.studentId)
-          ? Math.round((amount * siblingInfo.percent) / 100)
-          : 0;
-      const monthlyRecurring = charge.waived
-        ? 0
-        : this.monthlyFeeDiscountForType(
-            feeType.code,
-            Number(student.monthlyFeeDiscount),
-            amount,
-          );
-      const { discount, remarks } = this.composeInvoiceDiscount({
-        amount,
-        siblingDiscount,
-        monthlyRecurring,
-      });
-      const effectiveDiscount = charge.waived ? amount : discount;
-      const netAmount = this.roundMoney(amount - effectiveDiscount);
-      const structure = this.matchFeeStructureForStudent(structures, {
-        batchId: student.batchId,
-        programId: student.programId,
-      });
-      const voucherNo = await this.allocateMonthlyVoucherNo({
-        branchId: input.branchId,
-        studentId: student.id,
-        billingPeriod,
-      });
+      return createdCount;
+    });
 
-      prepared.push({
-        studentId: line.studentId,
-        amount,
-        discount: effectiveDiscount,
-        netAmount,
-        remarks: charge.waived
-          ? [remarks, charge.reason].filter(Boolean).join(' · ')
-          : remarks,
-        statusId:
-          charge.waived && waivedStatus ? waivedStatus.id : pendingStatus.id,
-        voucherNo,
-        dueDate: structure?.dueDayOfMonth
-          ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
-          : dueDate,
-      });
-    }
-
-    if (prepared.length === 0) {
+    if (created === 0) {
       throw new BadRequestException(
         'No invoices to create after applying fee policy (waived, deferred, or already billed)',
       );
     }
-
-    const created = await this.prisma.$transaction(async (tx) => {
-      const existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
-
-      const rows = prepared.map((line, index) => ({
-        branchId: input.branchId,
-        studentId: line.studentId,
-        feeTypeId: input.feeTypeId!,
-        invoiceNo: `INV-${code}-${year}-${String(existingCount + index + 1).padStart(5, '0')}`,
-        billingPeriod,
-        voucherNo: line.voucherNo,
-        amount: line.amount,
-        discount: line.discount,
-        fine: 0,
-        netAmount: line.netAmount,
-        dueDate: line.dueDate,
-        statusId: line.statusId,
-        remarks: line.remarks,
-        createdById: user.id,
-      }));
-
-      await tx.feeInvoice.createMany({ data: rows });
-      return rows.length;
-    });
 
     await this.audit.log({
       userId: user.id,
       action: 'fee_invoices.bulk_generated',
       entityType: input.batchId ? 'Batch' : 'Branch',
       entityId: input.batchId ?? input.branchId,
-      newValue: { count: created, feeTypeId: input.feeTypeId },
+      newValue: { count: created, feeTypeIds: typeIds },
     });
 
     return { created };
@@ -2220,6 +2418,60 @@ export class FeesService {
     d.setMonth(d.getMonth() + 1);
     d.setDate(1);
     return d;
+  }
+
+  private async resolveBulkFeeTypeIds(input: {
+    branchId: string;
+    feeTypeId?: string;
+    feeTypeIds?: string[];
+  }): Promise<string[]> {
+    const explicit = [
+      ...new Set([...(input.feeTypeIds ?? []), ...(input.feeTypeId ? [input.feeTypeId] : [])]),
+    ];
+    if (explicit.length > 0) return explicit;
+
+    const structures = await this.prisma.feeStructure.findMany({
+      where: { branchId: input.branchId, isActive: true },
+      select: { feeTypeId: true },
+      distinct: ['feeTypeId'],
+    });
+    const typeIds = structures.map((row) => row.feeTypeId);
+    if (typeIds.length === 0) {
+      throw new BadRequestException('No active fee structures for this branch');
+    }
+    return typeIds;
+  }
+
+  private async resolveInvoiceLineSpecs(input: {
+    feeTypeId?: string;
+    amount?: number;
+    lines?: Array<{ feeTypeId: string; label?: string | null; amount: number; sortOrder?: number }>;
+  }): Promise<Array<{ feeTypeId: string; label: string; amount: number; sortOrder?: number }>> {
+    if (input.lines?.length) {
+      const typeIds = [...new Set(input.lines.map((line) => line.feeTypeId))];
+      const feeTypes = await this.prisma.feeType.findMany({ where: { id: { in: typeIds } } });
+      const byId = new Map(feeTypes.map((row) => [row.id, row]));
+      return input.lines.map((line, index) => ({
+        feeTypeId: line.feeTypeId,
+        label: line.label?.trim() || byId.get(line.feeTypeId)?.name || 'Fee',
+        amount: this.roundMoney(line.amount),
+        sortOrder: line.sortOrder ?? index,
+      }));
+    }
+
+    if (!input.feeTypeId || input.amount == null) {
+      throw new BadRequestException('Fee type and amount are required');
+    }
+    const feeType = await this.prisma.feeType.findUnique({ where: { id: input.feeTypeId } });
+    if (!feeType) throw new BadRequestException('Invalid fee type');
+    return [
+      {
+        feeTypeId: feeType.id,
+        label: feeType.name,
+        amount: this.roundMoney(input.amount),
+        sortOrder: 0,
+      },
+    ];
   }
 
   private async loadFeeStructuresForBulk(input: {
@@ -2324,21 +2576,27 @@ export class FeesService {
       where: { id, ...prismaBranchFilter(scope) },
       include: {
         student: { select: { id: true, fullName: true, phone: true, email: true } },
+        lines: { orderBy: { sortOrder: 'asc' as const } },
+        payments: { where: { status: { in: ['succeeded', 'completed'] } } },
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
-    const [feeType, status, settings] = await Promise.all([
-      this.prisma.feeType.findUnique({ where: { id: invoice.feeTypeId } }),
+    const lineTypeIds = invoice.lines.map((line) => line.feeTypeId);
+    const [feeTypes, status, settings] = await Promise.all([
+      this.prisma.feeType.findMany({
+        where: { id: { in: [...new Set([invoice.feeTypeId, ...lineTypeIds])] } },
+      }),
       this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } }),
       this.prisma.institutionSettings.findFirst(),
     ]);
-    const feeTypeMap = feeType ? new Map([[feeType.id, feeType]]) : new Map();
+    const feeTypeMap = new Map(feeTypes.map((row) => [row.id, row]));
     const statusMap = status ? new Map([[status.id, status]]) : new Map();
 
     return {
       ...this.toResponse(invoice, feeTypeMap, statusMap),
       institutionName: settings?.name ?? 'Institution',
+      ...this.paymentSummary(invoice),
     };
   }
 
@@ -2512,8 +2770,22 @@ export class FeesService {
   }
 
   async getInvoicePrintData(id: string, scope: BranchScope) {
-    const invoice = await this.prisma.feeInvoice.findFirst({
-      where: { id, ...prismaBranchFilter(scope) },
+    const [row] = await this.loadInvoicePrintRows([id], scope);
+    if (!row) throw new NotFoundException('Invoice not found');
+    return row;
+  }
+
+  async getInvoicePrintDataBulk(ids: string[], scope: BranchScope) {
+    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].slice(0, 90);
+    if (unique.length === 0) throw new BadRequestException('Select at least one invoice');
+    const invoices = await this.loadInvoicePrintRows(unique, scope);
+    if (invoices.length === 0) throw new NotFoundException('Invoice not found');
+    return { invoices };
+  }
+
+  private async loadInvoicePrintRows(ids: string[], scope: BranchScope) {
+    const invoices = await this.prisma.feeInvoice.findMany({
+      where: { id: { in: ids }, ...prismaBranchFilter(scope) },
       include: {
         student: {
           select: {
@@ -2528,60 +2800,99 @@ export class FeesService {
             branch: { select: { name: true, code: true } },
           },
         },
+        lines: { orderBy: { sortOrder: 'asc' as const } },
       },
     });
-    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoices.length === 0) return [];
 
-    const [feeType, status, settings, template] = await Promise.all([
-      this.prisma.feeType.findUnique({ where: { id: invoice.feeTypeId } }),
-      this.prisma.lookupStatus.findUnique({ where: { id: invoice.statusId } }),
+    const feeTypeIds = [
+      ...new Set([
+        ...invoices.map((invoice) => invoice.feeTypeId),
+        ...invoices.flatMap((invoice) => invoice.lines.map((line) => line.feeTypeId)),
+      ]),
+    ];
+    const statusIds = [...new Set(invoices.map((invoice) => invoice.statusId))];
+    const branchIds = [...new Set(invoices.map((invoice) => invoice.branchId))];
+
+    const [feeTypes, statuses, settings, templates] = await Promise.all([
+      this.prisma.feeType.findMany({ where: { id: { in: feeTypeIds } } }),
+      this.prisma.lookupStatus.findMany({ where: { id: { in: statusIds } } }),
       this.prisma.institutionSettings.findFirst(),
-      this.prisma.printDocumentTemplate.findFirst({
+      this.prisma.printDocumentTemplate.findMany({
         where: {
           type: 'fee_invoice',
           isActive: true,
-          OR: [{ branchId: invoice.branchId }, { branchId: null }],
+          OR: [{ branchId: { in: branchIds } }, { branchId: null }],
         },
         orderBy: { branchId: 'desc' },
       }),
     ]);
+    const feeTypeMap = new Map(feeTypes.map((row) => [row.id, row]));
+    const statusMap = new Map(statuses.map((row) => [row.id, row]));
+    const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]));
 
-    return {
-      invoice: {
-        id: invoice.id,
-        invoiceNo: invoice.invoiceNo,
-        voucherNo: invoice.voucherNo,
-        billingPeriod: invoice.billingPeriod,
-        amount: Number(invoice.amount),
-        discount: Number(invoice.discount),
-        fine: Number(invoice.fine),
-        netAmount: Number(invoice.netAmount),
-        dueDate: invoice.dueDate?.toISOString() ?? null,
-        paidAt: invoice.paidAt?.toISOString() ?? null,
-        remarks: invoice.remarks,
-        status: status ? { code: status.code, label: status.label } : null,
-        feeType: feeType ? { name: feeType.name, code: feeType.code } : null,
-      },
-      student: {
-        id: invoice.student.id,
-        fullName: invoice.student.fullName,
-        rollNumber: invoice.student.rollNumber,
-        admissionNumber: invoice.student.admissionNumber,
-        photographUrl: invoice.student.photographUrl,
-        phone: invoice.student.phone,
-        program: invoice.student.program?.name ?? null,
-        batch: invoice.student.batch?.name ?? null,
-        branch: invoice.student.branch,
-      },
-      institution: {
-        name: settings?.name ?? 'Institution',
-        logoUrl: settings?.logoUrl ?? null,
-        address: settings?.address ?? null,
-        phone: settings?.phone ?? null,
-        email: settings?.email ?? null,
-      },
-      template: this.serializePrintTemplate(template, 'fee_invoice'),
-    };
+    return ids
+      .map((id) => byId.get(id))
+      .filter((invoice): invoice is NonNullable<typeof invoice> => Boolean(invoice))
+      .map((invoice) => {
+        const feeType = feeTypeMap.get(invoice.feeTypeId);
+        const status = statusMap.get(invoice.statusId);
+        const template =
+          templates.find((row) => row.branchId === invoice.branchId) ??
+          templates.find((row) => row.branchId == null) ??
+          null;
+        const lines =
+          invoice.lines.length > 0
+            ? invoice.lines.map((line) => ({
+                feeTypeId: line.feeTypeId,
+                label: line.label,
+                amount: Number(line.amount),
+              }))
+            : [
+                {
+                  feeTypeId: invoice.feeTypeId,
+                  label: feeType?.name ?? 'Fee',
+                  amount: Number(invoice.amount),
+                },
+              ];
+        return {
+          invoice: {
+            id: invoice.id,
+            invoiceNo: invoice.invoiceNo,
+            voucherNo: invoice.voucherNo,
+            billingPeriod: invoice.billingPeriod,
+            amount: Number(invoice.amount),
+            discount: Number(invoice.discount),
+            fine: Number(invoice.fine),
+            netAmount: Number(invoice.netAmount),
+            dueDate: invoice.dueDate?.toISOString() ?? null,
+            paidAt: invoice.paidAt?.toISOString() ?? null,
+            remarks: invoice.remarks,
+            status: status ? { code: status.code, label: status.label } : null,
+            feeType: feeType ? { name: feeType.name, code: feeType.code } : null,
+            lines,
+          },
+          student: {
+            id: invoice.student.id,
+            fullName: invoice.student.fullName,
+            rollNumber: invoice.student.rollNumber,
+            admissionNumber: invoice.student.admissionNumber,
+            photographUrl: invoice.student.photographUrl,
+            phone: invoice.student.phone,
+            program: invoice.student.program?.name ?? null,
+            batch: invoice.student.batch?.name ?? null,
+            branch: invoice.student.branch,
+          },
+          institution: {
+            name: settings?.name ?? 'Institution',
+            logoUrl: settings?.logoUrl ?? null,
+            address: settings?.address ?? null,
+            phone: settings?.phone ?? null,
+            email: settings?.email ?? null,
+          },
+          template: this.serializePrintTemplate(template, 'fee_invoice'),
+        };
+      });
   }
 
   async getPaymentPrintData(id: string, scope: BranchScope) {
@@ -2706,10 +3017,34 @@ export class FeesService {
       remarks: string | null;
       createdAt: Date;
       student?: { id: string; fullName: string };
+      lines?: Array<{
+        feeTypeId: string;
+        label: string;
+        amount: { toString(): string } | number;
+        sortOrder: number;
+      }>;
     },
     feeTypeMap: Map<string, { id: string; name: string; code: string }>,
     statusMap: Map<string, { id: string; code: string; label: string }>,
   ) {
+    const lines =
+      invoice.lines && invoice.lines.length > 0
+        ? invoice.lines.map((line) => ({
+            feeTypeId: line.feeTypeId,
+            label: line.label,
+            amount: Number(line.amount),
+            sortOrder: line.sortOrder,
+            feeType: feeTypeMap.get(line.feeTypeId) ?? null,
+          }))
+        : [
+            {
+              feeTypeId: invoice.feeTypeId,
+              label: feeTypeMap.get(invoice.feeTypeId)?.name ?? 'Fee',
+              amount: Number(invoice.amount),
+              sortOrder: 0,
+              feeType: feeTypeMap.get(invoice.feeTypeId) ?? null,
+            },
+          ];
     return {
       id: invoice.id,
       branchId: invoice.branchId,
@@ -2730,6 +3065,7 @@ export class FeesService {
       status: statusMap.get(invoice.statusId) ?? null,
       remarks: invoice.remarks,
       createdAt: invoice.createdAt.toISOString(),
+      lines,
     };
   }
 

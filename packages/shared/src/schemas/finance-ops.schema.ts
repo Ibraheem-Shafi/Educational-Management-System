@@ -5,15 +5,29 @@ import { paginationQuerySchema } from './common.schema';
 
 export const vendorBillCategories = [
   'general',
-  'utility',
+  'electricity',
+  'gas',
+  'water',
+  'phone',
   'maintenance',
   'procurement',
   'asset',
 ] as const;
+export const utilityBillCategories = ['electricity', 'gas', 'water', 'phone'] as const;
+export const vendorPaymentMethods = ['cash', 'bank', 'cheque'] as const;
+export const drawingMethods = ['cash', 'cheque'] as const;
 export const vendorBillStatuses = ['open', 'partial', 'paid', 'void'] as const;
 export const bankStatementStatuses = ['open', 'reconciled'] as const;
 export const purchaseOrderStatuses = ['draft', 'sent', 'received', 'cancelled'] as const;
 export const fixedAssetStatuses = ['active', 'disposed'] as const;
+export const fixedAssetScopes = ['school', 'class'] as const;
+export const fixedAssetCategories = [
+  'furniture',
+  'chairs',
+  'equipment',
+  'electronics',
+  'other',
+] as const;
 
 const listBase = z
   .object({
@@ -56,11 +70,22 @@ export const listVendorBillsQuerySchema = listBase.extend({
 });
 export type ListVendorBillsQuery = z.infer<typeof listVendorBillsQuerySchema>;
 
-export const payVendorBillSchema = z.object({
-  amount: z.coerce.number().positive(),
-  paidAt: requiredId('Payment date'),
-  method: optionalString(50).nullable(),
-});
+export const payVendorBillSchema = z
+  .object({
+    amount: z.coerce.number().positive(),
+    paidAt: requiredId('Payment date'),
+    method: z.enum(vendorPaymentMethods, { errorMap: () => ({ message: MSG.select('method') }) }).optional().nullable(),
+    chequeNumber: optionalString(50).nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === 'cheque' && !data.chequeNumber?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Cheque number'),
+        path: ['chequeNumber'],
+      });
+    }
+  });
 export type PayVendorBillInput = z.infer<typeof payVendorBillSchema>;
 
 export const createPettyCashFundSchema = z.object({
@@ -90,36 +115,60 @@ export const listPettyCashVouchersQuerySchema = listBase.extend({
 });
 export type ListPettyCashVouchersQuery = z.infer<typeof listPettyCashVouchersQuerySchema>;
 
-export const createBankStatementSchema = refineEndAfterStart(
-  z.object({
-    branchId: requiredId('Branch'),
-    accountId: z.string().optional().nullable(),
-    periodFrom: requiredId('Period from'),
-    periodTo: requiredId('Period to'),
-  }),
-  'periodFrom',
-  'periodTo',
-  { allowEqual: true },
-);
-export type CreateBankStatementInput = z.infer<typeof createBankStatementSchema>;
-export const updateBankStatementSchema = z.object({
+export const createBankStatementSchema = z.object({
+  branchId: requiredId('Branch'),
   accountId: z.string().optional().nullable(),
-  periodFrom: requiredId('Period from').optional(),
-  periodTo: requiredId('Period to').optional(),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  bankName: requiredString('Bank name', 1, 200),
+  chequeBookNo: optionalString(50).nullable(),
+  chequeBookSerialFrom: optionalString(50).nullable(),
+  chequeBookSerialTo: optionalString(50).nullable(),
   status: z.enum(bankStatementStatuses, { errorMap: () => ({ message: MSG.select('status') }) }).optional(),
 });
+export type CreateBankStatementInput = z.infer<typeof createBankStatementSchema>;
+export const updateBankStatementSchema = createBankStatementSchema.omit({ branchId: true }).partial();
 export type UpdateBankStatementInput = z.infer<typeof updateBankStatementSchema>;
 export const listBankStatementsQuerySchema = listBase.extend({
   status: z.enum(bankStatementStatuses).optional(),
+  year: z.coerce.number().int().optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
 });
 export type ListBankStatementsQuery = z.infer<typeof listBankStatementsQuerySchema>;
 
 export const createBankStatementLineSchema = z.object({
-  lineDate: requiredId('Line date'),
-  amount: z.coerce.number(),
-  description: requiredString('Description', 1, 500),
+  issueDate: requiredId('Issue date'),
+  chequeNumber: requiredString('Cheque number', 1, 50),
+  payee: requiredString('Payee', 1, 200),
+  onAccountOf: requiredString('On account of', 1, 200),
+  amount: z.coerce.number().positive(),
+  useInCampus: optionalString(200).nullable(),
+  clearingDate: z.string().optional().nullable(),
 });
 export type CreateBankStatementLineInput = z.infer<typeof createBankStatementLineSchema>;
+
+export const createOwnerDrawingSchema = z
+  .object({
+    branchId: requiredId('Branch'),
+    drawingDate: requiredId('Date'),
+    payee: requiredString('Payee', 1, 200),
+    amount: z.coerce.number().positive(),
+    method: z.enum(drawingMethods, { errorMap: () => ({ message: MSG.select('method') }) }),
+    chequeNumber: optionalString(50).nullable(),
+    notes: optionalString(2000).nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === 'cheque' && !data.chequeNumber?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.required('Cheque number'),
+        path: ['chequeNumber'],
+      });
+    }
+  });
+export type CreateOwnerDrawingInput = z.infer<typeof createOwnerDrawingSchema>;
+export const listOwnerDrawingsQuerySchema = listBase;
+export type ListOwnerDrawingsQuery = z.infer<typeof listOwnerDrawingsQuerySchema>;
 
 export const matchBankStatementLineSchema = z
   .object({
@@ -180,22 +229,65 @@ export const receivePurchaseOrderSchema = z.object({
 });
 export type ReceivePurchaseOrderInput = z.infer<typeof receivePurchaseOrderSchema>;
 
-export const createFixedAssetSchema = z.object({
-  branchId: requiredId('Branch'),
-  name: requiredString('Name', 1, 200),
-  category: requiredString('Category', 1, 100),
-  purchaseDate: z.string().optional().nullable(),
-  cost: z.coerce.number().min(0),
-  vendorBillId: z.string().optional().nullable(),
-  purchaseOrderId: z.string().optional().nullable(),
-  status: z.enum(fixedAssetStatuses, { errorMap: () => ({ message: MSG.select('status') }) }).optional(),
-  notes: optionalString(2000).nullable(),
-});
+export const createFixedAssetSchema = z
+  .object({
+    branchId: requiredId('Branch'),
+    name: requiredString('Name', 1, 200),
+    category: z.enum(fixedAssetCategories, { errorMap: () => ({ message: MSG.select('category') }) }),
+    scope: z.enum(fixedAssetScopes, { errorMap: () => ({ message: MSG.select('scope') }) }).default('school'),
+    quantity: z.coerce.number().int().min(1).default(1),
+    batchId: z.preprocess(
+      (v) => (v === '' || v === null || v === undefined ? undefined : v),
+      requiredId('Class').optional().nullable(),
+    ),
+    purchaseDate: z.string().optional().nullable(),
+    cost: z.coerce.number().min(0),
+    vendorBillId: z.string().optional().nullable(),
+    purchaseOrderId: z.string().optional().nullable(),
+    status: z.enum(fixedAssetStatuses, { errorMap: () => ({ message: MSG.select('status') }) }).optional(),
+    notes: optionalString(2000).nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.scope === 'class' && !data.batchId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.select('class'),
+        path: ['batchId'],
+      });
+    }
+  });
 export type CreateFixedAssetInput = z.infer<typeof createFixedAssetSchema>;
-export const updateFixedAssetSchema = createFixedAssetSchema.omit({ branchId: true }).partial();
+export const updateFixedAssetSchema = z
+  .object({
+    name: requiredString('Name', 1, 200).optional(),
+    category: z.enum(fixedAssetCategories).optional(),
+    scope: z.enum(fixedAssetScopes).optional(),
+    quantity: z.coerce.number().int().min(1).optional(),
+    batchId: z.preprocess(
+      (v) => (v === '' || v === null || v === undefined ? null : v),
+      requiredId('Class').optional().nullable(),
+    ),
+    purchaseDate: z.string().optional().nullable(),
+    cost: z.coerce.number().min(0).optional(),
+    vendorBillId: z.string().optional().nullable(),
+    purchaseOrderId: z.string().optional().nullable(),
+    status: z.enum(fixedAssetStatuses).optional(),
+    notes: optionalString(2000).nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.scope === 'class' && data.batchId === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: MSG.select('class'),
+        path: ['batchId'],
+      });
+    }
+  });
 export type UpdateFixedAssetInput = z.infer<typeof updateFixedAssetSchema>;
 export const listFixedAssetsQuerySchema = listBase.extend({
   status: z.enum(fixedAssetStatuses).optional(),
+  scope: z.enum(fixedAssetScopes).optional(),
+  batchId: z.string().optional(),
 });
 export type ListFixedAssetsQuery = z.infer<typeof listFixedAssetsQuerySchema>;
 

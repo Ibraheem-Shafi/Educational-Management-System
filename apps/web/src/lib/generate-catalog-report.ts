@@ -316,17 +316,34 @@ export async function generateCatalogReport(
       return;
     }
     case 'fee-defaulters': {
-      const invoices = await fetchAllPages<Record<string, unknown>>('/reports/fee-defaulters', ctx);
+      const groups = await fetchAllPages<Record<string, unknown>>('/reports/fee-defaulters', ctx);
+      const rows = groups.flatMap((group) => {
+        const invoices = Array.isArray(group.invoices)
+          ? (group.invoices as Array<Record<string, unknown>>)
+          : [];
+        if (invoices.length === 0) {
+          return [
+            {
+              student: nested(group, 'student.fullName'),
+              phone: nested(group, 'student.phone'),
+              feeType: '',
+              amount: nested(group, 'totalRemaining'),
+              dueDate: '',
+            },
+          ];
+        }
+        return invoices.map((invoice) => ({
+          student: nested(group, 'student.fullName'),
+          phone: nested(group, 'student.phone'),
+          feeType: nested(invoice, 'feeType.name'),
+          amount: nested(invoice, 'remainingAmount'),
+          dueDate: nested(invoice, 'dueDate'),
+        }));
+      });
       downloadCsv(
         'fee-defaulters.csv',
         ['Student', 'Phone', 'Fee type', 'Amount', 'Due date'],
-        invoices.map((row) => [
-          nested(row, 'student.fullName'),
-          nested(row, 'student.phone'),
-          nested(row, 'feeType.name'),
-          nested(row, 'netAmount'),
-          nested(row, 'dueDate'),
-        ]),
+        rows.map((row) => [row.student, row.phone, row.feeType, row.amount, row.dueDate]),
       );
       return;
     }
@@ -631,14 +648,15 @@ export async function generateCatalogReport(
     case 'bank-rec': {
       const statements = await fetchAllPages<Record<string, unknown>>('/finance-ops/bank-statements', ctx);
       downloadCsv(
-        'bank-reconciliation.csv',
-        ['From', 'To', 'Account', 'Lines', 'Matched', 'Status'],
+        'issued-cheque-record.csv',
+        ['Month', 'Bank', 'Cheque book', 'Serial', 'Cheques', 'Total', 'Status'],
         statements.map((row) => [
-          nested(row, 'periodFrom'),
-          nested(row, 'periodTo'),
-          nested(row, 'account.name'),
+          nested(row, 'monthLabel'),
+          nested(row, 'bankName'),
+          nested(row, 'chequeBookNo'),
+          nested(row, 'serialRange'),
           nested(row, 'lineCount'),
-          nested(row, 'matchedCount'),
+          nested(row, 'total'),
           nested(row, 'status'),
         ]),
       );
@@ -650,10 +668,13 @@ export async function generateCatalogReport(
       const extra =
         key === 'maintenance'
           ? { category: 'maintenance' }
-          : key === 'utilities'
-            ? { category: 'utility' }
-            : undefined;
+          : undefined;
       const rows = await fetchAllPages<Record<string, unknown>>('/finance-ops/vendor-bills', ctx, extra);
+      const utilityCategories = new Set(['electricity', 'gas', 'water', 'phone']);
+      const filtered =
+        key === 'utilities'
+          ? rows.filter((row) => utilityCategories.has(String(row.category ?? '')))
+          : rows;
       downloadCsv(
         key === 'maintenance'
           ? 'maintenance-repair-expense.csv'
@@ -661,7 +682,7 @@ export async function generateCatalogReport(
             ? 'utility-bills.csv'
             : 'accounts-payable.csv',
         ['Date', 'Vendor', 'Category', 'Amount', 'Paid', 'Remaining', 'Status'],
-        rows.map((row) => [
+        filtered.map((row) => [
           nested(row, 'billDate'),
           nested(row, 'vendor.name'),
           nested(row, 'category'),
@@ -690,12 +711,23 @@ export async function generateCatalogReport(
     }
     case 'inventory': {
       const rows = await fetchAllPages<Record<string, unknown>>('/finance-ops/assets', ctx);
+      const grouped = [...rows].sort((a, b) => {
+        const scopeA = String(nested(a, 'scope') ?? 'school');
+        const scopeB = String(nested(b, 'scope') ?? 'school');
+        if (scopeA !== scopeB) return scopeA === 'school' ? -1 : 1;
+        const classA = String(nested(a, 'batch.name') ?? '');
+        const classB = String(nested(b, 'batch.name') ?? '');
+        return classA.localeCompare(classB) || String(nested(a, 'name')).localeCompare(String(nested(b, 'name')));
+      });
       downloadCsv(
         'inventory-fixed-assets.csv',
-        ['Name', 'Category', 'Purchased', 'Cost', 'Status'],
-        rows.map((row) => [
+        ['Scope', 'Class', 'Name', 'Category', 'Quantity', 'Purchased', 'Cost', 'Status'],
+        grouped.map((row) => [
+          nested(row, 'scope') === 'class' ? 'Class-wise' : 'School-wise',
+          nested(row, 'batch.name'),
           nested(row, 'name'),
           nested(row, 'category'),
+          nested(row, 'quantity'),
           nested(row, 'purchaseDate'),
           nested(row, 'cost'),
           nested(row, 'status'),
@@ -748,6 +780,7 @@ export async function generateCatalogReport(
         branchName: string | null;
         income: number;
         expense: number;
+        drawings: number;
         net: number;
       }>(
         withBranchScope('/finance-ops/reports/profitability', ctx.scope, {
@@ -759,8 +792,8 @@ export async function generateCatalogReport(
       );
       downloadCsv(
         'campus-profitability.csv',
-        ['Campus', 'Income', 'Expense', 'Net'],
-        [[data.branchName ?? branchId, data.income, data.expense, data.net]],
+        ['Campus', 'Income', 'Expense', 'Drawings', 'Profit'],
+        [[data.branchName ?? branchId, data.income, data.expense, data.drawings ?? 0, data.net]],
       );
       return;
     }

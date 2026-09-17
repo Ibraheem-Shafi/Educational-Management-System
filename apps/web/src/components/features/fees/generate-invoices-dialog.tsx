@@ -48,6 +48,7 @@ type PreviewStudent = {
 
 type PreviewResponse = {
   feeType: FeeType;
+  feeTypes?: FeeType[];
   scope?: 'branch' | 'batch';
   feeStructureId: string | null;
   defaultAmount: number | null;
@@ -98,7 +99,7 @@ export function GenerateInvoicesDialog({
   const [pickedBranchId, setPickedBranchId] = useState('');
   const [scopeMode, setScopeMode] = useState<ScopeMode>('branch');
   const [batchId, setBatchId] = useState('');
-  const [feeTypeId, setFeeTypeId] = useState('');
+  const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>([]);
   const [defaultAmount, setDefaultAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [billingPeriod, setBillingPeriod] = useState(currentYearMonth());
@@ -122,7 +123,7 @@ export function GenerateInvoicesDialog({
     open &&
     !!token &&
     !!effectiveBranchId &&
-    !!feeTypeId &&
+    selectedTypeIds.length > 0 &&
     (scopeMode === 'branch' || !!effectiveBatchId);
 
   const {
@@ -130,14 +131,20 @@ export function GenerateInvoicesDialog({
     isFetching: previewLoading,
     error: previewQueryError,
   } = useQuery({
-    queryKey: ['fee-bulk-preview', effectiveBranchId, scopeMode, effectiveBatchId, feeTypeId],
+    queryKey: [
+      'fee-bulk-preview',
+      effectiveBranchId,
+      scopeMode,
+      effectiveBatchId,
+      [...selectedTypeIds].sort().join(','),
+    ],
     queryFn: () =>
       apiClient<PreviewResponse>('/fee-structures/preview-invoices', {
         method: 'POST',
         token,
         body: JSON.stringify({
           branchId: effectiveBranchId,
-          feeTypeId,
+          feeTypeIds: selectedTypeIds,
           ...(effectiveBatchId ? { batchId: effectiveBatchId } : {}),
         }),
       }),
@@ -150,7 +157,7 @@ export function GenerateInvoicesDialog({
       setPickedBranchId('');
       setScopeMode('branch');
       setBatchId('');
-      setFeeTypeId('');
+      setSelectedTypeIds([]);
       setDefaultAmount('');
       setDueDate('');
       setBillingPeriod(currentYearMonth());
@@ -158,6 +165,11 @@ export function GenerateInvoicesDialog({
       setPreviewError(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || feeTypesList.length === 0 || selectedTypeIds.length > 0) return;
+    setSelectedTypeIds(feeTypesList.map((type) => type.id));
+  }, [open, feeTypesList, selectedTypeIds.length]);
 
   useEffect(() => {
     setBatchId('');
@@ -190,7 +202,9 @@ export function GenerateInvoicesDialog({
           hasStructure: suggested !== null && suggested > 0,
           include: suggested !== null && suggested > 0,
           amount: suggested !== null && suggested > 0 ? String(suggested) : '',
-          policyNote: policyNoteForStudent(student, preview.feeType.code),
+          policyNote: (preview.feeTypes ?? [preview.feeType])
+            .map((type) => policyNoteForStudent(student, type.code))
+            .find(Boolean) ?? null,
         };
       }),
     );
@@ -236,7 +250,7 @@ export function GenerateInvoicesDialog({
         token,
         body: JSON.stringify({
           branchId: effectiveBranchId,
-          feeTypeId,
+          feeTypeIds: selectedTypeIds,
           ...(effectiveBatchId ? { batchId: effectiveBatchId } : {}),
           ...(dueDate ? { dueDate: new Date(dueDate).toISOString() } : {}),
           billingPeriod,
@@ -291,8 +305,8 @@ export function GenerateInvoicesDialog({
 
   function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
-    if (!effectiveBranchId || !feeTypeId) {
-      toast.error('Select branch and fee type');
+    if (!effectiveBranchId || selectedTypeIds.length === 0) {
+      toast.error('Select branch and at least one fee type');
       return;
     }
     if (scopeMode === 'batch' && !effectiveBatchId) {
@@ -328,7 +342,7 @@ export function GenerateInvoicesDialog({
           <div className="min-w-0 flex-1">
             <DialogTitle>Generate invoices</DialogTitle>
             <DialogDescription className="mt-1">
-              Bill an entire branch or a single batch; amounts come from fee structures per student
+              One invoice per student per month, with the selected fee types as line items
             </DialogDescription>
           </div>
           <button
@@ -388,24 +402,30 @@ export function GenerateInvoicesDialog({
                 </div>
               )}
               <div className={scopeMode === 'branch' ? 'sm:col-span-2' : undefined}>
-                <FormFieldLabel required>Fee type</FormFieldLabel>
-                <SelectDropdown
-                  aria-label="Fee type"
-                  placeholder="Select fee type"
-                  value={feeTypeId}
-                  onValueChange={(value) => {
-                    setFeeTypeId(value);
-                    setRows([]);
-                  }}
-                  options={[
-                    { value: '', label: 'Select fee type' },
-                    ...feeTypesList.map((f) => ({
-                      value: f.id,
-                      label: f.name,
-                    })),
-                  ]}
-                  className="w-full"
-                />
+                <FormFieldLabel required>Fee types</FormFieldLabel>
+                <div className="flex flex-wrap gap-2 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] p-3">
+                  {feeTypesList.map((type) => {
+                    const checked = selectedTypeIds.includes(type.id);
+                    return (
+                      <label
+                        key={type.id}
+                        className="inline-flex items-center gap-1.5 text-sm text-[var(--text-main-900)]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setSelectedTypeIds((prev) =>
+                              checked ? prev.filter((id) => id !== type.id) : [...prev, type.id],
+                            );
+                            setRows([]);
+                          }}
+                        />
+                        {type.name}
+                      </label>
+                    );
+                  })}
+                </div>
                 {hasNoFeeTypes && (
                   <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
                     No fee types yet. Add types like Exam or Digitization on the Fee types tab first.
@@ -415,34 +435,44 @@ export function GenerateInvoicesDialog({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <FormFieldLabel htmlFor="bulk-default-amount">
-                  Override amount
-                </FormFieldLabel>
-                <div className="flex gap-2">
-                  <input
-                    id="bulk-default-amount"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={defaultAmount}
-                    onChange={(e) => setDefaultAmount(e.target.value)}
-                    className={cn(modalFieldClassName, 'flex-1')}
-                  />
-                  <button
-                    type="button"
-                    onClick={applyDefaultToAll}
-                    disabled={rows.length === 0}
-                    className="shrink-0 rounded-lg border border-stroke-soft-200 px-3 py-2 text-sm disabled:opacity-50"
-                  >
-                    Apply to all
-                  </button>
+              {selectedTypeIds.length <= 1 ? (
+                <div>
+                  <FormFieldLabel htmlFor="bulk-default-amount">
+                    Override amount
+                  </FormFieldLabel>
+                  <div className="flex gap-2">
+                    <input
+                      id="bulk-default-amount"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={defaultAmount}
+                      onChange={(e) => setDefaultAmount(e.target.value)}
+                      className={cn(modalFieldClassName, 'flex-1')}
+                    />
+                    <button
+                      type="button"
+                      onClick={applyDefaultToAll}
+                      disabled={rows.length === 0}
+                      className="shrink-0 rounded-lg border border-stroke-soft-200 px-3 py-2 text-sm disabled:opacity-50"
+                    >
+                      Apply to all
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                    Rows are prefilled from each student’s fee structure (batch → program → branch).
+                    Apply override only if you need the same amount for everyone. Sibling discounts still apply on create.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-[var(--text-sub-500)]">
-                  Rows are prefilled from each student’s fee structure (batch → program → branch).
-                  Apply override only if you need the same amount for everyone. Sibling discounts still apply on create.
-                </p>
-              </div>
+              ) : (
+                <div>
+                  <FormFieldLabel>Particulars</FormFieldLabel>
+                  <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                    Each selected fee type becomes a line on one invoice per student. Amounts come from
+                    fee structures.
+                  </p>
+                </div>
+              )}
               <div>
                 <FormFieldLabel htmlFor="bulk-billing-period" required>
                   Billing month
@@ -626,7 +656,7 @@ export function GenerateInvoicesDialog({
                 selectedRows.length === 0 ||
                 hasInvalidAmount ||
                 !effectiveBranchId ||
-                !feeTypeId ||
+                selectedTypeIds.length === 0 ||
                 (scopeMode === 'batch' && !effectiveBatchId)
               }
               className={cn(

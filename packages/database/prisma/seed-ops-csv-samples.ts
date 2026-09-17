@@ -7,6 +7,7 @@ today.setHours(0, 0, 0, 0);
 
 async function main() {
   const branch =
+    (await prisma.branch.findFirst({ where: { code: 'SWC' } })) ??
     (await prisma.branch.findFirst({
       where: { name: { contains: 'Islamabad', mode: 'insensitive' } },
     })) ??
@@ -49,10 +50,13 @@ async function main() {
   await prisma.complianceControl.deleteMany({ where: { title: { contains: MARK } } });
   await prisma.pettyCashVoucher.deleteMany({ where: { description: { contains: MARK } } });
   await prisma.pettyCashFund.deleteMany({ where: { name: { contains: MARK } } });
-  await prisma.bankStatementLine.deleteMany({ where: { description: { contains: MARK } } });
-  await prisma.bankStatement.deleteMany({
-    where: { lines: { none: {} }, branchId: branch.id, status: 'open' },
+  await prisma.bankStatementLine.deleteMany({
+    where: { OR: [{ chequeNumber: { startsWith: '462678' } }, { payee: { contains: MARK } }] },
   });
+  await prisma.bankStatement.deleteMany({
+    where: { OR: [{ bankName: 'Al Flah Bank' }, { lines: { none: {} }, branchId: branch.id, status: 'open' }] },
+  });
+  await prisma.ownerDrawing.deleteMany({ where: { payee: { contains: 'Saeed Butt' } } });
   await prisma.purchaseOrder.deleteMany({ where: { poNo: { startsWith: 'SAMPLE-CSV' } } });
   await prisma.fixedAsset.deleteMany({ where: { name: { contains: MARK } } });
   await prisma.vendorBill.deleteMany({ where: { description: { contains: MARK } } });
@@ -164,9 +168,36 @@ async function main() {
         branchId: branch.id,
         vendorId: vendor.id,
         billDate: today,
-        amount: 4500,
-        category: 'utility',
+        amount: 18500,
+        category: 'electricity',
         description: `${MARK} electricity bill`,
+        status: 'open',
+      },
+      {
+        branchId: branch.id,
+        vendorId: vendor.id,
+        billDate: today,
+        amount: 9200,
+        category: 'gas',
+        description: `${MARK} gas bill`,
+        status: 'open',
+      },
+      {
+        branchId: branch.id,
+        vendorId: vendor.id,
+        billDate: today,
+        amount: 4100,
+        category: 'water',
+        description: `${MARK} water bill`,
+        status: 'open',
+      },
+      {
+        branchId: branch.id,
+        vendorId: vendor.id,
+        billDate: today,
+        amount: 5000,
+        category: 'phone',
+        description: `${MARK} mobile + ptcl bill`,
         status: 'open',
       },
       {
@@ -204,22 +235,157 @@ async function main() {
     },
   });
 
-  const statement = await prisma.bankStatement.create({
-    data: {
-      branchId: branch.id,
-      periodFrom: today,
-      periodTo: today,
-      status: 'open',
-    },
+  const existingRegister = await prisma.bankStatement.findFirst({
+    where: { branchId: branch.id, year: 2026, month: 8, bankName: 'Al Flah Bank', deletedAt: null },
   });
-  await prisma.bankStatementLine.create({
-    data: {
-      statementId: statement.id,
-      lineDate: today,
-      amount: 1000,
-      description: `${MARK} bank deposit`,
-    },
+  const statement =
+    existingRegister ??
+    (await prisma.bankStatement.create({
+      data: {
+        branchId: branch.id,
+        year: 2026,
+        month: 8,
+        bankName: 'Al Flah Bank',
+        chequeBookNo: '',
+        chequeBookSerialFrom: '46267817',
+        chequeBookSerialTo: '46267825',
+        status: 'open',
+      },
+    }));
+  if (!existingRegister) {
+    await prisma.bankStatementLine.createMany({
+    data: [
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-04'),
+        chequeNumber: '46267817',
+        payee: 'Bakhshish Ellahi',
+        onAccountOf: 'Salary',
+        amount: 18500,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-10'),
+        chequeNumber: '46267818',
+        payee: 'Nosheen',
+        onAccountOf: 'Salary Staff',
+        amount: 112400,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-11'),
+        chequeNumber: '46267819',
+        payee: 'Nosheen',
+        onAccountOf: 'Petty Cash',
+        amount: 10000,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-11'),
+        chequeNumber: '46267820',
+        payee: 'Nosheen',
+        onAccountOf: 'Mobile + Ptcl',
+        amount: 5000,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-13'),
+        chequeNumber: '46267821',
+        payee: 'Nosheen',
+        onAccountOf: 'Staff Salary',
+        amount: 30350,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-20'),
+        chequeNumber: '46267822',
+        payee: 'Zahid Hussain',
+        onAccountOf: 'Building Rent',
+        amount: 95000,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-21'),
+        chequeNumber: '46267823',
+        payee: 'Hasham Ali',
+        onAccountOf: 'Labour Work',
+        amount: 33400,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-24'),
+        chequeNumber: '46267824',
+        payee: 'Bakhshish Ellahi',
+        onAccountOf: 'Advance Salary',
+        amount: 18500,
+      },
+      {
+        statementId: statement.id,
+        issueDate: new Date('2026-08-25'),
+        chequeNumber: '46267825',
+        payee: 'Saeed Butt',
+        onAccountOf: 'By Sir Anjum',
+        amount: 20000,
+      },
+    ],
   });
+  }
+
+  const existingDrawing = await prisma.ownerDrawing.findFirst({
+    where: { branchId: branch.id, chequeNumber: '46267825', deletedAt: null },
+  });
+  if (!existingDrawing) {
+    const created = await prisma.ownerDrawing.create({
+      data: {
+        branchId: branch.id,
+        drawingDate: new Date('2026-08-25'),
+        payee: 'Saeed Butt',
+        amount: 20000,
+        method: 'cheque',
+        chequeNumber: '46267825',
+        notes: 'By Sir Anjum',
+      },
+    });
+    const drawingsAccount =
+      (await prisma.account.findFirst({ where: { code: '3000', branchId: null, deletedAt: null } })) ??
+      (await prisma.account.create({
+        data: { code: '3000', name: 'Drawings', type: 'equity', branchId: null, isSystem: true, isActive: true },
+      }));
+    const bankAccount =
+      (await prisma.account.findFirst({ where: { code: '1100', branchId: null, deletedAt: null } })) ??
+      (await prisma.account.create({
+        data: { code: '1100', name: 'Bank', type: 'asset', branchId: null, isSystem: true, isActive: true },
+      }));
+    const voucherNo = `PAY-DRAW-${branch.code ?? branch.id.slice(0, 6)}`;
+    const existingVoucher = await prisma.journalVoucher.findFirst({
+      where: { branchId: branch.id, voucherNo },
+    });
+    if (!existingVoucher) {
+      const voucher = await prisma.journalVoucher.create({
+        data: {
+          branchId: branch.id,
+          voucherType: 'payment',
+          voucherNo,
+          voucherDate: new Date('2026-08-25'),
+          narration: 'Owner drawing — Saeed Butt (By Sir Anjum)',
+          status: 'posted',
+          sourceType: 'owner_drawing',
+          sourceId: created.id,
+          postedAt: new Date('2026-08-25'),
+          lines: {
+            create: [
+              { accountId: drawingsAccount.id, debit: 20000, credit: 0 },
+              { accountId: bankAccount.id, debit: 0, credit: 20000 },
+            ],
+          },
+        },
+      });
+      await prisma.ownerDrawing.update({
+        where: { id: created.id },
+        data: { journalVoucherId: voucher.id },
+      });
+    }
+  }
 
   await prisma.purchaseOrder.create({
     data: {
@@ -239,10 +405,49 @@ async function main() {
       branchId: branch.id,
       name: `${MARK} Classroom projector`,
       category: 'electronics',
+      scope: 'school',
+      quantity: 1,
       purchaseDate: today,
       cost: 45000,
       status: 'active',
     },
+  });
+  await prisma.fixedAsset.createMany({
+    data: [
+      {
+        branchId: branch.id,
+        name: `${MARK} Student chairs`,
+        category: 'chairs',
+        scope: 'class',
+        quantity: 40,
+        batchId: batch.id,
+        purchaseDate: today,
+        cost: 48000,
+        status: 'active',
+      },
+      {
+        branchId: branch.id,
+        name: `${MARK} Teacher desk set`,
+        category: 'furniture',
+        scope: 'class',
+        quantity: 4,
+        batchId: batch.id,
+        purchaseDate: today,
+        cost: 22000,
+        status: 'active',
+      },
+      {
+        branchId: branch.id,
+        name: `${MARK} Science lab kits`,
+        category: 'equipment',
+        scope: 'class',
+        quantity: 8,
+        batchId: batch.id,
+        purchaseDate: today,
+        cost: 16000,
+        status: 'active',
+      },
+    ],
   });
 
   if (budget) {

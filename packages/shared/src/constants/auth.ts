@@ -13,3 +13,17 @@ export function requiresMfaPolicy(roles: string[]): boolean {
 export function isSuperAdmin(roles: string[]): boolean {
   return roles.includes(SUPER_ADMIN_ROLE);
 }
+
+/** Roles that may work across campuses when `User.branchId` is null (invite: All branches). */
+export const ALL_BRANCHES_ROLES = [
+  SUPER_ADMIN_ROLE,
+  'accountant',
+  'fee_collector',
+  'hr_finance',
+] as const;
+
+export type AllBranchesRole = (typeof ALL_BRANCHES_ROLES)[number];
+
+export function canSelectAllBranches(roles: string[]): boolean {
+  return roles.some((r) => (ALL_BRANCHES_ROLES as readonly string[]).includes(r));
+}

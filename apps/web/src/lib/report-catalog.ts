@@ -362,7 +362,7 @@ const FINANCE: ReportCatalogItem[] = [
   {
     id: 'fin-bank-rec',
     number: 8,
-    title: 'Bank Reconciliation Report',
+    title: 'Issued Cheque Record',
     group: 'finance',
     status: 'ready',
     sourcePermissions: [PERMISSIONS.ACCOUNTING_READ],

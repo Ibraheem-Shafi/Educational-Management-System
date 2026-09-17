@@ -31,10 +31,14 @@ interface InvoiceDetail {
   billingPeriod: string | null;
   voucherNo: string | null;
   remarks: string | null;
+  feeTypeId?: string;
   student?: { fullName: string };
   paidAmount?: number;
   remainingAmount?: number;
+  lines?: Array<{ feeTypeId: string; label: string; amount: number }>;
 }
+
+type LineDraft = { feeTypeId: string; label: string; amount: string };
 
 export function EditInvoiceDialog({
   open,
@@ -58,11 +62,18 @@ export function EditInvoiceDialog({
   const [billingPeriod, setBillingPeriod] = useState('');
   const [voucherNo, setVoucherNo] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [lines, setLines] = useState<LineDraft[]>([]);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['fee-invoice', invoiceId],
     queryFn: () => apiClient<InvoiceDetail>(`/fee-invoices/${invoiceId}`, { token }),
     enabled: open && !!token && !!invoiceId,
+  });
+
+  const { data: feeTypes } = useQuery({
+    queryKey: queryKeys.feeTypes(),
+    queryFn: () => apiClient<{ data: Array<{ id: string; name: string }> }>('/fee-types', { token }),
+    enabled: open && !!token,
   });
 
   useEffect(() => {
@@ -74,6 +85,21 @@ export function EditInvoiceDialog({
     setBillingPeriod(invoice.billingPeriod ?? '');
     setVoucherNo(invoice.voucherNo ?? '');
     setRemarks(invoice.remarks ?? '');
+    setLines(
+      invoice.lines && invoice.lines.length > 0
+        ? invoice.lines.map((line) => ({
+            feeTypeId: line.feeTypeId,
+            label: line.label,
+            amount: String(line.amount),
+          }))
+        : [
+            {
+              feeTypeId: invoice.feeTypeId ?? '',
+              label: 'Fee',
+              amount: String(invoice.amount ?? ''),
+            },
+          ],
+    );
   }, [invoice, open]);
 
   const mutation = useMutation({
@@ -87,7 +113,7 @@ export function EditInvoiceDialog({
       const cascaded = result?.cascadedCount ?? 0;
       toast.success(
         cascaded > 0
-          ? `Invoice updated · discount applied to ${cascaded} later month${cascaded === 1 ? '' : 's'}`
+          ? `Invoice updated · amount/discount applied to ${cascaded} later unpaid month${cascaded === 1 ? '' : 's'}`
           : 'Invoice updated',
       );
       void queryClient.invalidateQueries({ queryKey: ['fee-invoices-by-student'] });
@@ -117,6 +143,14 @@ export function EditInvoiceDialog({
       billingPeriod: billingPeriod.trim() || null,
       voucherNo: voucherNo.trim() || undefined,
       remarks: remarks.trim() || undefined,
+      lines: lines
+        .filter((line) => line.feeTypeId && Number(line.amount) > 0)
+        .map((line, index) => ({
+          feeTypeId: line.feeTypeId,
+          label: line.label,
+          amount: Number(line.amount),
+          sortOrder: index,
+        })),
     };
     if (!validate(payload)) return;
     mutation.mutate(payload);
@@ -154,19 +188,83 @@ export function EditInvoiceDialog({
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <FormFieldLabel required>Amount</FormFieldLabel>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className={fieldClassName('amount', modalFieldClassName)}
-                      value={amount}
-                      onChange={(e) => {
-                        setAmount(e.target.value);
-                        clearField('amount');
-                      }}
-                    />
+                  <div className="col-span-2 space-y-2">
+                    <FormFieldLabel required>Particulars</FormFieldLabel>
+                    {lines.map((line, index) => (
+                      <div key={`${line.feeTypeId}-${index}`} className="grid grid-cols-[1fr_7rem_auto] gap-2">
+                        <select
+                          className={modalFieldClassName}
+                          value={line.feeTypeId}
+                          onChange={(e) => {
+                            const nextId = e.target.value;
+                            const label =
+                              feeTypes?.data.find((type) => type.id === nextId)?.name ?? line.label;
+                            setLines((prev) =>
+                              prev.map((row, rowIndex) =>
+                                rowIndex === index ? { ...row, feeTypeId: nextId, label } : row,
+                              ),
+                            );
+                          }}
+                        >
+                          <option value="">Fee type</option>
+                          {(feeTypes?.data ?? []).map((type) => (
+                            <option key={type.id} value={type.id}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className={fieldClassName('amount', modalFieldClassName)}
+                          value={line.amount}
+                          onChange={(e) => {
+                            const nextAmount = e.target.value;
+                            setLines((prev) => {
+                              const next = prev.map((row, rowIndex) =>
+                                rowIndex === index ? { ...row, amount: nextAmount } : row,
+                              );
+                              setAmount(
+                                String(
+                                  next.reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+                                ),
+                              );
+                              return next;
+                            });
+                            clearField('amount');
+                          }}
+                        />
+                        {lines.length > 1 ? (
+                          <button
+                            type="button"
+                            className="text-sm text-[var(--text-sub-500)]"
+                            onClick={() =>
+                              setLines((prev) => {
+                                const next = prev.filter((_, rowIndex) => rowIndex !== index);
+                                setAmount(
+                                  String(next.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)),
+                                );
+                                return next;
+                              })
+                            }
+                          >
+                            Remove
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-[var(--palette-teal)]"
+                      onClick={() =>
+                        setLines((prev) => [...prev, { feeTypeId: '', label: '', amount: '' }])
+                      }
+                    >
+                      Add fee type
+                    </button>
                     <FormFieldError message={errors.amount} />
                   </div>
                   <div>
@@ -251,10 +349,10 @@ export function EditInvoiceDialog({
                   <FormFieldError message={errors.remarks} />
                 </div>
                 <p className="text-xs text-[var(--text-sub-500,#525866)]">
-                  Changing discount also updates later months for this student and fee type (skips
-                  months where paid amount would exceed the new net). For monthly fees, the student’s
-                  recurring monthly discount is updated too. Net cannot go below amount already paid
-                  on this invoice.
+                  Changing amount or discount also updates later unpaid invoices for this student
+                  (same fee types). Paid or partially paid months are skipped. For monthly fees, the
+                  student’s recurring monthly discount is updated too. Net cannot go below amount
+                  already paid on this invoice.
                 </p>
               </>
             )}

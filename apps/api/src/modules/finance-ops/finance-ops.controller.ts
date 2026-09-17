@@ -24,6 +24,7 @@ import {
   createBankStatementSchema,
   createBudgetForecastLineSchema,
   createFixedAssetSchema,
+  createOwnerDrawingSchema,
   createPettyCashFundSchema,
   createPettyCashVoucherSchema,
   createPurchaseOrderSchema,
@@ -33,6 +34,7 @@ import {
   listBankStatementsQuerySchema,
   listBudgetForecastLinesQuerySchema,
   listFixedAssetsQuerySchema,
+  listOwnerDrawingsQuerySchema,
   listPettyCashFundsQuerySchema,
   listPettyCashVouchersQuerySchema,
   listPurchaseOrdersQuerySchema,
@@ -55,6 +57,7 @@ import type {
   CreateBankStatementLineInput,
   CreateBudgetForecastLineInput,
   CreateFixedAssetInput,
+  CreateOwnerDrawingInput,
   CreatePettyCashFundInput,
   CreatePettyCashVoucherInput,
   CreatePurchaseOrderInput,
@@ -64,6 +67,7 @@ import type {
   ListBankStatementsQuery,
   ListBudgetForecastLinesQuery,
   ListFixedAssetsQuery,
+  ListOwnerDrawingsQuery,
   ListPettyCashFundsQuery,
   ListPettyCashVouchersQuery,
   ListPurchaseOrdersQuery,
@@ -257,6 +261,12 @@ export class FinanceOpsController {
     return this.financeOps.listStatements(query, scope);
   }
 
+  @Get('bank-statements/:id')
+  @Permissions('accounting.read')
+  getStatement(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.financeOps.getStatement(id, scope);
+  }
+
   @Post('bank-statements')
   @HttpCode(HttpStatus.CREATED)
   @Permissions('accounting.manage')
@@ -290,6 +300,17 @@ export class FinanceOpsController {
     return this.financeOps.addStatementLine(id, body, user, scope);
   }
 
+  @Delete('bank-statements/:id/lines/:lineId')
+  @Permissions('accounting.manage')
+  removeStatementLine(
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.financeOps.removeStatementLine(id, lineId, user, scope);
+  }
+
   @Delete('bank-statements/:id')
   @Permissions('accounting.manage')
   removeStatement(
@@ -309,6 +330,35 @@ export class FinanceOpsController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.financeOps.matchStatementLine(id, body, user, scope);
+  }
+
+  @Get('drawings')
+  @Permissions('accounting.read')
+  listDrawings(
+    @Query(createZodPipe(listOwnerDrawingsQuerySchema)) query: ListOwnerDrawingsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.financeOps.listDrawings(query, scope);
+  }
+
+  @Post('drawings')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('accounting.manage')
+  createDrawing(
+    @Body(createZodPipe(createOwnerDrawingSchema)) body: CreateOwnerDrawingInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.financeOps.createDrawing(body, user);
+  }
+
+  @Delete('drawings/:id')
+  @Permissions('accounting.manage')
+  removeDrawing(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.financeOps.removeDrawing(id, user, scope);
   }
 
   @Get('purchase-orders')
