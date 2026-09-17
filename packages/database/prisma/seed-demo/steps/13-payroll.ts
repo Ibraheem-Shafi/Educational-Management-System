@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { computeSalarySheetLine, DEFAULT_EXTRA_LEC_RATE } from '@eims/shared';
 import {
   configuredBranchCodes,
   staffEmail,
@@ -14,20 +15,27 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
   const currentYear = now.getFullYear();
   const effectiveFrom = new Date(Date.UTC(priorYear, priorMonth - 1, 1));
 
-  const jobs: { branchCode: string; emails: { email: string; basic: number }[] }[] = [
+  const jobs: {
+    branchCode: string;
+    emails: { email: string; basic: number; group: 'permanent' | 'admin'; eobi: number }[];
+  }[] = [
     ...configuredBranchCodes(ctx).map((branchCode) => ({
       branchCode,
       emails: [
-        { email: staffEmail(branchCode, 'teacher'), basic: 80000 },
-        { email: staffEmail(branchCode, 'accountant'), basic: 75000 },
-      ].filter((row): row is { email: string; basic: number } => !!row.email && ctx.userIds.has(row.email)),
+        { email: staffEmail(branchCode, 'teacher'), basic: 80000, group: 'permanent' as const, eobi: 600 },
+        { email: staffEmail(branchCode, 'accountant'), basic: 75000, group: 'admin' as const, eobi: 0 },
+      ].filter((row): row is { email: string; basic: number; group: 'permanent' | 'admin'; eobi: number } =>
+        !!row.email && ctx.userIds.has(row.email),
+      ),
     })),
     ...swcFinanceDummyBranchCodes(ctx).map((branchCode) => ({
       branchCode,
       emails: [
-        { email: staffEmail(branchCode, 'fee_collector'), basic: 75000 },
-        { email: staffEmail(branchCode, 'hr_finance'), basic: 85000 },
-      ].filter((row): row is { email: string; basic: number } => !!row.email && ctx.userIds.has(row.email)),
+        { email: staffEmail(branchCode, 'fee_collector'), basic: 75000, group: 'admin' as const, eobi: 0 },
+        { email: staffEmail(branchCode, 'hr_finance'), basic: 85000, group: 'admin' as const, eobi: 0 },
+      ].filter((row): row is { email: string; basic: number; group: 'permanent' | 'admin'; eobi: number } =>
+        !!row.email && ctx.userIds.has(row.email),
+      ),
     })),
   ];
 
@@ -35,9 +43,14 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
     const branchId = ctx.branchMap.get(branchCode);
     if (!branchId || emails.length === 0) continue;
 
-    const structures: { userId: string; basic: number }[] = [];
+    const structures: {
+      userId: string;
+      basic: number;
+      group: 'permanent' | 'admin';
+      eobi: number;
+    }[] = [];
 
-    for (const { email, basic } of emails) {
+    for (const { email, basic, group, eobi } of emails) {
       const userId = ctx.userIds.get(email);
       if (!userId) continue;
 
@@ -50,136 +63,169 @@ export async function seedPayroll(prisma: PrismaClient, ctx: DemoContext): Promi
             userId,
             branchId,
             basicSalary: basic,
+            staffGroup: group,
+            eobi,
+            pessi: 0,
+            extraLecRate: DEFAULT_EXTRA_LEC_RATE,
             effectiveFrom,
             isActive: true,
-            components: {
-              create: [
-                { kind: 'allowance', name: 'Transport', amount: 5000 },
-                { kind: 'tax', name: 'Tax', amount: 2000 },
-              ],
-            },
           },
         });
       } else {
-        await prisma.salaryComponent.updateMany({
-          where: { structureId: structure.id, name: 'Tax', kind: 'deduction' },
-          data: { kind: 'tax' },
+        await prisma.salaryStructure.update({
+          where: { id: structure.id },
+          data: { staffGroup: group, eobi },
         });
       }
-      structures.push({ userId, basic: Number(structure.basicSalary) });
+      structures.push({ userId, basic: Number(structure.basicSalary), group, eobi });
     }
 
     if (structures.length === 0) continue;
 
-    let finalized = await prisma.payrollRun.findUnique({
+    let paid = await prisma.payrollRun.findUnique({
       where: {
         branchId_year_month: { branchId, year: priorYear, month: priorMonth },
       },
     });
 
-    if (!finalized) {
-      finalized = await prisma.payrollRun.create({
+    if (!paid) {
+      paid = await prisma.payrollRun.create({
         data: {
           branchId,
           year: priorYear,
           month: priorMonth,
-          status: 'finalized',
+          status: 'paid',
           finalizedAt: new Date(),
           paidAt: new Date(),
           paymentMethod: 'bank',
-          notes: `Demo payroll run (${branchCode})`,
+          notes: `Demo salary sheet (${branchCode})`,
         },
       });
-    } else if (!finalized.paidAt) {
-      finalized = await prisma.payrollRun.update({
-        where: { id: finalized.id },
-        data: { paidAt: finalized.finalizedAt ?? new Date(), paymentMethod: 'bank' },
+    } else if (!paid.paidAt) {
+      paid = await prisma.payrollRun.update({
+        where: { id: paid.id },
+        data: { status: 'paid', paidAt: paid.finalizedAt ?? new Date(), paymentMethod: 'bank' },
       });
     }
 
     for (const s of structures) {
       const existing = await prisma.payrollLine.findUnique({
-        where: { runId_userId: { runId: finalized.id, userId: s.userId } },
+        where: { runId_userId: { runId: paid.id, userId: s.userId } },
       });
       if (existing) continue;
 
-      const allowances = 5000;
-      const deductions = 2000;
+      const absents = 2;
+      const computed = computeSalarySheetLine({
+        staffGroup: s.group,
+        basicSalary: s.basic,
+        absents,
+        extraLectures: 0,
+        extraLecRate: DEFAULT_EXTRA_LEC_RATE,
+        lectureCount: 0,
+        ratePerClass: 0,
+        otherAllowance: 0,
+        advanceDeduction: 0,
+        securityDeduct: 0,
+        eobi: s.eobi,
+        pessi: 0,
+        previousAdvance: 0,
+        currentAdvance: 0,
+        securityPrevious: 0,
+      });
+
       await prisma.payrollLine.create({
         data: {
-          runId: finalized.id,
+          runId: paid.id,
           userId: s.userId,
+          staffGroup: s.group,
           basicSalary: s.basic,
-          allowancesTotal: allowances,
-          deductionsTotal: deductions,
+          allowancesTotal: computed.allowancesTotal,
+          deductionsTotal: computed.deductionsTotal,
           adjustmentsTotal: 0,
-          netPay: s.basic + allowances - deductions,
+          netPay: computed.netPay,
           attendancePresentDays: 20,
-          attendanceAbsentDays: 2,
-          workingDays: 22,
-          breakdown: {
-            components: [
-              { kind: 'allowance', name: 'Transport', amount: allowances, percentOfBasic: null, group: 'allowance' },
-              { kind: 'tax', name: 'Tax', amount: deductions, percentOfBasic: null, group: 'statutory' },
-            ],
-            fullBasicSalary: s.basic,
-            unpaidAbsentDays: 2,
-            paidLeaveDays: 0,
-            lwpAmount: 0,
-            attendanceNotMarked: false,
-          },
+          attendanceAbsentDays: absents,
+          workingDays: computed.workingDays,
+          absents,
+          deductedDays: computed.deductedDays,
+          extraLecRate: DEFAULT_EXTRA_LEC_RATE,
+          extraLecAmount: computed.extraLecAmount,
+          absentFine: computed.absentFine,
+          eobi: s.eobi,
+          pendingAdvance: computed.pendingAdvance,
+          securityTillDate: computed.securityTillDate,
         },
       });
     }
 
-    let draft = await prisma.payrollRun.findUnique({
+    let open = await prisma.payrollRun.findUnique({
       where: {
         branchId_year_month: { branchId, year: currentYear, month: currentMonth },
       },
     });
-    if (!draft) {
-      draft = await prisma.payrollRun.create({
+    if (!open) {
+      open = await prisma.payrollRun.create({
         data: {
           branchId,
           year: currentYear,
           month: currentMonth,
-          status: 'draft',
-          notes: `Demo draft payroll (${branchCode})`,
+          status: 'open',
+          notes: `Demo open salary sheet (${branchCode})`,
         },
+      });
+    } else if (open.status === 'draft') {
+      open = await prisma.payrollRun.update({
+        where: { id: open.id },
+        data: { status: 'open' },
       });
     }
 
     for (const s of structures) {
       const existing = await prisma.payrollLine.findUnique({
-        where: { runId_userId: { runId: draft.id, userId: s.userId } },
+        where: { runId_userId: { runId: open.id, userId: s.userId } },
       });
       if (existing) continue;
 
-      const allowances = 5000;
-      const deductions = 2000;
+      const absents = 1;
+      const computed = computeSalarySheetLine({
+        staffGroup: s.group,
+        basicSalary: s.basic,
+        absents,
+        extraLectures: 0,
+        extraLecRate: DEFAULT_EXTRA_LEC_RATE,
+        lectureCount: 0,
+        ratePerClass: 0,
+        otherAllowance: 0,
+        advanceDeduction: 0,
+        securityDeduct: 0,
+        eobi: s.eobi,
+        pessi: 0,
+        previousAdvance: 0,
+        currentAdvance: 0,
+        securityPrevious: 0,
+      });
+
       await prisma.payrollLine.create({
         data: {
-          runId: draft.id,
+          runId: open.id,
           userId: s.userId,
+          staffGroup: s.group,
           basicSalary: s.basic,
-          allowancesTotal: allowances,
-          deductionsTotal: deductions,
+          allowancesTotal: computed.allowancesTotal,
+          deductionsTotal: computed.deductionsTotal,
           adjustmentsTotal: 0,
-          netPay: s.basic + allowances - deductions,
+          netPay: computed.netPay,
           attendancePresentDays: 12,
-          attendanceAbsentDays: 1,
-          workingDays: 15,
-          breakdown: {
-            components: [
-              { kind: 'allowance', name: 'Transport', amount: allowances, percentOfBasic: null, group: 'allowance' },
-              { kind: 'tax', name: 'Tax', amount: deductions, percentOfBasic: null, group: 'statutory' },
-            ],
-            fullBasicSalary: s.basic,
-            unpaidAbsentDays: 1,
-            paidLeaveDays: 0,
-            lwpAmount: 0,
-            attendanceNotMarked: false,
-          },
+          attendanceAbsentDays: absents,
+          workingDays: computed.workingDays,
+          absents,
+          deductedDays: computed.deductedDays,
+          extraLecRate: DEFAULT_EXTRA_LEC_RATE,
+          extraLecAmount: computed.extraLecAmount,
+          absentFine: computed.absentFine,
+          eobi: s.eobi,
+          pendingAdvance: computed.pendingAdvance,
+          securityTillDate: computed.securityTillDate,
         },
       });
     }

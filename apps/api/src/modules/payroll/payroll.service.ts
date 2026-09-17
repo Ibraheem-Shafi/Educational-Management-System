@@ -1,6 +1,14 @@
 import { narrowScope, prismaBranchFilter } from '../../common/utils/branch-scope.util';
 import type { BranchScope } from '@eims/shared';
 import {
+  computeSalarySheetLine,
+  DEFAULT_EXTRA_LEC_RATE,
+  inferStaffGroup,
+  PAYROLL_WORKING_DAYS,
+  staffGroups,
+} from '@eims/shared';
+import type { StaffGroup, UpdatePayrollLineInput } from '@eims/shared';
+import {
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -13,7 +21,7 @@ import { LookupCacheService } from '../../common/lookup/lookup-cache.service';
 import { AccountingPostingService } from '../accounting/accounting-posting.service';
 import type { AuthUser } from '@eims/types';
 import type {
-  AdjustPayrollLineInput,
+  BulkSavePayrollLinesInput,
   CreatePayrollRunInput,
   CreateSalaryStructureInput,
   ExportPayrollRunQuery,
@@ -33,6 +41,11 @@ function parseDate(value: string, field: string): Date {
   return date;
 }
 
+function parseOptionalDate(value: string | null | undefined, field: string): Date | null {
+  if (value == null || value === '') return null;
+  return parseDate(value, field);
+}
+
 function monthRange(year: number, month: number): { from: Date; to: Date } {
   return {
     from: new Date(Date.UTC(year, month - 1, 1)),
@@ -40,77 +53,9 @@ function monthRange(year: number, month: number): { from: Date; to: Date } {
   };
 }
 
-function utcDateKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function isUtcWeekday(value: Date): boolean {
-  const day = value.getUTCDay();
-  return day !== 0 && day !== 6;
-}
-
-function weekdaysInMonth(year: number, month: number): number {
-  const { from, to } = monthRange(year, month);
-  let count = 0;
-  const cursor = new Date(from);
-  while (cursor <= to) {
-    if (isUtcWeekday(cursor)) count++;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return count;
-}
-
-function weekdayKeysInMonth(year: number, month: number): string[] {
-  const { from, to } = monthRange(year, month);
-  const keys: string[] = [];
-  const cursor = new Date(from);
-  while (cursor <= to) {
-    if (isUtcWeekday(cursor)) keys.push(utcDateKey(cursor));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return keys;
-}
-
-function paidLeaveKeysForMonth(
-  leaves: Array<{ fromDate: Date; toDate: Date }>,
-  year: number,
-  month: number,
-): Set<string> {
-  const weekdays = weekdayKeysInMonth(year, month);
-  const keys = new Set<string>();
-  for (const leave of leaves) {
-    const fromKey = utcDateKey(leave.fromDate);
-    const toKey = utcDateKey(leave.toDate);
-    for (const key of weekdays) {
-      if (key >= fromKey && key <= toKey) keys.add(key);
-    }
-  }
-  return keys;
-}
-
-const STATUTORY_KINDS = new Set(['tax', 'eobi', 'provident_fund']);
-const LWP_NAME = 'Leave without pay';
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function resolveComponentAmount(
-  percentOfBasic: number | null,
-  amount: number,
-  fullBasic: number,
-): number {
-  if (percentOfBasic != null) {
-    return roundMoney((fullBasic * percentOfBasic) / 100);
-  }
-  return roundMoney(amount);
-}
-
-function componentGroup(kind: string, name: string): 'allowance' | 'deduction' | 'statutory' | 'lwp' {
-  if (name === LWP_NAME) return 'lwp';
-  if (kind === 'allowance') return 'allowance';
-  if (STATUTORY_KINDS.has(kind)) return 'statutory';
-  return 'deduction';
+function previousPeriod(year: number, month: number): { year: number; month: number } {
+  if (month === 1) return { year: year - 1, month: 12 };
+  return { year, month: month - 1 };
 }
 
 function decimal(value: number): Prisma.Decimal {
@@ -126,6 +71,79 @@ function toNumber(value: Prisma.Decimal | number | null | undefined): number {
   return Number(value);
 }
 
+function asStaffGroup(value: string | null | undefined): StaffGroup {
+  if (value && staffGroups.includes(value as StaffGroup)) return value as StaffGroup;
+  return 'permanent';
+}
+
+function displayRunStatus(run: { status: string; paidAt?: Date | null }): 'open' | 'paid' {
+  if (run.paidAt || run.status === 'paid') return 'paid';
+  return 'open';
+}
+
+function isRunPaid(run: { status: string; paidAt?: Date | null }): boolean {
+  return displayRunStatus(run) === 'paid';
+}
+
+type SheetLineInput = {
+  staffGroup: StaffGroup;
+  basicSalary: number;
+  absents: number;
+  extraLectures: number;
+  extraLecRate: number;
+  lectureCount: number;
+  ratePerClass: number;
+  otherAllowance: number;
+  advanceDeduction: number;
+  securityDeduct: number;
+  eobi: number;
+  pessi: number;
+  previousAdvance: number;
+  currentAdvance: number;
+  securityPrevious: number;
+};
+
+function sheetData(input: SheetLineInput) {
+  const computed = computeSalarySheetLine(input);
+  return {
+    staffGroup: input.staffGroup,
+    basicSalary: decimal(input.basicSalary),
+    allowancesTotal: decimal(computed.allowancesTotal),
+    deductionsTotal: decimal(computed.deductionsTotal),
+    adjustmentsTotal: decimal(0),
+    netPay: decimal(computed.netPay),
+    attendanceAbsentDays: input.absents,
+    workingDays: computed.workingDays,
+    absents: input.absents,
+    deductedDays: computed.deductedDays,
+    extraLectures: input.extraLectures,
+    lectureCount: input.lectureCount,
+    ratePerClass: decimal(input.ratePerClass),
+    extraLecRate: decimal(input.extraLecRate),
+    extraLecAmount: decimal(computed.extraLecAmount),
+    lecturesAmount: decimal(computed.lecturesAmount),
+    otherAllowance: decimal(input.otherAllowance),
+    absentFine: decimal(computed.absentFine),
+    advanceDeduction: decimal(input.advanceDeduction),
+    securityDeduct: decimal(input.securityDeduct),
+    eobi: decimal(input.eobi),
+    pessi: decimal(input.pessi),
+    previousAdvance: decimal(input.previousAdvance),
+    currentAdvance: decimal(input.currentAdvance),
+    pendingAdvance: decimal(computed.pendingAdvance),
+    securityPrevious: decimal(input.securityPrevious),
+    securityTillDate: decimal(computed.securityTillDate),
+    breakdown: {
+      perDay: computed.perDay,
+      entitlementsTotal: computed.entitlementsTotal,
+      extraLecAmount: computed.extraLecAmount,
+      lecturesAmount: computed.lecturesAmount,
+    },
+  };
+}
+
+const lineUserSelect = { id: true, fullName: true, designation: true } as const;
+
 @Injectable()
 export class PayrollService {
   constructor(
@@ -134,8 +152,6 @@ export class PayrollService {
     private readonly lookupCache: LookupCacheService,
     private readonly accountingPosting: AccountingPostingService,
   ) {}
-
-  // --- Salary structures ---
 
   async findStructures(query: ListSalaryStructuresQuery, scope: BranchScope) {
     const where = {
@@ -161,24 +177,24 @@ export class PayrollService {
       this.prisma.salaryStructure.findMany({
         where,
         include: {
-          user: { select: { id: true, fullName: true } },
+          user: { select: lineUserSelect },
           components: { orderBy: { kind: 'asc' } },
         },
-        orderBy: [{ isActive: 'desc' }, { effectiveFrom: 'desc' }],
+        orderBy: [{ isActive: 'desc' }, { staffGroup: 'asc' }, { effectiveFrom: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.salaryStructure.count({ where }),
     ]);
 
-    return paginatedResult(structures.map(this.toStructureResponse), total, page, limit);
+    return paginatedResult(structures.map((s) => this.toStructureResponse(s)), total, page, limit);
   }
 
   async findStructure(id: string, scope: BranchScope) {
     const structure = await this.prisma.salaryStructure.findFirst({
       where: { id, deletedAt: null, ...prismaBranchFilter(scope) },
       include: {
-        user: { select: { id: true, fullName: true } },
+        user: { select: lineUserSelect },
         components: { orderBy: { kind: 'asc' } },
       },
     });
@@ -189,6 +205,11 @@ export class PayrollService {
   async createStructure(input: CreateSalaryStructureInput, user: AuthUser) {
     await this.assertUserInBranch(input.userId, input.branchId);
     const isActive = input.isActive ?? true;
+    const staff = await this.prisma.user.findFirst({
+      where: { id: input.userId, deletedAt: null },
+      select: { designation: true },
+    });
+    const staffGroup = input.staffGroup ?? inferStaffGroup(staff?.designation);
 
     const structure = await this.prisma.$transaction(async (tx) => {
       if (isActive) {
@@ -200,11 +221,17 @@ export class PayrollService {
           userId: input.userId,
           branchId: input.branchId,
           basicSalary: decimal(input.basicSalary),
+          staffGroup,
+          bankAccount: input.bankAccount ?? null,
+          eobi: decimal(input.eobi ?? 0),
+          pessi: decimal(input.pessi ?? 0),
+          extraLecRate: decimal(input.extraLecRate ?? DEFAULT_EXTRA_LEC_RATE),
+          ratePerClass: decimal(input.ratePerClass ?? 0),
           effectiveFrom: parseDate(input.effectiveFrom, 'effectiveFrom'),
           effectiveTo: input.effectiveTo ? parseDate(input.effectiveTo, 'effectiveTo') : null,
           isActive,
           components: {
-            create: input.components.map((c) => ({
+            create: (input.components ?? []).map((c) => ({
               kind: c.kind,
               name: c.name,
               amount: decimal(c.amount),
@@ -213,7 +240,7 @@ export class PayrollService {
           },
         },
         include: {
-          user: { select: { id: true, fullName: true } },
+          user: { select: lineUserSelect },
           components: true,
         },
       });
@@ -255,9 +282,13 @@ export class PayrollService {
       return tx.salaryStructure.update({
         where: { id },
         data: {
-          ...(input.basicSalary !== undefined
-            ? { basicSalary: decimal(input.basicSalary) }
-            : {}),
+          ...(input.basicSalary !== undefined ? { basicSalary: decimal(input.basicSalary) } : {}),
+          ...(input.staffGroup !== undefined ? { staffGroup: input.staffGroup } : {}),
+          ...(input.bankAccount !== undefined ? { bankAccount: input.bankAccount } : {}),
+          ...(input.eobi !== undefined ? { eobi: decimal(input.eobi) } : {}),
+          ...(input.pessi !== undefined ? { pessi: decimal(input.pessi) } : {}),
+          ...(input.extraLecRate !== undefined ? { extraLecRate: decimal(input.extraLecRate) } : {}),
+          ...(input.ratePerClass !== undefined ? { ratePerClass: decimal(input.ratePerClass) } : {}),
           ...(input.effectiveFrom !== undefined
             ? { effectiveFrom: parseDate(input.effectiveFrom, 'effectiveFrom') }
             : {}),
@@ -284,7 +315,7 @@ export class PayrollService {
             : {}),
         },
         include: {
-          user: { select: { id: true, fullName: true } },
+          user: { select: lineUserSelect },
           components: true,
         },
       });
@@ -324,21 +355,16 @@ export class PayrollService {
     return { success: true };
   }
 
-  // --- Payroll runs ---
-
   async findRuns(query: ListPayrollRunsQuery, scope: BranchScope) {
+    const statusFilter = this.runStatusWhere(query.status, query.excludeFinalized);
     const where = {
       ...prismaBranchFilter(narrowScope(scope, query.branchId)),
       ...(query.year !== undefined ? { year: query.year } : {}),
       ...(query.month !== undefined ? { month: query.month } : {}),
-      ...(query.status
-        ? { status: query.status }
-        : query.excludeFinalized
-          ? { status: { not: 'finalized' } }
-          : {}),
+      ...statusFilter,
     };
     const page = query.page ?? 1;
-    const limit = query.limit ?? 8;
+    const limit = query.limit ?? 24;
 
     const [runs, total] = await Promise.all([
       this.prisma.payrollRun.findMany({
@@ -353,7 +379,7 @@ export class PayrollService {
       this.prisma.payrollRun.count({ where }),
     ]);
 
-    return paginatedResult(runs.map(this.toRunSummary), total, page, limit);
+    return paginatedResult(runs.map((run) => this.toRunSummary(run)), total, page, limit);
   }
 
   async findRun(id: string, scope: BranchScope) {
@@ -362,17 +388,25 @@ export class PayrollService {
       include: {
         lines: {
           include: {
-            user: { select: { id: true, fullName: true } },
+            user: { select: lineUserSelect },
           },
-          orderBy: { user: { fullName: 'asc' } },
+          orderBy: [{ staffGroup: 'asc' }, { user: { fullName: 'asc' } }],
         },
       },
     });
     if (!run) throw new NotFoundException('Payroll run not found');
-    return this.toRunDetail(run);
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: run.branchId },
+      select: { id: true, name: true },
+    });
+    return this.toRunDetail(run, branch);
   }
 
-  async createRun(input: CreatePayrollRunInput, user: AuthUser) {
+  async createRun(input: CreatePayrollRunInput, user: AuthUser, scope: BranchScope) {
+    return this.openMonth(input, user, scope);
+  }
+
+  async openMonth(input: CreatePayrollRunInput, user: AuthUser, scope: BranchScope) {
     const existing = await this.prisma.payrollRun.findUnique({
       where: {
         branchId_year_month: {
@@ -382,351 +416,195 @@ export class PayrollService {
         },
       },
     });
-    if (existing) {
-      throw new BadRequestException('Payroll run already exists for this branch and period');
+
+    let run = existing;
+    if (!run) {
+      run = await this.prisma.payrollRun.create({
+        data: {
+          branchId: input.branchId,
+          year: input.year,
+          month: input.month,
+          notes: input.notes ?? null,
+          status: 'open',
+        },
+      });
+      await this.audit.log({
+        userId: user.id,
+        action: 'payroll.month.opened',
+        entityType: 'PayrollRun',
+        entityId: run.id,
+        newValue: run,
+      });
+    } else if (input.notes && !run.notes) {
+      run = await this.prisma.payrollRun.update({
+        where: { id: run.id },
+        data: { notes: input.notes },
+      });
     }
 
-    const run = await this.prisma.payrollRun.create({
-      data: {
-        branchId: input.branchId,
-        year: input.year,
-        month: input.month,
-        notes: input.notes ?? null,
-        status: 'draft',
-      },
-    });
+    if (!isRunPaid(run)) {
+      await this.fillMissingLines(run.id, user, scope);
+    }
 
-    await this.audit.log({
-      userId: user.id,
-      action: 'payroll.run.created',
-      entityType: 'PayrollRun',
-      entityId: run.id,
-      newValue: run,
-    });
-
-    return this.toRunSummary(run);
+    return this.findRun(run.id, scope);
   }
 
   async generateRun(id: string, user: AuthUser, scope: BranchScope) {
     const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'draft') {
-      throw new BadRequestException('Only draft runs can be generated');
+    if (isRunPaid(run)) {
+      throw new BadRequestException('Paid salary sheets cannot be regenerated');
     }
-
-    const { from, to } = monthRange(run.year, run.month);
-    const calendarWeekdays = weekdaysInMonth(run.year, run.month);
-
-    const [presentId, absentId] = await Promise.all([
-      this.lookupCache.getStatusId('attendance_status', 'present'),
-      this.lookupCache.getStatusId('attendance_status', 'absent'),
-    ]);
-
-    const structures = await this.prisma.salaryStructure.findMany({
-      where: {
-        branchId: run.branchId,
-        deletedAt: null,
-        isActive: true,
-        effectiveFrom: { lte: to },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
-      },
-      include: { components: true },
-      orderBy: { effectiveFrom: 'desc' },
-    });
-
-    const structuresByUser = new Map<string, (typeof structures)[number]>();
-    for (const structure of structures) {
-      if (!structuresByUser.has(structure.userId)) {
-        structuresByUser.set(structure.userId, structure);
-      }
-    }
-    const uniqueStructures = [...structuresByUser.values()];
-    const userIds = uniqueStructures.map((s) => s.userId);
-
-    const lines = await this.prisma.$transaction(async (tx) => {
-      await tx.payrollLine.deleteMany({ where: { runId: id } });
-
-      const [attendanceRecords, leaveRequests] = userIds.length
-        ? await Promise.all([
-            tx.attendanceRecord.findMany({
-              where: {
-                branchId: run.branchId,
-                entityId: { in: userIds },
-                entityType: { in: [...STAFF_ENTITY_TYPES] },
-                date: { gte: from, lte: to },
-              },
-              select: { entityId: true, statusId: true, date: true },
-            }),
-            tx.leaveRequest.findMany({
-              where: {
-                kind: 'employee',
-                status: 'approved',
-                userId: { in: userIds },
-                fromDate: { lte: to },
-                toDate: { gte: from },
-              },
-              select: { userId: true, fromDate: true, toDate: true },
-            }),
-          ])
-        : [[], []];
-
-      const attendanceByUser = new Map<string, typeof attendanceRecords>();
-      for (const record of attendanceRecords) {
-        const list = attendanceByUser.get(record.entityId) ?? [];
-        list.push(record);
-        attendanceByUser.set(record.entityId, list);
-      }
-
-      const leavesByUser = new Map<string, typeof leaveRequests>();
-      for (const leave of leaveRequests) {
-        if (!leave.userId) continue;
-        const list = leavesByUser.get(leave.userId) ?? [];
-        list.push(leave);
-        leavesByUser.set(leave.userId, list);
-      }
-
-      const created = [];
-      for (const structure of uniqueStructures) {
-        const records = attendanceByUser.get(structure.userId) ?? [];
-        const paidLeaveDateKeys = paidLeaveKeysForMonth(
-          leavesByUser.get(structure.userId) ?? [],
-          run.year,
-          run.month,
-        );
-        const paidLeaveDays = paidLeaveDateKeys.size;
-        const attendanceNotMarked = records.length === 0;
-
-        let presentDays = 0;
-        let unpaidAbsentDays = 0;
-        if (!attendanceNotMarked) {
-          for (const record of records) {
-            if (presentId && record.statusId === presentId) presentDays++;
-            if (absentId && record.statusId === absentId && isUtcWeekday(record.date)) {
-              const key = utcDateKey(record.date);
-              if (!paidLeaveDateKeys.has(key)) unpaidAbsentDays++;
-            }
-          }
-        }
-
-        const workingDays = calendarWeekdays;
-        const fullBasic = toNumber(structure.basicSalary);
-        const lwpAmount =
-          workingDays > 0 ? roundMoney((fullBasic * unpaidAbsentDays) / workingDays) : 0;
-
-        let allowancesTotal = 0;
-        let deductionsTotal = 0;
-        const breakdown: Array<{
-          kind: string;
-          name: string;
-          amount: number;
-          percentOfBasic: number | null;
-          group: 'allowance' | 'deduction' | 'statutory' | 'lwp';
-        }> = [];
-
-        for (const component of structure.components) {
-          const percent =
-            component.percentOfBasic != null ? toNumber(component.percentOfBasic) : null;
-          const amount = resolveComponentAmount(percent, toNumber(component.amount), fullBasic);
-          const group = componentGroup(component.kind, component.name);
-          breakdown.push({
-            kind: component.kind,
-            name: component.name,
-            amount,
-            percentOfBasic: percent,
-            group,
-          });
-          if (group === 'allowance') allowancesTotal += amount;
-          else deductionsTotal += amount;
-        }
-
-        if (lwpAmount > 0) {
-          breakdown.push({
-            kind: 'deduction',
-            name: LWP_NAME,
-            amount: lwpAmount,
-            percentOfBasic: null,
-            group: 'lwp',
-          });
-          deductionsTotal += lwpAmount;
-        }
-
-        allowancesTotal = roundMoney(allowancesTotal);
-        deductionsTotal = roundMoney(deductionsTotal);
-        const netPay = roundMoney(fullBasic + allowancesTotal - deductionsTotal);
-
-        const line = await tx.payrollLine.create({
-          data: {
-            runId: id,
-            userId: structure.userId,
-            basicSalary: decimal(fullBasic),
-            allowancesTotal: decimal(allowancesTotal),
-            deductionsTotal: decimal(deductionsTotal),
-            adjustmentsTotal: decimal(0),
-            netPay: decimal(netPay),
-            attendancePresentDays: presentDays,
-            attendanceAbsentDays: unpaidAbsentDays,
-            workingDays,
-            breakdown: {
-              components: breakdown,
-              fullBasicSalary: fullBasic,
-              unpaidAbsentDays,
-              paidLeaveDays,
-              lwpAmount,
-              attendanceNotMarked,
-            },
-          },
-        });
-        created.push(line);
-      }
-      return created;
-    });
-
-    await this.audit.log({
-      userId: user.id,
-      action: 'payroll.run.generated',
-      entityType: 'PayrollRun',
-      entityId: id,
-      newValue: { lineCount: lines.length },
-    });
-
+    await this.fillMissingLines(id, user, scope);
     return this.findRun(id, scope);
   }
 
-  async adjustLine(
+  async updateLine(
     id: string,
-    input: AdjustPayrollLineInput,
+    input: UpdatePayrollLineInput,
     user: AuthUser,
     scope: BranchScope,
   ) {
     const line = await this.prisma.payrollLine.findFirst({
       where: { id, run: { ...prismaBranchFilter(scope) } },
-      include: { run: true },
+      include: { run: true, user: { select: lineUserSelect } },
     });
     if (!line) throw new NotFoundException('Payroll line not found');
-    if (line.run.status !== 'draft') {
-      throw new BadRequestException('Only lines on draft runs can be adjusted');
+    if (isRunPaid(line.run)) {
+      throw new BadRequestException('Paid salary sheets cannot be edited');
     }
 
-    const basic = toNumber(line.basicSalary);
-    const allowances = toNumber(line.allowancesTotal);
-    const deductions = toNumber(line.deductionsTotal);
-    const adjustments = input.adjustmentsTotal;
-    const netPay = Math.round((basic + allowances - deductions + adjustments) * 100) / 100;
-
-    const existingBreakdown =
-      line.breakdown && typeof line.breakdown === 'object' && !Array.isArray(line.breakdown)
-        ? (line.breakdown as Record<string, unknown>)
-        : {};
-
+    const next = this.mergeLineInput(line, input);
     const updated = await this.prisma.payrollLine.update({
       where: { id },
       data: {
-        adjustmentsTotal: decimal(adjustments),
-        netPay: decimal(netPay),
-        breakdown: {
-          ...existingBreakdown,
-          adjustmentReason: input.reason ?? null,
-        },
+        ...sheetData(next),
+        designation: next.designation,
+        accountNumber: next.accountNumber,
+        remarks: next.remarks,
+        paymentDate: next.paymentDate,
+        amountIssued: decimal(next.amountIssued),
+        paymentType: next.paymentType,
+        attendancePresentDays: line.attendancePresentDays,
       },
-      include: {
-        user: { select: { id: true, fullName: true } },
-      },
+      include: { user: { select: lineUserSelect } },
     });
 
     await this.audit.log({
       userId: user.id,
-      action: 'payroll.line.adjusted',
+      action: 'payroll.line.updated',
       entityType: 'PayrollLine',
       entityId: id,
-      previousValue: line,
-      newValue: updated,
+      previousValue: { id: line.id, netPay: line.netPay },
+      newValue: { id: updated.id, netPay: updated.netPay },
     });
 
     return this.toLineResponse(updated);
   }
 
-  async submitApproval(id: string, user: AuthUser, scope: BranchScope) {
-    const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'draft') {
-      throw new BadRequestException('Only draft runs can be submitted for approval');
+  async saveLines(
+    runId: string,
+    input: BulkSavePayrollLinesInput,
+    user: AuthUser,
+    scope: BranchScope,
+  ) {
+    const run = await this.getRunOrThrow(runId, scope);
+    if (isRunPaid(run)) {
+      throw new BadRequestException('Paid salary sheets cannot be edited');
     }
 
-    const lineCount = await this.prisma.payrollLine.count({ where: { runId: id } });
-    if (lineCount === 0) {
-      throw new BadRequestException('Generate payroll lines before submitting for approval');
-    }
-
-    const updated = await this.prisma.payrollRun.update({
-      where: { id },
-      data: { status: 'pending_approval' },
+    const ids = input.lines.map((line) => line.id);
+    const existing = await this.prisma.payrollLine.findMany({
+      where: { id: { in: ids }, runId },
     });
+    if (existing.length !== ids.length) {
+      throw new BadRequestException('One or more lines do not belong to this salary sheet');
+    }
+    const byId = new Map(existing.map((line) => [line.id, line]));
+
+    await this.prisma.$transaction(
+      input.lines.map((patch) => {
+        const line = byId.get(patch.id)!;
+        const next = this.mergeLineInput(line, patch);
+        return this.prisma.payrollLine.update({
+          where: { id: patch.id },
+          data: {
+            ...sheetData(next),
+            designation: next.designation,
+            accountNumber: next.accountNumber,
+            remarks: next.remarks,
+            paymentDate: next.paymentDate,
+            amountIssued: decimal(next.amountIssued),
+            paymentType: next.paymentType,
+            attendancePresentDays: line.attendancePresentDays,
+          },
+        });
+      }),
+    );
 
     await this.audit.log({
       userId: user.id,
-      action: 'payroll.run.submitted',
+      action: 'payroll.sheet.saved',
       entityType: 'PayrollRun',
-      entityId: id,
-      previousValue: run,
-      newValue: updated,
+      entityId: runId,
+      newValue: { lineCount: input.lines.length },
     });
 
-    return this.toRunSummary(updated);
+    return this.findRun(runId, scope);
   }
 
-  async sendBackToDraft(id: string, user: AuthUser, scope: BranchScope) {
+  async submitApproval(id: string, _user: AuthUser, scope: BranchScope) {
     const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'pending_approval') {
-      throw new BadRequestException('Only pending approval runs can be sent back to draft');
+    if (isRunPaid(run)) {
+      throw new BadRequestException('This salary sheet is already paid');
     }
+    return this.toRunSummary(run);
+  }
 
+  async sendBackToDraft(id: string, _user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
+    if (isRunPaid(run)) {
+      throw new BadRequestException('Paid salary sheets cannot be reopened from send-back');
+    }
     const updated = await this.prisma.payrollRun.update({
       where: { id },
-      data: { status: 'draft', approvedById: null },
+      data: { status: 'open', approvedById: null },
     });
-
-    await this.audit.log({
-      userId: user.id,
-      action: 'payroll.run.sent_back',
-      entityType: 'PayrollRun',
-      entityId: id,
-      previousValue: run,
-      newValue: updated,
-    });
-
     return this.toRunSummary(updated);
   }
 
   async approveRun(id: string, user: AuthUser, scope: BranchScope) {
-    const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'pending_approval') {
-      throw new BadRequestException('Only pending approval runs can be approved');
-    }
-
-    const updated = await this.prisma.payrollRun.update({
-      where: { id },
-      data: { status: 'approved', approvedById: user.id },
-    });
-
-    await this.audit.log({
-      userId: user.id,
-      action: 'payroll.run.approved',
-      entityType: 'PayrollRun',
-      entityId: id,
-      previousValue: run,
-      newValue: updated,
-    });
-
-    return this.toRunSummary(updated);
+    return this.markPaid(id, { paymentMethod: 'bank' }, user, scope);
   }
 
   async finalizeRun(id: string, user: AuthUser, scope: BranchScope) {
     const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'approved') {
-      throw new BadRequestException('Only approved runs can be finalized');
+    if (isRunPaid(run)) return this.toRunSummary(run);
+    const updated = await this.prisma.payrollRun.update({
+      where: { id },
+      data: { finalizedAt: new Date(), status: run.status === 'draft' ? 'open' : run.status },
+    });
+    return this.toRunSummary(updated);
+  }
+
+  async markPaid(id: string, input: MarkPayrollPaidInput, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(id, scope);
+    if (isRunPaid(run)) {
+      throw new BadRequestException('This salary sheet is already marked as paid');
+    }
+
+    const lines = await this.prisma.payrollLine.findMany({ where: { runId: id } });
+    if (lines.length === 0) {
+      throw new BadRequestException('Open the month and add staff before marking paid');
     }
 
     const updated = await this.prisma.payrollRun.update({
       where: { id },
-      data: { status: 'finalized', finalizedAt: new Date() },
+      data: {
+        status: 'paid',
+        paidAt: new Date(),
+        paymentMethod: input.paymentMethod,
+        finalizedAt: run.finalizedAt ?? new Date(),
+      },
       include: { lines: true },
     });
 
@@ -734,32 +612,6 @@ export class PayrollService {
     if (totalNet > 0) {
       await this.accountingPosting.postPayrollRun(id, updated.branchId, totalNet, user.id);
     }
-
-    await this.audit.log({
-      userId: user.id,
-      action: 'payroll.run.finalized',
-      entityType: 'PayrollRun',
-      entityId: id,
-      previousValue: run,
-      newValue: updated,
-    });
-
-    return this.toRunSummary(updated);
-  }
-
-  async markPaid(id: string, input: MarkPayrollPaidInput, user: AuthUser, scope: BranchScope) {
-    const run = await this.getRunOrThrow(id, scope);
-    if (run.status !== 'finalized') {
-      throw new BadRequestException('Only finalized runs can be marked as paid');
-    }
-    if (run.paidAt) {
-      throw new BadRequestException('This payroll run is already marked as paid');
-    }
-
-    const updated = await this.prisma.payrollRun.update({
-      where: { id },
-      data: { paidAt: new Date(), paymentMethod: input.paymentMethod },
-    });
 
     await this.audit.log({
       userId: user.id,
@@ -775,17 +627,39 @@ export class PayrollService {
 
   async exportRun(id: string, query: ExportPayrollRunQuery, scope: BranchScope) {
     const run = await this.findRun(id, scope);
-    const rows = run.lines.map((line) => ({
-      staffCode: line.user ? formatStaffCode(line.user.id) : '',
+    const rows = run.lines.map((line, index) => ({
+      sr: index + 1,
+      staffGroup: line.staffGroup,
       fullName: line.user?.fullName ?? '',
+      accountNumber: line.accountNumber ?? '',
+      designation: line.designation ?? '',
       basicSalary: line.basicSalary,
-      allowancesTotal: line.allowancesTotal,
-      deductionsTotal: line.deductionsTotal,
-      adjustmentsTotal: line.adjustmentsTotal,
-      netPay: line.netPay,
-      presentDays: line.attendancePresentDays,
-      absentDays: line.attendanceAbsentDays,
+      perDay: line.workingDays ? Number((line.basicSalary / line.workingDays).toFixed(2)) : 0,
       workingDays: line.workingDays,
+      absents: line.absents,
+      deductedDays: line.deductedDays,
+      extraLectures: line.extraLectures,
+      extraLecAmount: line.extraLecAmount,
+      lectureCount: line.lectureCount,
+      ratePerClass: line.ratePerClass,
+      lecturesAmount: line.lecturesAmount,
+      otherAllowance: line.otherAllowance,
+      entitlements: line.allowancesTotal,
+      absentFine: line.absentFine,
+      advanceDeduction: line.advanceDeduction,
+      securityDeduct: line.securityDeduct,
+      eobi: line.eobi,
+      pessi: line.pessi,
+      netPay: line.netPay,
+      previousAdvance: line.previousAdvance,
+      currentAdvance: line.currentAdvance,
+      pendingAdvance: line.pendingAdvance,
+      securityPrevious: line.securityPrevious,
+      securityTillDate: line.securityTillDate,
+      paymentDate: line.paymentDate,
+      amountIssued: line.amountIssued,
+      paymentType: line.paymentType ?? '',
+      remarks: line.remarks ?? '',
     }));
 
     if (query.format === 'json') {
@@ -793,35 +667,79 @@ export class PayrollService {
     }
 
     const headers = [
-      'Staff Code',
-      'Full Name',
-      'Basic Salary',
-      'Allowances',
-      'Deductions',
-      'Adjustments',
-      'Net Pay',
-      'Present Days',
-      'Absent Days',
+      'Group',
+      'Sr',
+      'Name',
+      'Account Number',
+      'Designation',
+      'Basic Pay',
+      'Per Day',
       'Working Days',
+      'Absents',
+      'Deducted Days',
+      'Extra Lectures',
+      'Extra Lec Amount',
+      'Lectures',
+      'Rate Per Class',
+      'Lectures Amount',
+      'Other Allowance',
+      'Entitlements',
+      'Absent Fine',
+      'Advance Deduction',
+      'Security Deduct',
+      'EOBI',
+      'PESSI',
+      'Net Pay',
+      'Previous Advance',
+      'Current Advance',
+      'Pending Advance',
+      'Security Previous',
+      'Security Till Date',
+      'Payment Date',
+      'Amount Issued',
+      'Payment Type',
+      'Remarks',
     ];
     const csvLines = [
       headers.join(','),
       ...rows.map((r) =>
         [
-          this.csvEscape(r.staffCode),
+          this.csvEscape(r.staffGroup),
+          r.sr,
           this.csvEscape(r.fullName),
+          this.csvEscape(r.accountNumber),
+          this.csvEscape(r.designation),
           r.basicSalary,
-          r.allowancesTotal,
-          r.deductionsTotal,
-          r.adjustmentsTotal,
-          r.netPay,
-          r.presentDays,
-          r.absentDays,
+          r.perDay,
           r.workingDays,
+          r.absents,
+          r.deductedDays,
+          r.extraLectures,
+          r.extraLecAmount,
+          r.lectureCount,
+          r.ratePerClass,
+          r.lecturesAmount,
+          r.otherAllowance,
+          r.entitlements,
+          r.absentFine,
+          r.advanceDeduction,
+          r.securityDeduct,
+          r.eobi,
+          r.pessi,
+          r.netPay,
+          r.previousAdvance,
+          r.currentAdvance,
+          r.pendingAdvance,
+          r.securityPrevious,
+          r.securityTillDate,
+          this.csvEscape(r.paymentDate ?? ''),
+          r.amountIssued,
+          this.csvEscape(r.paymentType),
+          this.csvEscape(r.remarks),
         ].join(','),
       ),
     ];
-    return { csv: csvLines.join('\n'), filename: `payroll-${run.year}-${String(run.month).padStart(2, '0')}.csv` };
+    return { csv: csvLines.join('\n'), filename: `salary-sheet-${run.year}-${String(run.month).padStart(2, '0')}.csv` };
   }
 
   async getLinePrintData(id: string, scope: BranchScope) {
@@ -845,32 +763,238 @@ export class PayrollService {
     const institution = await this.prisma.institutionSettings.findFirst({
       select: { name: true, logoUrl: true, address: true },
     });
-
-    const breakdown = this.parseBreakdown(line.breakdown);
+    const computed = computeSalarySheetLine(this.mergeLineInput(line, {}));
 
     return {
       line: this.toLineResponse(line),
       run: {
         year: line.run.year,
         month: line.run.month,
-        status: line.run.status,
+        status: displayRunStatus(line.run),
         paidAt: line.run.paidAt?.toISOString() ?? null,
         paymentMethod: line.run.paymentMethod,
       },
       employee: {
         ...line.user,
+        designation: line.designation ?? line.user.designation,
         staffCode: formatStaffCode(line.user.id),
       },
       institution: institution ?? { name: 'Institution', logoUrl: null, address: null },
-      components: breakdown.components,
-      fullBasicSalary: breakdown.fullBasicSalary,
-      unpaidAbsentDays: breakdown.unpaidAbsentDays,
-      paidLeaveDays: breakdown.paidLeaveDays,
-      lwpAmount: breakdown.lwpAmount,
-      adjustmentReason: breakdown.adjustmentReason,
-      attendanceNotMarked: breakdown.attendanceNotMarked,
+      sheet: computed,
       printLayout: await this.resolvePrintLayout(line.run.branchId),
     };
+  }
+
+  async getRunPrintData(id: string, scope: BranchScope) {
+    const detail = await this.findRun(id, scope);
+    const institution = await this.prisma.institutionSettings.findFirst({
+      select: { name: true, logoUrl: true, address: true },
+    });
+    return {
+      run: detail,
+      institution: institution ?? { name: 'Institution', logoUrl: null, address: null },
+    };
+  }
+
+  private async fillMissingLines(runId: string, user: AuthUser, scope: BranchScope) {
+    const run = await this.getRunOrThrow(runId, scope);
+    const { from, to } = monthRange(run.year, run.month);
+    const prior = previousPeriod(run.year, run.month);
+
+    const [presentId, absentId] = await Promise.all([
+      this.lookupCache.getStatusId('attendance_status', 'present'),
+      this.lookupCache.getStatusId('attendance_status', 'absent'),
+    ]);
+
+    const structures = await this.prisma.salaryStructure.findMany({
+      where: {
+        branchId: run.branchId,
+        deletedAt: null,
+        isActive: true,
+        effectiveFrom: { lte: to },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
+      },
+      include: {
+        user: { select: { id: true, fullName: true, designation: true } },
+      },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+
+    const structuresByUser = new Map<string, (typeof structures)[number]>();
+    for (const structure of structures) {
+      if (!structuresByUser.has(structure.userId)) {
+        structuresByUser.set(structure.userId, structure);
+      }
+    }
+    const uniqueStructures = [...structuresByUser.values()];
+    const userIds = uniqueStructures.map((s) => s.userId);
+
+    const existingLines = await this.prisma.payrollLine.findMany({
+      where: { runId },
+      select: { userId: true },
+    });
+    const existingUsers = new Set(existingLines.map((line) => line.userId));
+    const missing = uniqueStructures.filter((s) => !existingUsers.has(s.userId));
+    if (missing.length === 0) return;
+
+    const priorRun = await this.prisma.payrollRun.findUnique({
+      where: {
+        branchId_year_month: { branchId: run.branchId, year: prior.year, month: prior.month },
+      },
+      include: {
+        lines: {
+          where: { userId: { in: missing.map((s) => s.userId) } },
+          select: { userId: true, pendingAdvance: true, securityTillDate: true },
+        },
+      },
+    });
+    const priorByUser = new Map(
+      (priorRun?.lines ?? []).map((line) => [
+        line.userId,
+        {
+          previousAdvance: toNumber(line.pendingAdvance),
+          securityPrevious: toNumber(line.securityTillDate),
+        },
+      ]),
+    );
+
+    const missingIds = missing.map((s) => s.userId);
+    const attendanceRecords = missingIds.length
+      ? await this.prisma.attendanceRecord.findMany({
+          where: {
+            branchId: run.branchId,
+            entityId: { in: missingIds },
+            entityType: { in: [...STAFF_ENTITY_TYPES] },
+            date: { gte: from, lte: to },
+          },
+          select: { entityId: true, statusId: true },
+        })
+      : [];
+
+    const absentsByUser = new Map<string, number>();
+    const presentByUser = new Map<string, number>();
+    for (const record of attendanceRecords) {
+      if (absentId && record.statusId === absentId) {
+        absentsByUser.set(record.entityId, (absentsByUser.get(record.entityId) ?? 0) + 1);
+      }
+      if (presentId && record.statusId === presentId) {
+        presentByUser.set(record.entityId, (presentByUser.get(record.entityId) ?? 0) + 1);
+      }
+    }
+
+    await this.prisma.payrollLine.createMany({
+      skipDuplicates: true,
+      data: missing.map((structure) => {
+        const staffGroup = asStaffGroup(structure.staffGroup);
+        const absents = absentsByUser.get(structure.userId) ?? 0;
+        const carry = priorByUser.get(structure.userId);
+        const input: SheetLineInput = {
+          staffGroup,
+          basicSalary: toNumber(structure.basicSalary),
+          absents,
+          extraLectures: 0,
+          extraLecRate: toNumber(structure.extraLecRate) || DEFAULT_EXTRA_LEC_RATE,
+          lectureCount: 0,
+          ratePerClass: toNumber(structure.ratePerClass),
+          otherAllowance: 0,
+          advanceDeduction: 0,
+          securityDeduct: 0,
+          eobi: toNumber(structure.eobi),
+          pessi: toNumber(structure.pessi),
+          previousAdvance: carry?.previousAdvance ?? 0,
+          currentAdvance: 0,
+          securityPrevious: carry?.securityPrevious ?? 0,
+        };
+        const data = sheetData(input);
+        return {
+          runId,
+          userId: structure.userId,
+          designation: structure.user.designation ?? null,
+          accountNumber: structure.bankAccount ?? null,
+          attendancePresentDays: presentByUser.get(structure.userId) ?? 0,
+          remarks: null,
+          paymentDate: null,
+          amountIssued: decimal(0),
+          paymentType: null,
+          ...data,
+        };
+      }),
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'payroll.sheet.lines_added',
+      entityType: 'PayrollRun',
+      entityId: runId,
+      newValue: { added: missing.length },
+    });
+  }
+
+  private mergeLineInput(
+    line: {
+      staffGroup: string;
+      designation: string | null;
+      accountNumber: string | null;
+      basicSalary: Prisma.Decimal;
+      absents: number;
+      extraLectures: number;
+      extraLecRate: Prisma.Decimal;
+      lectureCount: number;
+      ratePerClass: Prisma.Decimal;
+      otherAllowance: Prisma.Decimal;
+      advanceDeduction: Prisma.Decimal;
+      securityDeduct: Prisma.Decimal;
+      eobi: Prisma.Decimal;
+      pessi: Prisma.Decimal;
+      previousAdvance: Prisma.Decimal;
+      currentAdvance: Prisma.Decimal;
+      securityPrevious: Prisma.Decimal;
+      remarks: string | null;
+      paymentDate: Date | null;
+      amountIssued: Prisma.Decimal;
+      paymentType: string | null;
+    },
+    input: UpdatePayrollLineInput,
+  ) {
+    return {
+      staffGroup: input.staffGroup ?? asStaffGroup(line.staffGroup),
+      designation: input.designation !== undefined ? input.designation : line.designation,
+      accountNumber: input.accountNumber !== undefined ? input.accountNumber : line.accountNumber,
+      basicSalary: input.basicSalary ?? toNumber(line.basicSalary),
+      absents: input.absents ?? line.absents,
+      extraLectures: input.extraLectures ?? line.extraLectures,
+      extraLecRate: input.extraLecRate ?? toNumber(line.extraLecRate) ?? DEFAULT_EXTRA_LEC_RATE,
+      lectureCount: input.lectureCount ?? line.lectureCount,
+      ratePerClass: input.ratePerClass ?? toNumber(line.ratePerClass),
+      otherAllowance: input.otherAllowance ?? toNumber(line.otherAllowance),
+      advanceDeduction: input.advanceDeduction ?? toNumber(line.advanceDeduction),
+      securityDeduct: input.securityDeduct ?? toNumber(line.securityDeduct),
+      eobi: input.eobi ?? toNumber(line.eobi),
+      pessi: input.pessi ?? toNumber(line.pessi),
+      previousAdvance: input.previousAdvance ?? toNumber(line.previousAdvance),
+      currentAdvance: input.currentAdvance ?? toNumber(line.currentAdvance),
+      securityPrevious: input.securityPrevious ?? toNumber(line.securityPrevious),
+      remarks: input.remarks !== undefined ? input.remarks : line.remarks,
+      paymentDate:
+        input.paymentDate !== undefined
+          ? parseOptionalDate(input.paymentDate, 'paymentDate')
+          : line.paymentDate,
+      amountIssued: input.amountIssued ?? toNumber(line.amountIssued),
+      paymentType: input.paymentType !== undefined ? input.paymentType : line.paymentType,
+    };
+  }
+
+  private runStatusWhere(status?: string, excludeFinalized?: boolean): Prisma.PayrollRunWhereInput {
+    if (status === 'paid' || status === 'finalized') {
+      return { OR: [{ status: 'paid' }, { paidAt: { not: null } }] };
+    }
+    if (status === 'open' || status === 'draft' || status === 'pending_approval' || status === 'approved') {
+      return { paidAt: null, status: { not: 'paid' } };
+    }
+    if (excludeFinalized) {
+      return { paidAt: null, status: { not: 'paid' } };
+    }
+    return {};
   }
 
   private async resolvePrintLayout(branchId: string) {
@@ -915,70 +1039,6 @@ export class PayrollService {
     });
   }
 
-  private parseBreakdown(value: Prisma.JsonValue | null | undefined) {
-    const empty = {
-      components: [] as Array<{
-        kind: string;
-        name: string;
-        amount: number;
-        percentOfBasic: number | null;
-        group?: string;
-      }>,
-      fullBasicSalary: null as number | null,
-      unpaidAbsentDays: null as number | null,
-      paidLeaveDays: null as number | null,
-      lwpAmount: null as number | null,
-      adjustmentReason: null as string | null,
-      attendanceNotMarked: false,
-    };
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;
-    const raw = value as Record<string, unknown>;
-    let components = empty.components;
-    if (Array.isArray(raw.components)) {
-      components = raw.components
-        .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-        .map((c) => ({
-          kind: String(c.kind ?? 'deduction'),
-          name: String(c.name ?? ''),
-          amount: Number(c.amount) || 0,
-          percentOfBasic: c.percentOfBasic != null ? Number(c.percentOfBasic) : null,
-          group: typeof c.group === 'string' ? c.group : undefined,
-        }));
-    } else {
-      const allowances = Array.isArray(raw.allowances) ? raw.allowances : [];
-      const deductions = Array.isArray(raw.deductions) ? raw.deductions : [];
-      components = [
-        ...allowances
-          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-          .map((c) => ({
-            kind: 'allowance',
-            name: String(c.name ?? ''),
-            amount: Number(c.amount) || 0,
-            percentOfBasic: null,
-            group: 'allowance',
-          })),
-        ...deductions
-          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-          .map((c) => ({
-            kind: 'deduction',
-            name: String(c.name ?? ''),
-            amount: Number(c.amount) || 0,
-            percentOfBasic: null,
-            group: 'deduction',
-          })),
-      ];
-    }
-    return {
-      components,
-      fullBasicSalary: typeof raw.fullBasicSalary === 'number' ? raw.fullBasicSalary : null,
-      unpaidAbsentDays: typeof raw.unpaidAbsentDays === 'number' ? raw.unpaidAbsentDays : null,
-      paidLeaveDays: typeof raw.paidLeaveDays === 'number' ? raw.paidLeaveDays : null,
-      lwpAmount: typeof raw.lwpAmount === 'number' ? raw.lwpAmount : null,
-      adjustmentReason: typeof raw.adjustmentReason === 'string' ? raw.adjustmentReason : null,
-      attendanceNotMarked: raw.attendanceNotMarked === true,
-    };
-  }
-
   private csvEscape(value: string): string {
     if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
     return value;
@@ -1004,12 +1064,18 @@ export class PayrollService {
     userId: string;
     branchId: string;
     basicSalary: Prisma.Decimal;
+    staffGroup: string;
+    bankAccount: string | null;
+    eobi: Prisma.Decimal;
+    pessi: Prisma.Decimal;
+    extraLecRate: Prisma.Decimal;
+    ratePerClass: Prisma.Decimal;
     effectiveFrom: Date;
     effectiveTo: Date | null;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
-    user?: { id: string; fullName: string };
+    user?: { id: string; fullName: string; designation?: string | null };
     components: Array<{
       id: string;
       kind: string;
@@ -1023,6 +1089,12 @@ export class PayrollService {
       userId: structure.userId,
       branchId: structure.branchId,
       basicSalary: toNumber(structure.basicSalary),
+      staffGroup: asStaffGroup(structure.staffGroup),
+      bankAccount: structure.bankAccount,
+      eobi: toNumber(structure.eobi),
+      pessi: toNumber(structure.pessi),
+      extraLecRate: toNumber(structure.extraLecRate),
+      ratePerClass: toNumber(structure.ratePerClass),
       effectiveFrom: structure.effectiveFrom.toISOString().slice(0, 10),
       effectiveTo: structure.effectiveTo?.toISOString().slice(0, 10) ?? null,
       isActive: structure.isActive,
@@ -1061,7 +1133,7 @@ export class PayrollService {
       branchId: run.branchId,
       year: run.year,
       month: run.month,
-      status: run.status,
+      status: displayRunStatus(run),
       approvedById: run.approvedById,
       finalizedAt: run.finalizedAt?.toISOString() ?? null,
       paidAt: run.paidAt?.toISOString() ?? null,
@@ -1077,6 +1149,9 @@ export class PayrollService {
     id: string;
     runId: string;
     userId: string;
+    staffGroup: string;
+    designation: string | null;
+    accountNumber: string | null;
     basicSalary: Prisma.Decimal;
     allowancesTotal: Prisma.Decimal;
     deductionsTotal: Prisma.Decimal;
@@ -1085,23 +1160,91 @@ export class PayrollService {
     attendancePresentDays: number;
     attendanceAbsentDays: number;
     workingDays: number;
+    absents: number;
+    deductedDays: number;
+    extraLectures: number;
+    lectureCount: number;
+    ratePerClass: Prisma.Decimal;
+    extraLecRate: Prisma.Decimal;
+    extraLecAmount: Prisma.Decimal;
+    lecturesAmount: Prisma.Decimal;
+    otherAllowance: Prisma.Decimal;
+    absentFine: Prisma.Decimal;
+    advanceDeduction: Prisma.Decimal;
+    securityDeduct: Prisma.Decimal;
+    eobi: Prisma.Decimal;
+    pessi: Prisma.Decimal;
+    previousAdvance: Prisma.Decimal;
+    currentAdvance: Prisma.Decimal;
+    pendingAdvance: Prisma.Decimal;
+    securityPrevious: Prisma.Decimal;
+    securityTillDate: Prisma.Decimal;
+    remarks: string | null;
+    paymentDate: Date | null;
+    amountIssued: Prisma.Decimal;
+    paymentType: string | null;
     breakdown: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
-    user?: { id: string; fullName: string };
+    user?: { id: string; fullName: string; designation?: string | null };
   }) {
+    const computed = computeSalarySheetLine({
+      staffGroup: asStaffGroup(line.staffGroup),
+      basicSalary: toNumber(line.basicSalary),
+      absents: line.absents,
+      extraLectures: line.extraLectures,
+      extraLecRate: toNumber(line.extraLecRate),
+      lectureCount: line.lectureCount,
+      ratePerClass: toNumber(line.ratePerClass),
+      otherAllowance: toNumber(line.otherAllowance),
+      advanceDeduction: toNumber(line.advanceDeduction),
+      securityDeduct: toNumber(line.securityDeduct),
+      eobi: toNumber(line.eobi),
+      pessi: toNumber(line.pessi),
+      previousAdvance: toNumber(line.previousAdvance),
+      currentAdvance: toNumber(line.currentAdvance),
+      securityPrevious: toNumber(line.securityPrevious),
+    });
     return {
       id: line.id,
       runId: line.runId,
       userId: line.userId,
+      staffGroup: asStaffGroup(line.staffGroup),
+      designation: line.designation,
+      accountNumber: line.accountNumber,
       basicSalary: toNumber(line.basicSalary),
+      perDay: computed.perDay,
       allowancesTotal: toNumber(line.allowancesTotal),
       deductionsTotal: toNumber(line.deductionsTotal),
       adjustmentsTotal: toNumber(line.adjustmentsTotal),
       netPay: toNumber(line.netPay),
       attendancePresentDays: line.attendancePresentDays,
       attendanceAbsentDays: line.attendanceAbsentDays,
-      workingDays: line.workingDays,
+      workingDays: line.workingDays || PAYROLL_WORKING_DAYS,
+      absents: line.absents,
+      deductedDays: line.deductedDays,
+      extraLectures: line.extraLectures,
+      lectureCount: line.lectureCount,
+      ratePerClass: toNumber(line.ratePerClass),
+      extraLecRate: toNumber(line.extraLecRate),
+      extraLecAmount: toNumber(line.extraLecAmount),
+      lecturesAmount: toNumber(line.lecturesAmount),
+      otherAllowance: toNumber(line.otherAllowance),
+      entitlementsTotal: computed.entitlementsTotal,
+      absentFine: toNumber(line.absentFine),
+      advanceDeduction: toNumber(line.advanceDeduction),
+      securityDeduct: toNumber(line.securityDeduct),
+      eobi: toNumber(line.eobi),
+      pessi: toNumber(line.pessi),
+      previousAdvance: toNumber(line.previousAdvance),
+      currentAdvance: toNumber(line.currentAdvance),
+      pendingAdvance: toNumber(line.pendingAdvance),
+      securityPrevious: toNumber(line.securityPrevious),
+      securityTillDate: toNumber(line.securityTillDate),
+      remarks: line.remarks,
+      paymentDate: line.paymentDate ? line.paymentDate.toISOString().slice(0, 10) : null,
+      amountIssued: toNumber(line.amountIssued),
+      paymentType: line.paymentType,
       breakdown: line.breakdown,
       user: line.user ? { ...line.user, staffCode: formatStaffCode(line.user.id) } : undefined,
       createdAt: line.createdAt.toISOString(),
@@ -1109,40 +1252,93 @@ export class PayrollService {
     };
   }
 
-  private toRunDetail(run: {
-    id: string;
-    branchId: string;
-    year: number;
-    month: number;
-    status: string;
-    approvedById: string | null;
-    finalizedAt: Date | null;
-    paidAt?: Date | null;
-    paymentMethod?: string | null;
-    notes: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    lines: Array<{
+  private toRunDetail(
+    run: {
       id: string;
-      runId: string;
-      userId: string;
-      basicSalary: Prisma.Decimal;
-      allowancesTotal: Prisma.Decimal;
-      deductionsTotal: Prisma.Decimal;
-      adjustmentsTotal: Prisma.Decimal;
-      netPay: Prisma.Decimal;
-      attendancePresentDays: number;
-      attendanceAbsentDays: number;
-      workingDays: number;
-      breakdown: Prisma.JsonValue;
+      branchId: string;
+      year: number;
+      month: number;
+      status: string;
+      approvedById: string | null;
+      finalizedAt: Date | null;
+      paidAt?: Date | null;
+      paymentMethod?: string | null;
+      notes: string | null;
       createdAt: Date;
       updatedAt: Date;
-      user: { id: string; fullName: string };
-    }>;
-  }) {
+      lines: Array<{
+        id: string;
+        runId: string;
+        userId: string;
+        staffGroup: string;
+        designation: string | null;
+        accountNumber: string | null;
+        basicSalary: Prisma.Decimal;
+        allowancesTotal: Prisma.Decimal;
+        deductionsTotal: Prisma.Decimal;
+        adjustmentsTotal: Prisma.Decimal;
+        netPay: Prisma.Decimal;
+        attendancePresentDays: number;
+        attendanceAbsentDays: number;
+        workingDays: number;
+        absents: number;
+        deductedDays: number;
+        extraLectures: number;
+        lectureCount: number;
+        ratePerClass: Prisma.Decimal;
+        extraLecRate: Prisma.Decimal;
+        extraLecAmount: Prisma.Decimal;
+        lecturesAmount: Prisma.Decimal;
+        otherAllowance: Prisma.Decimal;
+        absentFine: Prisma.Decimal;
+        advanceDeduction: Prisma.Decimal;
+        securityDeduct: Prisma.Decimal;
+        eobi: Prisma.Decimal;
+        pessi: Prisma.Decimal;
+        previousAdvance: Prisma.Decimal;
+        currentAdvance: Prisma.Decimal;
+        pendingAdvance: Prisma.Decimal;
+        securityPrevious: Prisma.Decimal;
+        securityTillDate: Prisma.Decimal;
+        remarks: string | null;
+        paymentDate: Date | null;
+        amountIssued: Prisma.Decimal;
+        paymentType: string | null;
+        breakdown: Prisma.JsonValue;
+        createdAt: Date;
+        updatedAt: Date;
+        user: { id: string; fullName: string; designation?: string | null };
+      }>;
+    },
+    branch?: { id: string; name: string } | null,
+  ) {
+    const lines = run.lines.map((line) => this.toLineResponse(line));
+    const groupTotals = (group: StaffGroup) => {
+      const groupLines = lines.filter((line) => line.staffGroup === group);
+      return {
+        count: groupLines.length,
+        basicSalary: groupLines.reduce((sum, line) => sum + line.basicSalary, 0),
+        entitlementsTotal: groupLines.reduce((sum, line) => sum + line.entitlementsTotal, 0),
+        deductionsTotal: groupLines.reduce((sum, line) => sum + line.deductionsTotal, 0),
+        netPay: groupLines.reduce((sum, line) => sum + line.netPay, 0),
+      };
+    };
     return {
-      ...this.toRunSummary(run),
-      lines: run.lines.map((line) => this.toLineResponse(line)),
+      ...this.toRunSummary({ ...run, _count: { lines: lines.length } }),
+      branch: branch ?? null,
+      lines,
+      totals: {
+        permanent: groupTotals('permanent'),
+        admin: groupTotals('admin'),
+        visiting: groupTotals('visiting'),
+        grand: {
+          count: lines.length,
+          basicSalary: lines.reduce((sum, line) => sum + line.basicSalary, 0),
+          entitlementsTotal: lines.reduce((sum, line) => sum + line.entitlementsTotal, 0),
+          deductionsTotal: lines.reduce((sum, line) => sum + line.deductionsTotal, 0),
+          netPay: lines.reduce((sum, line) => sum + line.netPay, 0),
+        },
+      },
     };
   }
 }

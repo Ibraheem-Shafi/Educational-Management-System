@@ -712,7 +712,7 @@ export function RunsPanel({
         branchId={branchId}
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(id) => setSelectedRunId(id)}
+        onCreated={(run) => setSelectedRunId(run.id)}
       />
     </div>
   );
