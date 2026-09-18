@@ -90,6 +90,11 @@ export const bulkFeeInvoicePrintQuerySchema = z.object({
 });
 export type BulkFeeInvoicePrintQuery = z.infer<typeof bulkFeeInvoicePrintQuerySchema>;
 
+export const bulkFeeInvoicePrintBodySchema = z.object({
+  ids: z.array(requiredId('Invoice')).min(1).max(800),
+});
+export type BulkFeeInvoicePrintBody = z.infer<typeof bulkFeeInvoicePrintBodySchema>;
+
 export const listFeeInvoicesQuerySchema = z
   .object({
     branchId: z.string().optional(),

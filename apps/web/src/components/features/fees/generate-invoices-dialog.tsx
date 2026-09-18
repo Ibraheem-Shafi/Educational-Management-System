@@ -29,6 +29,7 @@ import {
 import { statusRowClass } from '@/components/layout/status-badge';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+import { openBulkInvoicePrint } from '@/lib/bulk-invoice-print';
 
 type FeeType = { id: string; name: string; code?: string };
 
@@ -88,10 +89,12 @@ export function GenerateInvoicesDialog({
   open,
   onOpenChange,
   branchId,
+  onGenerated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   branchId: string;
+  onGenerated?: (result: { created: number; invoiceIds: string[] }) => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -106,6 +109,9 @@ export function GenerateInvoicesDialog({
   const [billingPeriod, setBillingPeriod] = useState(currentYearMonth());
   const [rows, setRows] = useState<RowState[]>([]);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [generated, setGenerated] = useState<{ created: number; invoiceIds: string[] } | null>(
+    null,
+  );
 
   const effectiveBranchId = branchId || pickedBranchId;
   const effectiveBatchId = scopeMode === 'batch' ? batchId : '';
@@ -164,6 +170,7 @@ export function GenerateInvoicesDialog({
       setBillingPeriod(currentYearMonth());
       setRows([]);
       setPreviewError(null);
+      setGenerated(null);
     }
   }, [open]);
 
@@ -241,7 +248,7 @@ export function GenerateInvoicesDialog({
       if (lines.length === 0) {
         throw new Error('Select at least one student');
       }
-      return apiClient<{ created: number }>('/fee-structures/generate-invoices', {
+      return apiClient<{ created: number; invoiceIds: string[] }>('/fee-structures/generate-invoices', {
         method: 'POST',
         token,
         body: JSON.stringify({
@@ -257,6 +264,9 @@ export function GenerateInvoicesDialog({
     onSuccess: (result) => {
       toast.success(`Created ${result.created} invoice${result.created === 1 ? '' : 's'}`);
       queryClient.invalidateQueries({ queryKey: ['fee-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-by-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-student'] });
+      queryClient.invalidateQueries({ queryKey: ['fee-invoices-completed'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.feesStats });
       queryClient.invalidateQueries({ queryKey: ['fee-defaulters'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.reportsFeeDefaulters() });
@@ -267,7 +277,14 @@ export function GenerateInvoicesDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.portalParentFees() });
       queryClient.invalidateQueries({ queryKey: queryKeys.portalStudentStats });
       queryClient.invalidateQueries({ queryKey: queryKeys.portalParentStats });
-      onOpenChange(false);
+      setGenerated({
+        created: result.created,
+        invoiceIds: result.invoiceIds ?? [],
+      });
+      onGenerated?.({
+        created: result.created,
+        invoiceIds: result.invoiceIds ?? [],
+      });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -324,9 +341,11 @@ export function GenerateInvoicesDialog({
             <Receipt className="h-6 w-6 text-[#57646F]" strokeWidth={1.5} />
           </div>
           <div className="min-w-0 flex-1">
-            <DialogTitle>Generate invoices</DialogTitle>
+            <DialogTitle>{generated ? 'Invoices generated' : 'Generate invoices'}</DialogTitle>
             <DialogDescription className="mt-1">
-              One invoice per student per month, with the selected fee types as line items
+              {generated
+                ? 'Print them now, or close and find them at the top of the invoices table.'
+                : 'One invoice per student per month, with the selected fee types as line items'}
             </DialogDescription>
           </div>
           <button
@@ -339,7 +358,39 @@ export function GenerateInvoicesDialog({
           </button>
         </div>
 
-        <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleGenerate}>
+        {generated ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 px-5 py-6">
+              <p className="text-sm text-[var(--text-main-900)]">
+                Created {generated.created} invoice{generated.created === 1 ? '' : 's'}.
+              </p>
+              <p className="mt-2 text-sm text-[var(--text-sub-500)]">
+                They are selected on the invoices table. Print opens bank vouchers in a new tab.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-stroke-soft-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="rounded-lg border border-stroke-soft-200 px-4 py-2 text-sm"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={generated.invoiceIds.length === 0}
+                onClick={() => openBulkInvoicePrint(generated.invoiceIds)}
+                className={cn(
+                  'rounded-lg bg-[var(--midnight-blue-950,#01366C)] px-4 py-2 text-sm font-medium text-white',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                )}
+              >
+                Print {generated.created} invoice{generated.created === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleGenerate}>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
             {!branchId && (
               <BranchSelectField
@@ -622,6 +673,7 @@ export function GenerateInvoicesDialog({
             </button>
           </div>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );
