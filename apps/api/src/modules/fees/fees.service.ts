@@ -1268,6 +1268,70 @@ export class FeesService {
     });
   }
 
+  private async allocateMonthlyVoucherNos(opts: {
+    branchId: string;
+    billingPeriod: string | null;
+    branchCode: string;
+    students: Array<{ id: string; admissionNumber: string | null; rollNumber: string | null }>;
+  }): Promise<Map<string, string | null>> {
+    const result = new Map<string, string | null>();
+    if (!opts.billingPeriod || opts.students.length === 0) {
+      for (const student of opts.students) result.set(student.id, null);
+      return result;
+    }
+
+    const studentIds = opts.students.map((student) => student.id);
+    const [invoices, challans] = await Promise.all([
+      this.prisma.feeInvoice.findMany({
+        where: {
+          branchId: opts.branchId,
+          studentId: { in: studentIds },
+          billingPeriod: opts.billingPeriod,
+          voucherNo: { not: null },
+        },
+        select: { studentId: true, voucherNo: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.feeChallan.findMany({
+        where: {
+          branchId: opts.branchId,
+          studentId: { in: studentIds },
+          billingPeriod: opts.billingPeriod,
+          challanNo: { not: null },
+        },
+        select: { studentId: true, challanNo: true },
+      }),
+    ]);
+
+    const voucherFromInvoice = new Map<string, string>();
+    for (const row of invoices) {
+      if (row.voucherNo && !voucherFromInvoice.has(row.studentId)) {
+        voucherFromInvoice.set(row.studentId, row.voucherNo);
+      }
+    }
+    const challanByStudent = new Map(
+      challans
+        .filter((row) => Boolean(row.challanNo))
+        .map((row) => [row.studentId, row.challanNo as string]),
+    );
+
+    for (const student of opts.students) {
+      result.set(
+        student.id,
+        voucherFromInvoice.get(student.id) ??
+          challanByStudent.get(student.id) ??
+          formatMonthlyVoucherNo({
+            branchCode: opts.branchCode,
+            admissionNumber: student.admissionNumber,
+            rollNumber: student.rollNumber,
+            studentId: student.id,
+            billingPeriod: opts.billingPeriod,
+          }),
+      );
+    }
+    return result;
+  }
+
   private async resolveGenerateAmount(opts: {
     student: {
       id: string;
@@ -2221,89 +2285,154 @@ export class FeesService {
     const code = (branch?.code ?? 'BR').toUpperCase().slice(0, 8);
     const lineAmountByStudent = new Map(selectedLines.map((line) => [line.studentId, line.amount]));
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      let existingCount = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
-      let createdCount = 0;
+    type BulkParticular = {
+      feeTypeId: string;
+      label: string;
+      amount: number;
+      waived: boolean;
+      reason?: string;
+      dueDate: Date;
+    };
+    type BulkDraft = {
+      studentId: string;
+      particulars: BulkParticular[];
+      amount: number;
+      discount: number;
+      netAmount: number;
+      statusId: string;
+      remarks: string | null;
+      dueDate: Date;
+    };
 
-      for (const selected of selectedLines) {
-        const student = studentById.get(selected.studentId)!;
-        const particulars: Array<{
-          feeTypeId: string;
-          label: string;
-          amount: number;
-          waived: boolean;
-          reason?: string;
-          dueDate: Date;
-        }> = [];
+    const drafts: BulkDraft[] = [];
+    for (const selected of selectedLines) {
+      const student = studentById.get(selected.studentId)!;
+      const particulars: BulkParticular[] = [];
 
-        for (const feeType of orderedTypes) {
-          const structures = structuresByType.get(feeType.id) ?? [];
-          const structure = this.matchFeeStructureForStudent(structures, {
-            batchId: student.batchId,
-            programId: student.programId,
-          });
-          const listed = structure ? this.roundMoney(Number(structure.amount)) : null;
-          const override = lineAmountByStudent.get(student.id);
-          const requested =
-            orderedTypes.length === 1 && override != null && override > 0
-              ? this.roundMoney(override)
-              : listed;
-          if (requested == null || requested <= 0) continue;
-          const charge = await this.resolveGenerateAmount({
-            student,
-            feeType,
-            requestedAmount: requested,
-            billingPeriod,
-          });
-          if (charge.skip) continue;
+      for (const feeType of orderedTypes) {
+        const structures = structuresByType.get(feeType.id) ?? [];
+        const structure = this.matchFeeStructureForStudent(structures, {
+          batchId: student.batchId,
+          programId: student.programId,
+        });
+        const listed = structure ? this.roundMoney(Number(structure.amount)) : null;
+        const override = lineAmountByStudent.get(student.id);
+        const requested =
+          orderedTypes.length === 1 && override != null && override > 0
+            ? this.roundMoney(override)
+            : listed != null && listed > 0
+              ? listed
+              : null;
+        if (requested == null || requested <= 0) continue;
+        const charge = await this.resolveGenerateAmount({
+          student,
+          feeType,
+          requestedAmount: requested,
+          billingPeriod,
+        });
+        if (charge.skip) continue;
+        particulars.push({
+          feeTypeId: feeType.id,
+          label: feeType.name,
+          amount: charge.amount,
+          waived: charge.waived,
+          reason: charge.reason,
+          dueDate: structure?.dueDayOfMonth
+            ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
+            : dueDate,
+        });
+      }
+
+      const override = lineAmountByStudent.get(student.id);
+      if (particulars.length === 0 && override != null && override > 0) {
+        const feeType = orderedTypes[0]!;
+        const charge = await this.resolveGenerateAmount({
+          student,
+          feeType,
+          requestedAmount: this.roundMoney(override),
+          billingPeriod,
+        });
+        if (!charge.skip) {
           particulars.push({
             feeTypeId: feeType.id,
             label: feeType.name,
             amount: charge.amount,
             waived: charge.waived,
             reason: charge.reason,
-            dueDate: structure?.dueDayOfMonth
-              ? new Date(dueDate.getFullYear(), dueDate.getMonth(), structure.dueDayOfMonth)
-              : dueDate,
+            dueDate,
           });
         }
+      }
 
-        if (particulars.length === 0) continue;
+      if (particulars.length === 0) continue;
 
-        const amount = this.roundMoney(particulars.reduce((sum, line) => sum + line.amount, 0));
-        const monthlyType = orderedTypes.find((type) => type.code === 'monthly');
-        const monthlyLine = particulars.find((line) => line.feeTypeId === monthlyType?.id);
-        const siblingDiscount = particulars.some((line) => line.waived)
-          ? 0
-          : siblingInfo.eligibleIds.has(student.id)
-            ? Math.round((amount * siblingInfo.percent) / 100)
-            : 0;
-        const monthlyRecurring = this.monthlyFeeDiscountForType(
-          monthlyType?.code,
-          Number(student.monthlyFeeDiscount),
-          monthlyLine?.amount ?? amount,
-        );
-        const { discount, remarks } = this.composeInvoiceDiscount({
-          amount,
-          siblingDiscount,
-          monthlyRecurring,
-        });
-        const waivedAll = particulars.every((line) => line.waived);
-        const effectiveDiscount = waivedAll ? amount : discount;
-        const netAmount = this.roundMoney(amount - effectiveDiscount);
-        const statusId =
-          waivedAll && waivedStatus ? waivedStatus.id : pendingStatus.id;
-        const remarkText = [
-          remarks,
-          ...particulars.map((line) => line.reason).filter(Boolean),
-        ]
-          .filter(Boolean)
-          .join(' · ');
+      const amount = this.roundMoney(particulars.reduce((sum, line) => sum + line.amount, 0));
+      const monthlyType = orderedTypes.find((type) => type.code === 'monthly');
+      const monthlyLine = particulars.find((line) => line.feeTypeId === monthlyType?.id);
+      const siblingDiscount = particulars.some((line) => line.waived)
+        ? 0
+        : siblingInfo.eligibleIds.has(student.id)
+          ? Math.round((amount * siblingInfo.percent) / 100)
+          : 0;
+      const monthlyRecurring = this.monthlyFeeDiscountForType(
+        monthlyType?.code,
+        Number(student.monthlyFeeDiscount),
+        monthlyLine?.amount ?? amount,
+      );
+      const { discount, remarks } = this.composeInvoiceDiscount({
+        amount,
+        siblingDiscount,
+        monthlyRecurring,
+      });
+      const waivedAll = particulars.every((line) => line.waived);
+      const effectiveDiscount = waivedAll ? amount : discount;
+      const netAmount = this.roundMoney(amount - effectiveDiscount);
+      const statusId = waivedAll && waivedStatus ? waivedStatus.id : pendingStatus.id;
+      const remarkText = [
+        remarks,
+        ...particulars.map((line) => line.reason).filter(Boolean),
+      ]
+        .filter(Boolean)
+        .join(' · ');
 
-        const existing = await tx.feeInvoice.findFirst({
+      drafts.push({
+        studentId: student.id,
+        particulars,
+        amount,
+        discount: effectiveDiscount,
+        netAmount,
+        statusId,
+        remarks: remarkText || null,
+        dueDate: particulars[0]!.dueDate,
+      });
+    }
+
+    if (drafts.length === 0) {
+      throw new BadRequestException(
+        'No invoices to create after applying fee policy (waived, deferred, or already billed)',
+      );
+    }
+
+    const voucherByStudent = await this.allocateMonthlyVoucherNos({
+      branchId: input.branchId,
+      billingPeriod,
+      branchCode: code,
+      students: drafts.map((draft) => {
+        const student = studentById.get(draft.studentId)!;
+        return {
+          id: student.id,
+          admissionNumber: student.admissionNumber,
+          rollNumber: student.rollNumber,
+        };
+      }),
+    });
+
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        const existingRows = await tx.feeInvoice.findMany({
           where: {
             branchId: input.branchId,
-            studentId: student.id,
+            studentId: { in: drafts.map((draft) => draft.studentId) },
             billingPeriod,
             paidAt: null,
           },
@@ -2312,88 +2441,118 @@ export class FeesService {
             lines: true,
           },
         });
-        const paidTotal = existing
-          ? this.roundMoney(
-              (existing.payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0),
-            )
-          : 0;
+        const existingByStudent = new Map(existingRows.map((row) => [row.studentId, row]));
+        let invoiceSeq = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
 
-        if (existing && paidTotal > 0) continue;
+        const toCreate: BulkDraft[] = [];
+        let touched = 0;
 
-        if (existing && paidTotal === 0) {
-          const byType = new Map(existing.lines.map((line) => [line.feeTypeId, line]));
-          for (const [index, line] of particulars.entries()) {
-            const current = byType.get(line.feeTypeId);
-            if (current) {
-              await tx.feeInvoiceLine.update({
-                where: { id: current.id },
-                data: { amount: line.amount, label: line.label },
-              });
-            } else {
-              await tx.feeInvoiceLine.create({
-                data: {
+        for (const draft of drafts) {
+          const existing = existingByStudent.get(draft.studentId);
+          const paidTotal = existing
+            ? this.roundMoney(
+                (existing.payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0),
+              )
+            : 0;
+
+          if (existing && paidTotal > 0) continue;
+
+          if (existing && paidTotal === 0) {
+            const byType = new Map(existing.lines.map((line) => [line.feeTypeId, line]));
+            const lineCreates: Array<{
+              invoiceId: string;
+              feeTypeId: string;
+              label: string;
+              amount: number;
+              sortOrder: number;
+            }> = [];
+            for (const [index, line] of draft.particulars.entries()) {
+              const current = byType.get(line.feeTypeId);
+              if (current) {
+                await tx.feeInvoiceLine.update({
+                  where: { id: current.id },
+                  data: { amount: line.amount, label: line.label },
+                });
+              } else {
+                lineCreates.push({
                   invoiceId: existing.id,
                   feeTypeId: line.feeTypeId,
                   label: line.label,
                   amount: line.amount,
                   sortOrder: existing.lines.length + index,
-                },
-              });
+                });
+              }
             }
+            if (lineCreates.length > 0) {
+              await tx.feeInvoiceLine.createMany({ data: lineCreates });
+            }
+            const nextLines = await tx.feeInvoiceLine.findMany({ where: { invoiceId: existing.id } });
+            const nextAmount = this.roundMoney(
+              nextLines.reduce((sum, line) => sum + Number(line.amount), 0),
+            );
+            const nextNet = this.roundMoney(
+              nextAmount - Number(existing.discount) + Number(existing.fine),
+            );
+            await tx.feeInvoice.update({
+              where: { id: existing.id },
+              data: {
+                amount: nextAmount,
+                netAmount: nextNet,
+                feeTypeId: nextLines[0]?.feeTypeId ?? existing.feeTypeId,
+              },
+            });
+            touched += 1;
+            continue;
           }
-          const nextLines = await tx.feeInvoiceLine.findMany({ where: { invoiceId: existing.id } });
-          const nextAmount = this.roundMoney(
-            nextLines.reduce((sum, line) => sum + Number(line.amount), 0),
-          );
-          const nextNet = this.roundMoney(nextAmount - Number(existing.discount) + Number(existing.fine));
-          await tx.feeInvoice.update({
-            where: { id: existing.id },
-            data: {
-              amount: nextAmount,
-              netAmount: nextNet,
-              feeTypeId: nextLines[0]?.feeTypeId ?? existing.feeTypeId,
-            },
-          });
-          createdCount += 1;
-          continue;
+
+          toCreate.push(draft);
         }
 
-        existingCount += 1;
-        await tx.feeInvoice.create({
-          data: {
-            branchId: input.branchId,
-            studentId: student.id,
-            feeTypeId: particulars[0]!.feeTypeId,
-            invoiceNo: `INV-${code}-${year}-${String(existingCount).padStart(5, '0')}`,
-            billingPeriod,
-            voucherNo: await this.allocateMonthlyVoucherNo({
-              branchId: input.branchId,
-              studentId: student.id,
-              billingPeriod,
+        if (toCreate.length > 0) {
+          const createdRows = await tx.feeInvoice.createManyAndReturn({
+            data: toCreate.map((draft) => {
+              invoiceSeq += 1;
+              return {
+                branchId: input.branchId,
+                studentId: draft.studentId,
+                feeTypeId: draft.particulars[0]!.feeTypeId,
+                invoiceNo: `INV-${code}-${year}-${String(invoiceSeq).padStart(5, '0')}`,
+                billingPeriod,
+                voucherNo: voucherByStudent.get(draft.studentId) ?? null,
+                amount: draft.amount,
+                discount: draft.discount,
+                fine: 0,
+                netAmount: draft.netAmount,
+                dueDate: draft.dueDate,
+                statusId: draft.statusId,
+                remarks: draft.remarks,
+                createdById: user.id,
+              };
             }),
-            amount,
-            discount: effectiveDiscount,
-            fine: 0,
-            netAmount,
-            dueDate: particulars[0]!.dueDate,
-            statusId,
-            remarks: remarkText || null,
-            createdById: user.id,
-            lines: {
-              create: particulars.map((line, index) => ({
-                feeTypeId: line.feeTypeId,
-                label: line.label,
-                amount: line.amount,
-                sortOrder: index,
-              })),
-            },
-          },
-        });
-        createdCount += 1;
-      }
+            select: { id: true, studentId: true },
+          });
+          const createdByStudent = new Map(createdRows.map((row) => [row.studentId, row.id]));
+          const lineRows = toCreate.flatMap((draft) => {
+            const invoiceId = createdByStudent.get(draft.studentId);
+            if (!invoiceId) return [];
+            return draft.particulars.map((line, index) => ({
+              invoiceId,
+              feeTypeId: line.feeTypeId,
+              label: line.label,
+              amount: line.amount,
+              sortOrder: index,
+            }));
+          });
+          if (lineRows.length > 0) {
+            await tx.feeInvoiceLine.createMany({ data: lineRows });
+          }
+          touched += createdRows.length;
+        }
 
-      return createdCount;
-    });
+        return touched;
+      },
+      { timeout: 120_000, maxWait: 20_000 },
+    );
 
     if (created === 0) {
       throw new BadRequestException(

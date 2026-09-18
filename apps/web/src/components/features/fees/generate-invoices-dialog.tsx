@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { useBatches } from '@/hooks/use-batches';
 import { BranchSelectField } from '@/components/forms/branch-select-field';
 import { FormFieldLabel, modalFieldClassName } from '@/components/features/users/invite-form-fields';
+import { SearchableTagSelect } from '@/components/forms/searchable-tag-select';
 import { SelectDropdown } from '@/components/layout/select-dropdown';
 import { DateField } from '@/components/ui/date-field';
 import { currentYearMonth } from '@/lib/date-utils';
@@ -167,11 +168,6 @@ export function GenerateInvoicesDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!open || feeTypesList.length === 0 || selectedTypeIds.length > 0) return;
-    setSelectedTypeIds(feeTypesList.map((type) => type.id));
-  }, [open, feeTypesList, selectedTypeIds.length]);
-
-  useEffect(() => {
     setBatchId('');
     setRows([]);
   }, [effectiveBranchId]);
@@ -200,7 +196,7 @@ export function GenerateInvoicesDialog({
           programName: student.programName ?? null,
           batchName: student.batchName ?? null,
           hasStructure: suggested !== null && suggested > 0,
-          include: suggested !== null && suggested > 0,
+          include: false,
           amount: suggested !== null && suggested > 0 ? String(suggested) : '',
           policyNote: (preview.feeTypes ?? [preview.feeType])
             .map((type) => policyNoteForStudent(student, type.code))
@@ -286,21 +282,13 @@ export function GenerateInvoicesDialog({
       prev.map((row) => ({
         ...row,
         amount: String(amount),
-        include: true,
         hasStructure: true,
       })),
     );
   }
 
   function toggleAll(include: boolean) {
-    setRows((prev) =>
-      prev.map((row) => {
-        if (include && (!row.hasStructure || !(Number(row.amount) > 0))) {
-          return { ...row, include: false };
-        }
-        return { ...row, include };
-      }),
-    );
+    setRows((prev) => prev.map((row) => ({ ...row, include })));
   }
 
   function handleGenerate(e: React.FormEvent) {
@@ -327,10 +315,6 @@ export function GenerateInvoicesDialog({
     }
     generateMutation.mutate();
   }
-
-  const selectableRows = rows.filter((row) => row.hasStructure && Number(row.amount) > 0);
-  const allSelected =
-    selectableRows.length > 0 && selectableRows.every((row) => row.include);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -403,29 +387,20 @@ export function GenerateInvoicesDialog({
               )}
               <div className={scopeMode === 'branch' ? 'sm:col-span-2' : undefined}>
                 <FormFieldLabel required>Fee types</FormFieldLabel>
-                <div className="flex flex-wrap gap-2 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] p-3">
-                  {feeTypesList.map((type) => {
-                    const checked = selectedTypeIds.includes(type.id);
-                    return (
-                      <label
-                        key={type.id}
-                        className="inline-flex items-center gap-1.5 text-sm text-[var(--text-main-900)]"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setSelectedTypeIds((prev) =>
-                              checked ? prev.filter((id) => id !== type.id) : [...prev, type.id],
-                            );
-                            setRows([]);
-                          }}
-                        />
-                        {type.name}
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableTagSelect
+                  options={feeTypesList.map((type) => ({
+                    id: type.id,
+                    label: type.name,
+                    hint: type.code ?? null,
+                  }))}
+                  selectedIds={selectedTypeIds}
+                  onChange={(ids) => {
+                    setSelectedTypeIds(ids);
+                    setRows([]);
+                  }}
+                  placeholder="Search fee types"
+                  emptyText={hasNoFeeTypes ? 'No fee types yet' : 'No matching fee types'}
+                />
                 {hasNoFeeTypes && (
                   <p className="mt-1.5 text-xs text-[var(--base-muted-foreground,#71717A)]">
                     No fee types yet. Add types like Exam or Digitization on the Fee types tab first.
@@ -435,44 +410,32 @@ export function GenerateInvoicesDialog({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              {selectedTypeIds.length <= 1 ? (
-                <div>
-                  <FormFieldLabel htmlFor="bulk-default-amount">
-                    Override amount
-                  </FormFieldLabel>
-                  <div className="flex gap-2">
-                    <input
-                      id="bulk-default-amount"
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={defaultAmount}
-                      onChange={(e) => setDefaultAmount(e.target.value)}
-                      className={cn(modalFieldClassName, 'flex-1')}
-                    />
-                    <button
-                      type="button"
-                      onClick={applyDefaultToAll}
-                      disabled={rows.length === 0}
-                      className="shrink-0 rounded-lg border border-stroke-soft-200 px-3 py-2 text-sm disabled:opacity-50"
-                    >
-                      Apply to all
-                    </button>
-                  </div>
-                  <p className="mt-1 text-xs text-[var(--text-sub-500)]">
-                    Rows are prefilled from each student’s fee structure (batch → program → branch).
-                    Apply override only if you need the same amount for everyone. Sibling discounts still apply on create.
-                  </p>
+              <div>
+                <FormFieldLabel htmlFor="bulk-default-amount">Amount</FormFieldLabel>
+                <div className="flex gap-2">
+                  <input
+                    id="bulk-default-amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={defaultAmount}
+                    onChange={(e) => setDefaultAmount(e.target.value)}
+                    className={cn(modalFieldClassName, 'flex-1')}
+                  />
+                  <button
+                    type="button"
+                    onClick={applyDefaultToAll}
+                    disabled={rows.length === 0}
+                    className="shrink-0 rounded-lg border border-stroke-soft-200 px-3 py-2 text-sm disabled:opacity-50"
+                  >
+                    Apply to all
+                  </button>
                 </div>
-              ) : (
-                <div>
-                  <FormFieldLabel>Particulars</FormFieldLabel>
-                  <p className="mt-1 text-xs text-[var(--text-sub-500)]">
-                    Each selected fee type becomes a line on one invoice per student. Amounts come from
-                    fee structures.
-                  </p>
-                </div>
-              )}
+                <p className="mt-1 text-xs text-[var(--text-sub-500)]">
+                  Prefills from fee structures when they exist. Enter an amount here if a type has no
+                  structure, then apply and add students.
+                </p>
+              </div>
               <div>
                 <FormFieldLabel htmlFor="bulk-billing-period" required>
                   Billing month
@@ -502,59 +465,75 @@ export function GenerateInvoicesDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-[var(--text-main-900)]">Students</p>
-                {selectableRows.length > 0 && (
+                {selectedRows.length > 0 && (
                   <button
                     type="button"
                     className="text-xs text-[var(--text-sub-500)] underline"
-                    onClick={() => toggleAll(!allSelected)}
+                    onClick={() => toggleAll(false)}
                   >
-                    {allSelected ? 'Unselect all' : 'Select all'}
+                    Clear selected
                   </button>
                 )}
               </div>
 
               {missingStructureCount > 0 && (
-                <p className="text-xs text-amber-700">
-                  {missingStructureCount} student{missingStructureCount === 1 ? '' : 's'} have no matching
-                  fee structure and are excluded until you set an amount.
+                <p className="text-xs text-[var(--text-sub-500)]">
+                  {missingStructureCount} student{missingStructureCount === 1 ? '' : 's'} have no fee
+                  structure for the selected types. You can still add them and type an amount.
                 </p>
               )}
 
-              <div className={dataTableWrapperClass}>
-                <table className={cn(dataTableClass, 'min-w-[640px]')}>
-                  <thead>
-                    <tr>
-                      <th className={cn(dataTableThClass, 'w-12')}>Incl.</th>
-                      <th className={dataTableThClass}>Student</th>
-                      <th className={dataTableThClass}>Program / batch</th>
-                      <th className={cn(dataTableThClass, 'w-40')}>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewLoading && (
+              <SearchableTagSelect
+                options={rows.map((row) => ({
+                  id: row.studentId,
+                  label: row.fullName,
+                  hint: [row.programName, row.batchName, row.policyNote].filter(Boolean).join(' · ') || null,
+                }))}
+                selectedIds={selectedRows.map((row) => row.studentId)}
+                onChange={(ids) => {
+                  const next = new Set(ids);
+                  setRows((prev) =>
+                    prev.map((row) => ({
+                      ...row,
+                      include: next.has(row.studentId),
+                    })),
+                  );
+                }}
+                placeholder={
+                  previewEnabled ? 'Search students and add them' : 'Select a fee type first'
+                }
+                emptyText={
+                  !previewEnabled
+                    ? scopeMode === 'batch'
+                      ? 'Select a batch and fee type first'
+                      : 'Select a fee type first'
+                    : previewLoading
+                      ? 'Loading students…'
+                      : 'No matching students'
+                }
+                disabled={!previewEnabled || previewLoading}
+                selectAllLabel={
+                  rows.length > 0 ? `Add all students (${rows.length})` : undefined
+                }
+                onSelectAll={rows.length > 0 ? () => toggleAll(true) : undefined}
+              />
+
+              {previewError && (
+                <p className="text-sm text-red-600">{previewError}</p>
+              )}
+
+              {selectedRows.length > 0 && (
+                <div className={dataTableWrapperClass}>
+                  <table className={cn(dataTableClass, 'min-w-[640px]')}>
+                    <thead>
                       <tr>
-                        <td colSpan={4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
-                          Loading students…
-                        </td>
+                        <th className={dataTableThClass}>Student</th>
+                        <th className={dataTableThClass}>Program / batch</th>
+                        <th className={cn(dataTableThClass, 'w-40')}>Amount</th>
                       </tr>
-                    )}
-                    {!previewLoading && previewError && (
-                      <tr>
-                        <td colSpan={4} className={`${dataTableTdClass} text-center text-red-600`}>
-                          {previewError}
-                        </td>
-                      </tr>
-                    )}
-                    {!previewLoading && !previewError && previewEnabled && rows.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
-                          {scopeMode === 'batch' ? 'No students in this batch' : 'No students in this branch'}
-                        </td>
-                      </tr>
-                    )}
-                    {!previewLoading &&
-                      !previewError &&
-                      rows.map((row) => (
+                    </thead>
+                    <tbody>
+                      {selectedRows.map((row) => (
                         <tr
                           key={row.studentId}
                           className={statusRowClass(
@@ -562,23 +541,6 @@ export function GenerateInvoicesDialog({
                             row.hasStructure ? 'Active' : 'Pending',
                           )}
                         >
-                          <td className={dataTableTdClass}>
-                            <input
-                              type="checkbox"
-                              checked={row.include}
-                              disabled={!row.hasStructure && !(Number(row.amount) > 0)}
-                              aria-label={`Include ${row.fullName}`}
-                              onChange={(e) =>
-                                setRows((prev) =>
-                                  prev.map((r) =>
-                                    r.studentId === row.studentId
-                                      ? { ...r, include: e.target.checked }
-                                      : r,
-                                  ),
-                                )
-                              }
-                            />
-                          </td>
                           <td className={dataTableTdClass}>
                             <div>{row.fullName}</div>
                             {row.policyNote ? (
@@ -599,7 +561,6 @@ export function GenerateInvoicesDialog({
                               min="0.01"
                               step="0.01"
                               value={row.amount}
-                              disabled={!row.include && row.hasStructure}
                               onChange={(e) => {
                                 const next = e.target.value;
                                 setRows((prev) =>
@@ -609,29 +570,20 @@ export function GenerateInvoicesDialog({
                                           ...r,
                                           amount: next,
                                           hasStructure: Number(next) > 0 || r.hasStructure,
-                                          include: Number(next) > 0 ? r.include || !r.hasStructure : r.include,
                                         }
                                       : r,
                                   ),
                                 );
                               }}
-                              className={cn(modalFieldClassName, 'w-full', !row.include && 'opacity-50')}
+                              className={cn(modalFieldClassName, 'w-full')}
                             />
                           </td>
                         </tr>
                       ))}
-                    {!previewEnabled && (
-                      <tr>
-                        <td colSpan={4} className={`${dataTableTdClass} text-center text-[var(--text-sub-500)]`}>
-                          {scopeMode === 'batch'
-                            ? 'Select a batch and fee type to load students'
-                            : 'Select a fee type to load students'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {rows.length > 0 && (
                 <p className="text-sm text-[var(--text-sub-500)]">
