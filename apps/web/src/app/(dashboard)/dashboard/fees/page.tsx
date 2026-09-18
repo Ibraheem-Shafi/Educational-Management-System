@@ -65,6 +65,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { UserAvatar } from '@/components/layout/user-avatar';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { openBulkInvoicePrint } from '@/lib/bulk-invoice-print';
 
 const filterDateClassName =
   'h-10 rounded-md border border-[var(--stroke-soft-200,#E2E4E9)] bg-white px-3 text-sm text-[var(--text-main-900,#0A0D14)]';
@@ -787,6 +788,12 @@ export default function FeesPage() {
         open={generateOpen}
         onOpenChange={setGenerateOpen}
         branchId={singleBranchId ?? ''}
+        onGenerated={({ invoiceIds }) => {
+          setTab('invoices');
+          setInvoicePage(1);
+          setExpandedStudentIds(new Set());
+          setSelectedInvoiceIds(new Set(invoiceIds));
+        }}
       />
 
       <FeeIncrementDialog
@@ -1009,12 +1016,7 @@ export default function FeesPage() {
               type="button"
               variant="ghost"
               disabled={selectedInvoiceIds.size === 0}
-              onClick={() => {
-                window.open(
-                  `/print/fee-invoices/bulk?ids=${[...selectedInvoiceIds].join(',')}`,
-                  '_blank',
-                );
-              }}
+              onClick={() => openBulkInvoicePrint([...selectedInvoiceIds])}
             >
               Print selected{selectedInvoiceIds.size ? ` (${selectedInvoiceIds.size})` : ''}
             </Button>

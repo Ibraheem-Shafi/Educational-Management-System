@@ -360,7 +360,7 @@ export class FeesService {
         },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: [{ billingPeriod: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       }),
       this.prisma.feeInvoice.count({ where }),
     ]);
@@ -388,7 +388,7 @@ export class FeesService {
     return [current, previous];
   }
 
-  private previewInvoicesForStudent<T extends { billingPeriod?: unknown }>(
+  private previewInvoicesForStudent<T extends { id?: unknown; billingPeriod?: unknown }>(
     studentInvoices: T[],
     previewPeriods: Set<string>,
   ): T[] {
@@ -401,21 +401,27 @@ export class FeesService {
       const period = periodOf(inv);
       return period != null && previewPeriods.has(period);
     });
-    if (inWindow.length > 0) return inWindow;
 
-    // Fallback when the student has no rows in the current/previous months:
-    // show invoices from their two most recent billing periods.
-    const periods = [
-      ...new Set(studentInvoices.map(periodOf).filter((p): p is string => p != null)),
-    ]
-      .sort((a, b) => b.localeCompare(a))
-      .slice(0, 2);
-    if (periods.length === 0) return [];
-    const fallback = new Set(periods);
-    return studentInvoices.filter((inv) => {
-      const period = periodOf(inv);
-      return period != null && fallback.has(period);
-    });
+    let preview = inWindow;
+    if (preview.length === 0) {
+      const periods = [
+        ...new Set(studentInvoices.map(periodOf).filter((p): p is string => p != null)),
+      ]
+        .sort((a, b) => b.localeCompare(a))
+        .slice(0, 2);
+      if (periods.length === 0) return studentInvoices.slice(0, 1);
+      const fallback = new Set(periods);
+      preview = studentInvoices.filter((inv) => {
+        const period = periodOf(inv);
+        return period != null && fallback.has(period);
+      });
+    }
+
+    const latest = studentInvoices[0];
+    if (latest && !preview.some((inv) => inv.id === latest.id)) {
+      return [latest, ...preview];
+    }
+    return preview;
   }
 
   async findAllByStudent(
@@ -430,12 +436,14 @@ export class FeesService {
       by: ['studentId'],
       where,
       _count: { _all: true },
-      _max: { createdAt: true },
+      _max: { updatedAt: true, createdAt: true },
     });
 
-    groups.sort(
-      (a, b) => (b._max.createdAt?.getTime() ?? 0) - (a._max.createdAt?.getTime() ?? 0),
-    );
+    groups.sort((a, b) => {
+      const aTime = a._max.updatedAt?.getTime() ?? a._max.createdAt?.getTime() ?? 0;
+      const bTime = b._max.updatedAt?.getTime() ?? b._max.createdAt?.getTime() ?? 0;
+      return bTime - aTime;
+    });
 
     const total = groups.length;
     const skip = (query.page - 1) * query.limit;
@@ -465,7 +473,7 @@ export class FeesService {
           student: { select: { id: true, fullName: true } },
           lines: { orderBy: { sortOrder: 'asc' as const } },
         },
-        orderBy: [{ billingPeriod: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
 
@@ -2445,6 +2453,7 @@ export class FeesService {
         let invoiceSeq = await tx.feeInvoice.count({ where: { branchId: input.branchId } });
 
         const toCreate: BulkDraft[] = [];
+        const invoiceIds: string[] = [];
         let touched = 0;
 
         for (const draft of drafts) {
@@ -2501,6 +2510,7 @@ export class FeesService {
                 feeTypeId: nextLines[0]?.feeTypeId ?? existing.feeTypeId,
               },
             });
+            invoiceIds.push(existing.id);
             touched += 1;
             continue;
           }
@@ -2546,15 +2556,16 @@ export class FeesService {
           if (lineRows.length > 0) {
             await tx.feeInvoiceLine.createMany({ data: lineRows });
           }
+          invoiceIds.push(...createdRows.map((row) => row.id));
           touched += createdRows.length;
         }
 
-        return touched;
+        return { created: touched, invoiceIds };
       },
       { timeout: 120_000, maxWait: 20_000 },
     );
 
-    if (created === 0) {
+    if (created.created === 0) {
       throw new BadRequestException(
         'No invoices to create after applying fee policy (waived, deferred, or already billed)',
       );
@@ -2565,10 +2576,10 @@ export class FeesService {
       action: 'fee_invoices.bulk_generated',
       entityType: input.batchId ? 'Batch' : 'Branch',
       entityId: input.batchId ?? input.branchId,
-      newValue: { count: created, feeTypeIds: typeIds },
+      newValue: { count: created.created, feeTypeIds: typeIds },
     });
 
-    return { created };
+    return created;
   }
 
   private resolveBulkDueDate(dueDate?: string) {
@@ -2935,7 +2946,7 @@ export class FeesService {
   }
 
   async getInvoicePrintDataBulk(ids: string[], scope: BranchScope) {
-    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].slice(0, 90);
+    const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
     if (unique.length === 0) throw new BadRequestException('Select at least one invoice');
     const invoices = await this.loadInvoicePrintRows(unique, scope);
     if (invoices.length === 0) throw new NotFoundException('Invoice not found');

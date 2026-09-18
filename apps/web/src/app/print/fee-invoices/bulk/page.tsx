@@ -5,30 +5,31 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { readBulkInvoicePrintIds } from '@/lib/bulk-invoice-print';
 import { PrintShell, printQueryUiState } from '@/components/print/print-shell';
 import { FeeInvoiceSlip, type FeeInvoicePrintData } from '@/components/print/fee-invoice-slip';
 
 function PrintFeeInvoicesBulkContent() {
   const searchParams = useSearchParams();
-  const ids = useMemo(
-    () =>
-      (searchParams.get('ids') ?? '')
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-        .slice(0, 90),
-    [searchParams],
-  );
+  const batch = searchParams.get('batch') ?? '';
+  const ids = useMemo(() => {
+    if (batch) return readBulkInvoicePrintIds(batch);
+    return (searchParams.get('ids') ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }, [batch, searchParams]);
   const { session, loading: authLoading } = useAuth();
   const token = session?.access_token;
 
   const { data, isLoading, isPending, error } = useQuery({
-    queryKey: ['fee-invoice-print-bulk', ids.join(',')],
+    queryKey: ['fee-invoice-print-bulk', batch || ids.join(',')],
     queryFn: () =>
-      apiClient<{ invoices: FeeInvoicePrintData[] }>(
-        `/fee-invoices/print-data?ids=${encodeURIComponent(ids.join(','))}`,
-        { token },
-      ),
+      apiClient<{ invoices: FeeInvoicePrintData[] }>('/fee-invoices/print-data', {
+        method: 'POST',
+        token,
+        body: { ids },
+      }),
     enabled: !!token && ids.length > 0,
   });
 

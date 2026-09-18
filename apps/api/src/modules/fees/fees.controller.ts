@@ -23,6 +23,7 @@ import {
   listFeeInvoicesQuerySchema,
   listFeeInvoicesByStudentQuerySchema,
   bulkFeeInvoicePrintQuerySchema,
+  bulkFeeInvoicePrintBodySchema,
   recordPaymentSchema,
   recordFeePaymentSchema,
   prepareFeePaymentReceiptUploadSchema,
@@ -48,6 +49,7 @@ import type {
   ListFeeInvoicesQuery,
   ListFeeInvoicesByStudentQuery,
   BulkFeeInvoicePrintQuery,
+  BulkFeeInvoicePrintBody,
   RecordPaymentInput,
   RecordFeePaymentInput,
   PrepareFeePaymentReceiptUploadInput,
@@ -205,6 +207,16 @@ export class FeesController {
     @BranchScopeParam() scope: BranchScope,
   ) {
     return this.feesService.getInvoicePrintDataBulk(query.ids, scope);
+  }
+
+  @Post('fee-invoices/print-data')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('fees.read')
+  getInvoicePrintDataBulkPost(
+    @Body(createZodPipe(bulkFeeInvoicePrintBodySchema)) body: BulkFeeInvoicePrintBody,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.feesService.getInvoicePrintDataBulk(body.ids, scope);
   }
 
   @Get('fee-invoices/:id')
