@@ -154,6 +154,55 @@ export class AuthService {
     return { revoked: true };
   }
 
+  /** Resolve an email or phone to the Supabase login email. */
+  async resolveLoginIdentifier(identifierRaw: string): Promise<{ email: string }> {
+    const identifier = identifierRaw.trim();
+    if (!identifier) {
+      throw new BadRequestException('Email or phone is required');
+    }
+
+    if (identifier.includes('@')) {
+      const email = identifier.toLowerCase();
+      const user = await this.prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null, isActive: true },
+        select: { email: true },
+      });
+      if (!user) {
+        throw new NotFoundException('No account found for that email or phone');
+      }
+      return { email: user.email };
+    }
+
+    const digits = identifier.replace(/\D/g, '');
+    if (digits.length < 10) {
+      throw new BadRequestException('Enter a valid email or phone number');
+    }
+    const last10 = digits.slice(-10);
+
+    const matches = await this.prisma.$queryRaw<Array<{ email: string }>>`
+      SELECT email
+      FROM "User"
+      WHERE "deletedAt" IS NULL
+        AND "isActive" = TRUE
+        AND phone IS NOT NULL
+        AND (
+          regexp_replace(phone, '[^0-9]', '', 'g') = ${digits}
+          OR right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = ${last10}
+        )
+      LIMIT 5
+    `;
+
+    if (matches.length === 0) {
+      throw new NotFoundException('No account found for that email or phone');
+    }
+    if (matches.length > 1) {
+      throw new BadRequestException(
+        'Multiple accounts share this phone number. Please sign in with your email instead.',
+      );
+    }
+    return { email: matches[0].email };
+  }
+
   async getInvitationByToken(token: string) {
     const invitation = await this.prisma.invitation.findUnique({
       where: { token },

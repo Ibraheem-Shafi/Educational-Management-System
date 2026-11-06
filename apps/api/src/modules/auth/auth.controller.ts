@@ -7,6 +7,7 @@ import { CurrentUser, Public, SkipMfa } from '../../common/decorators/auth.decor
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   acceptInvitationSchema,
+  resolveLoginIdentifierSchema,
   updateProfileSchema,
   LEARNING_RESOURCE_TYPES,
   portalSectionQuerySchema,
@@ -19,6 +20,7 @@ import {
 import type { AuthUser } from '@eims/types';
 import type {
   AcceptInvitationInput,
+  ResolveLoginIdentifierInput,
   CreateLeaveRequestInput,
   LeaveAttachmentMetaInput,
   PrepareLeaveAttachmentUploadInput,
@@ -72,6 +74,15 @@ export class AuthController {
   @Delete('sessions/:id')
   revokeSession(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.authService.revokeSession(user.id, id);
+  }
+
+  @Public()
+  @Post('resolve-login-identifier')
+  @HttpCode(HttpStatus.OK)
+  resolveLoginIdentifier(
+    @Body(createZodPipe(resolveLoginIdentifierSchema)) body: ResolveLoginIdentifierInput,
+  ) {
+    return this.authService.resolveLoginIdentifier(body.identifier);
   }
 
   @Public()

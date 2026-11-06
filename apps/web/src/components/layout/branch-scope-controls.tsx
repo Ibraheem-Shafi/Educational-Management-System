@@ -19,15 +19,15 @@ export function AppBranchScopeControl({
 
   if (isLocked) {
     return (
-      <div
-        className={cn(
-          'flex h-10 min-w-[200px] items-center gap-2 rounded-xl border border-[var(--palette-navy-soft)] bg-white py-1 pl-1.5 pr-3',
-          'shadow-[0_1px_2px_rgba(11,31,58,0.06)]',
-          className,
-        )}
-        title={summaryLabel}
-      >
-        <CampusBranchFace label={summaryLabel} />
+      <div className={cn('min-w-[200px]', className)} title={summaryLabel}>
+        <div
+          className={cn(
+            'flex h-10 w-full items-center gap-2 rounded-xl border border-[var(--palette-navy-soft)] bg-white py-1 pl-1.5 pr-3',
+            'shadow-[0_1px_2px_rgba(11,31,58,0.06)]',
+          )}
+        >
+          <CampusBranchFace label={summaryLabel} />
+        </div>
       </div>
     );
   }

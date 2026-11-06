@@ -57,6 +57,8 @@ export const PERMISSIONS = {
   PAYMENTS_CHECKOUT: 'payments.checkout',
   BIOMETRIC_READ: 'biometric.read',
   BIOMETRIC_MANAGE: 'biometric.manage',
+  /** Run spreadsheet data import pipelines. */
+  IMPORTS_MANAGE: 'imports.manage',
 } as const;
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -112,6 +114,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.ACCOUNTING_MANAGE,
     PERMISSIONS.BIOMETRIC_READ,
     PERMISSIONS.BIOMETRIC_MANAGE,
+    PERMISSIONS.IMPORTS_MANAGE,
   ],
   teacher: [
     PERMISSIONS.STUDENTS_READ,

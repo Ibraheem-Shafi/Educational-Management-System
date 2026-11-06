@@ -4,10 +4,13 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { BranchScope } from '@eims/shared';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { TtlCacheService } from '../../common/cache/ttl-cache.service';
 import { countWithTrend, thirtyDaysAgo } from '../../common/utils/stats.util';
+import { prismaBranchFilter, scopeCacheKey } from '../../common/utils/branch-scope.util';
 import type { AuthUser, PaginatedResponse, ParentsStatsResponse } from '@eims/types';
 import type { CreateParentInput, ListParentsQuery, LinkParentStudentInput, ListParentStudentsQuery, ListStudentParentsQuery } from '@eims/shared';
 import { paginatedResult } from '../../common/utils/pagination.util';
@@ -22,19 +25,72 @@ export class ParentsService {
     private readonly ttlCache: TtlCacheService,
   ) {}
 
-  async getStats(): Promise<ParentsStatsResponse> {
-    const cacheKey = 'parents:stats';
+  /** Parents visible under branch scope (via linked students). */
+  private parentWhereForScope(scope: BranchScope): Prisma.ParentWhereInput {
+    if (scope.kind === 'all') {
+      return { deletedAt: null };
+    }
+    return {
+      deletedAt: null,
+      studentParents: {
+        some: {
+          student: {
+            deletedAt: null,
+            ...prismaBranchFilter(scope),
+          },
+        },
+      },
+    };
+  }
+
+  private studentLinkWhere(scope: BranchScope): Prisma.StudentParentWhereInput {
+    if (scope.kind === 'all') return {};
+    return {
+      student: {
+        deletedAt: null,
+        ...prismaBranchFilter(scope),
+      },
+    };
+  }
+
+  private studentParentsInclude(scope: BranchScope) {
+    const branchFilter = prismaBranchFilter(scope);
+    const scoped =
+      scope.kind === 'selected'
+        ? {
+            where: {
+              student: {
+                deletedAt: null,
+                ...branchFilter,
+              },
+            },
+          }
+        : {};
+
+    return {
+      studentParents: {
+        ...scoped,
+        include: {
+          student: { select: { id: true, fullName: true, branchId: true } },
+        },
+      },
+    };
+  }
+
+  async getStats(scope: BranchScope): Promise<ParentsStatsResponse> {
+    const cacheKey = `parents:stats:${scopeCacheKey(scope)}`;
     const cached = this.ttlCache.get<ParentsStatsResponse>(cacheKey);
     if (cached) return cached;
 
     const thirtyAgo = thirtyDaysAgo();
-    const base = { deletedAt: null };
+    const base = this.parentWhereForScope(scope);
+    const linkWhere = this.studentLinkWhere(scope);
 
     const [totalParents, totalParentsPrev, links, newParents, newParentsPrev] =
       await Promise.all([
         this.prisma.parent.count({ where: base }),
         this.prisma.parent.count({ where: { ...base, createdAt: { lte: thirtyAgo } } }),
-        this.prisma.studentParent.count(),
+        this.prisma.studentParent.count({ where: linkWhere }),
         this.prisma.parent.count({ where: { ...base, createdAt: { gte: thirtyAgo } } }),
         this.prisma.parent.count({
           where: {
@@ -47,10 +103,13 @@ export class ParentsService {
         }),
       ]);
 
-    const parentsWithLinks = await this.prisma.parent.count({
-      where: { ...base, studentParents: { some: {} } },
-    });
-    const unlinked = totalParents - parentsWithLinks;
+    let unlinked = 0;
+    if (scope.kind === 'all') {
+      const parentsWithLinks = await this.prisma.parent.count({
+        where: { deletedAt: null, studentParents: { some: {} } },
+      });
+      unlinked = totalParents - parentsWithLinks;
+    }
 
     const result: ParentsStatsResponse = {
       totalParents: countWithTrend(totalParents, totalParentsPrev),
@@ -67,9 +126,12 @@ export class ParentsService {
     this.ttlCache.deleteByPrefix('parents:');
   }
 
-  async findAll(query: ListParentsQuery): Promise<PaginatedResponse<Record<string, unknown>>> {
-    const where = {
-      deletedAt: null,
+  async findAll(
+    query: ListParentsQuery,
+    scope: BranchScope,
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const where: Prisma.ParentWhereInput = {
+      ...this.parentWhereForScope(scope),
       ...(query.search
         ? {
             OR: [
@@ -85,11 +147,7 @@ export class ParentsService {
     const [parents, total] = await Promise.all([
       this.prisma.parent.findMany({
         where,
-        include: {
-          studentParents: {
-            include: { student: { select: { id: true, fullName: true } } },
-          },
-        },
+        include: this.studentParentsInclude(scope),
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: { createdAt: 'desc' },
@@ -108,20 +166,16 @@ export class ParentsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, scope: BranchScope) {
     const parent = await this.prisma.parent.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        studentParents: {
-          include: { student: { select: { id: true, fullName: true, branchId: true } } },
-        },
-      },
+      where: { id, ...this.parentWhereForScope(scope) },
+      include: this.studentParentsInclude(scope),
     });
     if (!parent) throw new NotFoundException('Parent not found');
     return this.toResponse(parent);
   }
 
-  async create(input: CreateParentInput, user: AuthUser) {
+  async create(input: CreateParentInput, user: AuthUser, scope: BranchScope) {
     const parent = await this.prisma.parent.create({
       data: {
         fullName: input.fullName,
@@ -133,10 +187,15 @@ export class ParentsService {
     });
 
     if (input.studentId && input.relationshipCode) {
-      await this.linkStudent(parent.id, {
-        studentId: input.studentId,
-        relationshipCode: input.relationshipCode,
-      }, user);
+      await this.linkStudent(
+        parent.id,
+        {
+          studentId: input.studentId,
+          relationshipCode: input.relationshipCode,
+        },
+        user,
+        scope,
+      );
     } else {
       this.invalidateParentsCache();
     }
@@ -149,10 +208,19 @@ export class ParentsService {
       newValue: parent,
     });
 
-    return this.findOne(parent.id);
+    // Newly created unlinked parent is only visible under all-branches scope.
+    if (scope.kind === 'selected' && !(input.studentId && input.relationshipCode)) {
+      return this.findOne(parent.id, { kind: 'all' });
+    }
+    return this.findOne(parent.id, scope);
   }
 
-  async linkStudent(parentId: string, input: LinkParentStudentInput, user: AuthUser) {
+  async linkStudent(
+    parentId: string,
+    input: LinkParentStudentInput,
+    user: AuthUser,
+    scope: BranchScope = { kind: 'all' },
+  ) {
     const parent = await this.prisma.parent.findFirst({
       where: { id: parentId, deletedAt: null },
     });
@@ -185,7 +253,7 @@ export class ParentsService {
     });
 
     this.invalidateParentsCache();
-    return this.findOne(parentId);
+    return this.findOne(parentId, scope);
   }
 
   async unlinkStudent(parentId: string, studentId: string, user: AuthUser) {
@@ -208,13 +276,20 @@ export class ParentsService {
     return { success: true };
   }
 
-  async listLinkedStudents(parentId: string, query: ListParentStudentsQuery) {
+  async listLinkedStudents(
+    parentId: string,
+    query: ListParentStudentsQuery,
+    scope: BranchScope,
+  ) {
     const parent = await this.prisma.parent.findFirst({
-      where: { id: parentId, deletedAt: null },
+      where: { id: parentId, ...this.parentWhereForScope(scope) },
     });
     if (!parent) throw new NotFoundException('Parent not found');
 
-    const where = { parentId };
+    const where: Prisma.StudentParentWhereInput = {
+      parentId,
+      ...this.studentLinkWhere(scope),
+    };
     const page = query.page ?? 1;
     const limit = query.limit ?? 8;
 

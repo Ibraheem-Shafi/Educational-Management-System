@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   MSG,
   optionalCnic,
+  optionalEmail,
   optionalPhone,
   requiredId,
   requiredString,
@@ -29,6 +30,25 @@ export const createInvitationSchema = z.object({
 });
 
 export type CreateInvitationInput = z.infer<typeof createInvitationSchema>;
+
+/** Active staff account. Email and phone are both optional, and at least one is required. */
+export const createStaffUserSchema = z
+  .object({
+    fullName: requiredString('Full name'),
+    phone: optionalPhone(),
+    password: requiredString('Password', 8, 128),
+    email: optionalEmail(),
+    roleId: requiredId('Role'),
+    branchId: z.string().optional(),
+    gender: genderSchema.optional(),
+    designation: requiredString('Designation', 1, 200).optional(),
+  })
+  .refine((value) => Boolean(value.email || value.phone), {
+    message: 'Enter an email or a phone number',
+    path: ['email'],
+  });
+
+export type CreateStaffUserInput = z.infer<typeof createStaffUserSchema>;
 
 export const updateProfileSchema = z.object({
   fullName: requiredString('Full name').optional(),

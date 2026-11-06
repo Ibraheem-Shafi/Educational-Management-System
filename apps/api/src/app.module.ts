@@ -43,6 +43,7 @@ import { PrintTemplatesModule } from './modules/print-templates/print-templates.
 import { AcademicOpsModule } from './modules/academic-ops/academic-ops.module';
 import { FinanceOpsModule } from './modules/finance-ops/finance-ops.module';
 import { CampusOpsModule } from './modules/campus-ops/campus-ops.module';
+import { ImportsModule } from './modules/imports/imports.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { CampusOpsModule } from './modules/campus-ops/campus-ops.module';
     AcademicOpsModule,
     FinanceOpsModule,
     CampusOpsModule,
+    ImportsModule,
   ],
 })
 export class AppModule {}

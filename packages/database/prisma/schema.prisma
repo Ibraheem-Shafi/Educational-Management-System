@@ -90,6 +90,8 @@ model User {
   payrollLines               PayrollLine[]
   devicePushTokens           DevicePushToken[]
   leaveRequests              LeaveRequest[]
+  importJobsCreated          ImportJob[]             @relation("ImportJobCreator")
+  importMappingProfiles      ImportMappingProfile[]  @relation("ImportMappingProfileCreator")
 
   @@index([branchId])
   @@index([supabaseUserId])
@@ -2085,4 +2087,89 @@ model ComplianceControl {
 
   @@index([branchId, deletedAt])
   @@index([status])
+}
+
+/// Spreadsheet import jobs started from Data import.
+enum ImportPipeline {
+  academic
+  students
+  fee_register
+  staff
+  timetable
+  notices
+}
+
+enum ImportJobStatus {
+  draft
+  validating
+  ready
+  running
+  completed
+  failed
+  cancelled
+}
+
+model ImportJob {
+  id            String          @id @default(cuid())
+  pipeline      ImportPipeline
+  branchId      String?
+  status        ImportJobStatus @default(draft)
+  filePath      String
+  fileName      String?
+  sheetName     String?
+  headerRow     Int             @default(0)
+  mapping       Json            @default("{}")
+  options       Json            @default("{}")
+  totalRows     Int             @default(0)
+  processedRows Int             @default(0)
+  successRows   Int             @default(0)
+  errorRows     Int             @default(0)
+  skippedRows   Int             @default(0)
+  percent       Int             @default(0)
+  lastError     String?
+  createdById   String
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  createdBy User             @relation("ImportJobCreator", fields: [createdById], references: [id])
+  errors    ImportJobError[]
+
+  @@index([status, createdAt])
+  @@index([branchId, createdAt])
+  @@index([createdById, createdAt])
+  @@index([pipeline, status])
+}
+
+model ImportJobError {
+  id         String   @id @default(cuid())
+  jobId      String
+  rowNumber  Int
+  rawPayload Json?
+  field      String?
+  message    String
+  code       String?
+  createdAt  DateTime @default(now())
+
+  job ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, rowNumber])
+}
+
+model ImportMappingProfile {
+  id          String         @id @default(cuid())
+  name        String
+  pipeline    ImportPipeline
+  branchId    String?
+  mapping     Json
+  options     Json           @default("{}")
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  createdBy User @relation("ImportMappingProfileCreator", fields: [createdById], references: [id])
+
+  @@index([pipeline, branchId])
+  @@index([createdById])
 }

@@ -24,6 +24,7 @@ import { PageContentSkeleton } from '@/components/layout/page-content-skeleton';
 import { FormFieldError } from '@/components/forms/form-field-error';
 import { useFormErrors } from '@/hooks/use-form-errors';
 import { loginFormSchema, totpCodeSchema } from '@/lib/auth-form-schemas';
+import { loginLookupError, resolveLoginIdentifier } from '@/lib/resolve-login-identifier';
 import {
   AuthShell,
   authFieldClassName,
@@ -55,7 +56,7 @@ function LoginPageContent() {
   const navigatedRef = useRef(false);
   const { name } = useInstitution();
   const { session, user, loading: authLoading, syncAuth } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<LoginStep>('credentials');
@@ -106,17 +107,26 @@ function LoginPageContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate({ email: email.trim(), password })) return;
+    if (!validate({ identifier: identifier.trim(), password })) return;
 
     setLoading(true);
+    let email: string;
+    try {
+      email = await resolveLoginIdentifier(identifier);
+    } catch (err) {
+      setLoading(false);
+      setFieldError('identifier', loginLookupError(err));
+      return;
+    }
+
     const supabase = createClient();
     const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email,
       password,
     });
     if (error) {
       setLoading(false);
-      setFieldError('password', 'Invalid email or password');
+      setFieldError('password', 'Invalid email/phone or password');
       return;
     }
 
@@ -270,20 +280,21 @@ function LoginPageContent() {
       ) : (
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <FormFieldLabel required>Email</FormFieldLabel>
+            <FormFieldLabel required>Email or phone</FormFieldLabel>
             <Input
-              id="email"
-              type="email"
-              placeholder="admin@institution.pk"
-              value={email}
+              id="identifier"
+              type="text"
+              autoComplete="username"
+              placeholder="email@school.edu.pk or phone"
+              value={identifier}
               onChange={(e) => {
-                setEmail(e.target.value);
-                clearField('email');
+                setIdentifier(e.target.value);
+                clearField('identifier');
                 clearField('password');
               }}
-              className={fieldClassName('email', authFieldClassName)}
+              className={fieldClassName('identifier', authFieldClassName)}
             />
-            <FormFieldError message={errors.email} />
+            <FormFieldError message={errors.identifier} />
           </div>
           <div>
             <FormFieldLabel required>Password</FormFieldLabel>
