@@ -135,6 +135,9 @@ export const ACCESS_MODULES: AccessModuleDefinition[] = [
   defineModule('audit', 'Audit', 'administration', [PERMISSIONS.AUDIT_READ]),
   defineModule('settings', 'Settings', 'administration', [PERMISSIONS.SETTINGS_MANAGE]),
   defineModule('form_fields', 'Form fields', 'administration', [PERMISSIONS.FORM_FIELDS_MANAGE]),
+  defineModule('imports', 'Data import', 'administration', [PERMISSIONS.IMPORTS_MANAGE], [
+    PERMISSIONS.IMPORTS_MANAGE,
+  ]),
 ];
 
 const MODULE_BY_ID = new Map(ACCESS_MODULES.map((module) => [module.id, module]));

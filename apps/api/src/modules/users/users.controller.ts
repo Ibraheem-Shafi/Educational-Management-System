@@ -24,6 +24,7 @@ import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   listUsersQuerySchema,
   createInvitationSchema,
+  createStaffUserSchema,
   updateUserSchema,
   updateUserRoleSchema,
   updateUserAccessSchema,
@@ -32,6 +33,7 @@ import type { AuthUser } from '@eims/types';
 import type {
   ListUsersQuery,
   CreateInvitationInput,
+  CreateStaffUserInput,
   UpdateUserInput,
   UpdateUserRoleInput,
   UpdateUserAccessInput,
@@ -73,6 +75,17 @@ export class UsersController {
   @Permissions('users.manage')
   listInvitations(@BranchScopeParam() scope: BranchScope) {
     return this.usersService.listInvitations(scope);
+  }
+
+  /** Create an active staff account immediately. Email and phone are both accepted. */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('users.manage')
+  createStaffUser(
+    @Body(createZodPipe(createStaffUserSchema)) body: CreateStaffUserInput,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.usersService.createStaffUser(body, user);
   }
 
   @Post('invitations')

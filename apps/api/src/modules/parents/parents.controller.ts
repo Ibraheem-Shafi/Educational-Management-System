@@ -11,11 +11,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { BranchScope } from '@eims/shared';
 import { ParentsService } from './parents.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { BranchGuard } from '../../common/guards/branch.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
+import { BranchScopeParam, CurrentUser, Permissions } from '../../common/decorators/auth.decorators';
 import { createZodPipe } from '../../common/pipes/zod-validation.pipe';
 import { createParentSchema, listParentsQuerySchema, linkParentStudentSchema, listParentStudentsQuerySchema, listStudentParentsQuerySchema } from '@eims/shared';
 import type { AuthUser } from '@eims/types';
@@ -30,14 +31,17 @@ export class ParentsController {
 
   @Get('stats')
   @Permissions('students.read')
-  getStats() {
-    return this.parentsService.getStats();
+  getStats(@BranchScopeParam() scope: BranchScope) {
+    return this.parentsService.getStats(scope);
   }
 
   @Get()
   @Permissions('students.read')
-  findAll(@Query(createZodPipe(listParentsQuerySchema)) query: ListParentsQuery) {
-    return this.parentsService.findAll(query);
+  findAll(
+    @Query(createZodPipe(listParentsQuerySchema)) query: ListParentsQuery,
+    @BranchScopeParam() scope: BranchScope,
+  ) {
+    return this.parentsService.findAll(query, scope);
   }
 
   @Get(':id/students')
@@ -45,14 +49,15 @@ export class ParentsController {
   listLinkedStudents(
     @Param('id') id: string,
     @Query(createZodPipe(listParentStudentsQuerySchema)) query: ListParentStudentsQuery,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.parentsService.listLinkedStudents(id, query);
+    return this.parentsService.listLinkedStudents(id, query, scope);
   }
 
   @Get(':id')
   @Permissions('students.read')
-  findOne(@Param('id') id: string) {
-    return this.parentsService.findOne(id);
+  findOne(@Param('id') id: string, @BranchScopeParam() scope: BranchScope) {
+    return this.parentsService.findOne(id, scope);
   }
 
   @Post()
@@ -61,8 +66,9 @@ export class ParentsController {
   create(
     @Body(createZodPipe(createParentSchema)) body: CreateParentInput,
     @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.parentsService.create(body, user);
+    return this.parentsService.create(body, user, scope);
   }
 
   @Post(':id/link-student')
@@ -71,8 +77,9 @@ export class ParentsController {
     @Param('id') id: string,
     @Body(createZodPipe(linkParentStudentSchema)) body: LinkParentStudentInput,
     @CurrentUser() user: AuthUser,
+    @BranchScopeParam() scope: BranchScope,
   ) {
-    return this.parentsService.linkStudent(id, body, user);
+    return this.parentsService.linkStudent(id, body, user, scope);
   }
 
   @Delete(':id/students/:studentId')

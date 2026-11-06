@@ -71,7 +71,9 @@ export class FeesService {
     if (cached) return cached;
 
     const branchFilter = prismaBranchFilter(scope);
+    const now = new Date();
     const thirtyAgo = thirtyDaysAgo();
+    const sixtyAgo = new Date(thirtyAgo.getTime() - 30 * 86400000);
 
     const [pendingStatus, paidStatus, overdueStatus] = await Promise.all([
       this.prisma.lookupStatus.findFirst({ where: { code: 'pending', category: { code: 'fee_status' } } }),
@@ -100,13 +102,13 @@ export class FeesService {
         _sum: { netAmount: true },
       }),
       this.prisma.feeInvoice.aggregate({
-        where: { ...branchFilter, paidAt: { gte: thirtyAgo } },
+        where: { ...branchFilter, paidAt: { gte: thirtyAgo, lte: now } },
         _sum: { netAmount: true },
       }),
       this.prisma.feeInvoice.aggregate({
         where: {
           ...branchFilter,
-          paidAt: { gte: new Date(thirtyAgo.getTime() - 30 * 86400000), lt: thirtyAgo },
+          paidAt: { gte: sixtyAgo, lt: thirtyAgo },
         },
         _sum: { netAmount: true },
       }),

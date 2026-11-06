@@ -41,6 +41,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   LogOut,
+  Upload,
   type LucideIcon,
 } from 'lucide-react';
 import { useInstitution } from '@/providers/institution-provider';
@@ -173,6 +174,7 @@ export const navGroups: NavGroup[] = [
       },
       { href: '/dashboard/campus-ops', label: 'Campus operations', icon: Wrench, permission: 'settings.manage' },
       { href: '/dashboard/form-fields', label: 'Form fields', icon: FormInput, permission: 'form_fields.manage' },
+      { href: '/dashboard/imports', label: 'Data import', icon: Upload, permission: 'imports.manage' },
       { href: '/dashboard/reports/administration', label: 'Admin reports', icon: FileBarChart, permission: 'reports.view' },
     ],
   },

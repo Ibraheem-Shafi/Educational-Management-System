@@ -190,6 +190,12 @@ export const queryKeys = {
     branchListKey('accounting-budgets', branchId, params),
   opsRecords: (prefix: string, branchId?: string, params?: Params) =>
     branchListKey(prefix, branchId, params),
+  importPipelines: ['import-pipelines'] as const,
+  importJobs: (params?: Params) => listKey('import-jobs', params),
+  importJob: (id: string) => ['import-job', id] as const,
+  importJobErrors: (id: string, params?: Params) =>
+    params ? (['import-job-errors', id, params] as const) : (['import-job-errors', id] as const),
+  importProfiles: (params?: Params) => listKey('import-profiles', params),
 };
 
 /** Root prefixes for invalidate/refetch — always match every filtered/paginated variant. */

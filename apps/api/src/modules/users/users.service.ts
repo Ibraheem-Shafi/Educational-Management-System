@@ -7,6 +7,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.module';
 import { AuditService } from '../audit/audit.service';
@@ -21,7 +22,12 @@ import type {
   UserPermissionDetail,
   UsersStatsResponse,
 } from '@eims/types';
-import type { ListUsersQuery, CreateInvitationInput, UpdateUserInput } from '@eims/shared';
+import type {
+  ListUsersQuery,
+  CreateInvitationInput,
+  CreateStaffUserInput,
+  UpdateUserInput,
+} from '@eims/shared';
 import { canSelectAllBranches, isSuperAdmin } from '@eims/shared';
 import { computeChangePercent } from '../../common/utils/metrics.util';
 
@@ -89,6 +95,8 @@ type UserDetailRecord = {
 
 @Injectable()
 export class UsersService {
+  private readonly supabaseAdmin: SupabaseClient;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -96,7 +104,12 @@ export class UsersService {
     private readonly config: ConfigService,
     private readonly authCache: AuthCacheService,
     private readonly ttlCache: TtlCacheService,
-  ) {}
+  ) {
+    this.supabaseAdmin = createClient(
+      this.config.getOrThrow('SUPABASE_URL'),
+      this.config.getOrThrow('SUPABASE_SERVICE_ROLE_KEY'),
+    );
+  }
 
   async getStats(scope: BranchScope): Promise<UsersStatsResponse> {
     const cacheKey = `users:stats:${scopeCacheKey(scope)}`;
@@ -506,6 +519,149 @@ export class UsersService {
         createdAt: inv.createdAt.toISOString(),
       })),
     };
+  }
+
+  /**
+   * Create an active staff account immediately.
+   * Email and phone are both optional, and at least one is required.
+   * Supabase still needs an email, so a login address is generated when email is omitted.
+   */
+  async createStaffUser(input: CreateStaffUserInput, actor: AuthUser) {
+    const role = await this.prisma.role.findUnique({ where: { id: input.roleId } });
+    if (!role) throw new BadRequestException('Invalid role');
+    if (!input.branchId && !canSelectAllBranches([role.code])) {
+      throw new BadRequestException('Select a campus for this role');
+    }
+    if (role.code === 'parent' || role.code === 'student') {
+      throw new BadRequestException('Use the student and parent flows for portal accounts');
+    }
+
+    if (input.phone) {
+      const phoneDigits = input.phone.replace(/\D/g, '');
+      const last10 = phoneDigits.slice(-10);
+      const phoneClash = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM "User"
+        WHERE "deletedAt" IS NULL
+          AND phone IS NOT NULL
+          AND (
+            regexp_replace(phone, '[^0-9]', '', 'g') = ${phoneDigits}
+            OR right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = ${last10}
+          )
+        LIMIT 1
+      `;
+      if (phoneClash.length > 0) {
+        throw new ConflictException('A user with this phone number already exists');
+      }
+    }
+
+    const email = await this.resolveStaffEmail(input.fullName, input.email);
+    const existingUser = await this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
+    });
+    if (existingUser) throw new ConflictException('User with this email already exists');
+
+    const { data: authData, error: authError } = await this.supabaseAdmin.auth.admin.createUser({
+      email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.fullName },
+      app_metadata: {
+        role: role.code,
+        branch_id: input.branchId ?? null,
+      },
+    });
+    if (authError || !authData.user) {
+      throw new BadRequestException(authError?.message ?? 'Failed to create auth account');
+    }
+
+    try {
+      const appUser = await this.prisma.user.create({
+        data: {
+          supabaseUserId: authData.user.id,
+          email,
+          fullName: input.fullName,
+          phone: input.phone ?? null,
+          branchId: input.branchId ?? null,
+          ...(input.gender ? { gender: input.gender } : {}),
+          ...(input.designation
+            ? { designation: input.designation, department: input.designation }
+            : {}),
+          isActive: true,
+        },
+      });
+
+      await this.prisma.userRole.create({
+        data: {
+          userId: appUser.id,
+          roleId: role.id,
+          branchId: input.branchId ?? null,
+        },
+      });
+
+      await this.audit.log({
+        userId: actor.id,
+        action: 'user.created',
+        entityType: 'User',
+        entityId: appUser.id,
+        newValue: {
+          email: appUser.email,
+          phone: appUser.phone,
+          roleId: role.id,
+          branchId: input.branchId ?? null,
+        },
+      });
+
+      this.invalidateUsersCache();
+      this.authCache.invalidateUser(appUser.id);
+
+      return {
+        id: appUser.id,
+        email: appUser.email,
+        fullName: appUser.fullName,
+        phone: appUser.phone,
+        roleId: role.id,
+        roleCode: role.code,
+        branchId: appUser.branchId,
+        message: input.email
+          ? 'User created. They can sign in with their email or phone and the password you set.'
+          : 'User created. They can sign in with their phone and the password you set.',
+      };
+    } catch (error) {
+      await this.supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async resolveStaffEmail(fullName: string, provided?: string): Promise<string> {
+    if (provided?.trim()) return provided.trim().toLowerCase();
+
+    const settings = await this.prisma.institutionSettings.findUnique({ where: { id: 'default' } });
+    const domain =
+      settings?.email?.split('@')[1]?.toLowerCase() ||
+      this.config.get<string>('STAFF_EMAIL_DOMAIN') ||
+      'nexium.edu.pk';
+
+    const slug =
+      fullName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .join('.') || 'staff';
+
+    let candidate = `${slug}@${domain}`;
+    for (let i = 2; i < 50; i++) {
+      const taken = await this.prisma.user.findFirst({
+        where: { email: { equals: candidate, mode: 'insensitive' }, deletedAt: null },
+        select: { id: true },
+      });
+      if (!taken) return candidate;
+      candidate = `${slug}${i}@${domain}`;
+    }
+    return `${slug}.${Date.now().toString(36)}@${domain}`;
   }
 
   async createInvitation(input: CreateInvitationInput, user: AuthUser) {

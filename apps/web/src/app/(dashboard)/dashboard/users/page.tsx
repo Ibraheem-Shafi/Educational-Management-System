@@ -28,6 +28,7 @@ import { StatusBadge, statusRowClass } from '@/components/layout/status-badge';
 import { PaginationBar } from '@/components/layout/pagination-bar';
 import { RowActionsMenu } from '@/components/layout/row-actions-menu';
 import { ContactIcon } from '@/components/layout/contact-icon';
+import { AddUserDialog } from '@/components/features/users/add-user-dialog';
 import { InviteUserDialog } from '@/components/features/users/invite-user-dialog';
 import { EditUserDialog } from '@/components/features/users/edit-user-dialog';
 import {
@@ -81,6 +82,7 @@ export default function UsersPage() {
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(8);
+  const [addOpen, setAddOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<DeactivateUserTarget | null>(null);
@@ -88,7 +90,7 @@ export default function UsersPage() {
   useEffect(() => {
     if (!canManage) return;
     if (searchParams.get('create') !== '1') return;
-    setInviteOpen(true);
+    setAddOpen(true);
     router.replace('/dashboard/users', { scroll: false });
   }, [canManage, router, searchParams]);
 
@@ -183,18 +185,29 @@ export default function UsersPage() {
         description="Staff accounts and invitations"
         actions={
           canManage ? (
-            <button
-              type="button"
-              onClick={() => setInviteOpen(true)}
-              className={pageHeaderActionClassName}
-            >
-              <UserPlus className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
-              Invite User
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[var(--stroke-soft-200,#E2E4E9)] bg-white px-3 text-sm font-medium text-[var(--text-main-900)] hover:bg-[var(--neutral-50)]"
+              >
+                <Mail className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                Invite User
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className={pageHeaderActionClassName}
+              >
+                <UserPlus className="h-4 w-4 shrink-0 text-white" strokeWidth={2} aria-hidden />
+                Add User
+              </button>
+            </div>
           ) : undefined
         }
       />
 
+      <AddUserDialog open={addOpen} onOpenChange={setAddOpen} />
       <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
 
       <EditUserDialog

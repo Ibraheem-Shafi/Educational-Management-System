@@ -43,7 +43,8 @@ export class ReportsService {
     const branchFilter = prismaBranchFilter(scope);
     const hasBranchFilter = scope.kind === 'selected';
     const sqlFilter = sqlBranchFilter(scope, '"branchId"');
-    const today = new Date();
+    const now = new Date();
+    const today = new Date(now);
     today.setUTCHours(0, 0, 0, 0);
 
     const thirtyDaysAgo = new Date(today);
@@ -117,6 +118,7 @@ export class ReportsService {
         FROM "FeeInvoice"
         WHERE "paidAt" IS NOT NULL
           AND "paidAt" >= ${thirtyDaysAgo}
+          AND "paidAt" <= ${now}
           ${sqlFilter}
       `,
       this.prisma.$queryRaw<Array<{ total: unknown }>>`

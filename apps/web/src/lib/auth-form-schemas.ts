@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { MSG, requiredString } from '@eims/shared';
 
 export const loginFormSchema = z.object({
-  email: z.string({ required_error: MSG.required('Email') }).email(MSG.email),
+  identifier: z
+    .string({ required_error: MSG.required('Email or phone') })
+    .min(3, MSG.required('Email or phone')),
   password: requiredString('Password', 1, 128),
 });
 
